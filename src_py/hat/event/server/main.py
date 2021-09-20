@@ -39,7 +39,12 @@ def main(conf: typing.Optional[Path]):
             conf = (user_conf_dir / 'event').with_suffix(suffix)
             if conf.exists():
                 break
-    conf = json.decode_file(conf)
+
+    if conf == Path('-'):
+        conf = json.decode_stream(sys.stdin)
+    else:
+        conf = json.decode_file(conf)
+
     sync_main(conf)
 
 
