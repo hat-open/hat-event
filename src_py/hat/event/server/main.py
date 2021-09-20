@@ -34,14 +34,19 @@ user_conf_dir: Path = Path(appdirs.user_config_dir('hat'))
                    "(default $XDG_CONFIG_HOME/hat/event.{yaml|yml|json})")
 def main(conf: typing.Optional[Path]):
     """Event Server"""
-    aio.init_asyncio()
-
     if not conf:
         for suffix in ('.yaml', '.yml', '.json'):
             conf = (user_conf_dir / 'event').with_suffix(suffix)
             if conf.exists():
                 break
     conf = json.decode_file(conf)
+    sync_main(conf)
+
+
+def sync_main(conf: json.Data):
+    """Sync main entry point"""
+    aio.init_asyncio()
+
     common.json_schema_repo.validate('hat-event://main.yaml#', conf)
 
     sub_confs = ([conf['backend_engine']['backend']] +
