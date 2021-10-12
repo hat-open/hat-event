@@ -37,14 +37,14 @@ def test_tuple_str(x):
 
 
 @pytest.mark.parametrize('x', [
+    1,
     [],
-    [()],
-    [('a',),  ('b',), ('c',)],
-    [('a', 'b', 'c')]
+    "abc",
+    {'a': 1, 'b': [1, 2, 3]}
 ])
-def test_list_tuple_str(x):
-    encoded = encoder.encode_list_tuple_str(x)
-    decoded = encoder.decode_list_tuple_str(encoded)
+def test_json(x):
+    encoded = encoder.encode_json(x)
+    decoded = encoder.decode_json(encoded)
     assert x == decoded
 
 

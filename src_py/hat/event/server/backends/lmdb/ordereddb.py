@@ -14,7 +14,7 @@ from hat.event.server.backends.lmdb.conditions import Conditions
 
 db_count = 3
 data_db_name = b'ordered_data'
-subscriptions_db_name = b'ordered_subscriptions'
+partition_db_name = b'ordered_partition'
 count_db_name = b'ordered_count'
 
 
@@ -40,25 +40,29 @@ def _ext_create(executor, env, subscription, conditions, order_by, limit):
     db._changes = collections.deque()
 
     db._data_db = env.open_db(data_db_name)
-    db._subscriptions_db = env.open_db(subscriptions_db_name)
     db._count_db = env.open_db(count_db_name)
 
     db._partition_id = None
     last_partition_id = 0
-    subscriptions = sorted(subscription.get_query_types())
+    partition_data = {
+        'order': order_by.value,
+        'subscriptions': [list(i)
+                          for i in sorted(subscription.get_query_types())]}
 
-    with env.begin(db=db._subscriptions_db, buffers=True) as txn:
+    partition_db = env.open_db(partition_db_name)
+
+    with env.begin(db=partition_db, buffers=True) as txn:
         for key, value in txn.cursor():
             last_partition_id = encoder.decode_uint(key)
-            if encoder.decode_list_tuple_str(value) == subscriptions:
+            if encoder.decode_json(value) == partition_data:
                 db._partition_id = last_partition_id
                 break
 
     if db._partition_id is None:
         db._partition_id = last_partition_id + 1
-        with env.begin(db=db._subscriptions_db, write=True) as txn:
+        with env.begin(db=partition_db, write=True) as txn:
             txn.put(encoder.encode_uint(db._partition_id),
-                    encoder.encode_list_tuple_str(subscriptions))
+                    encoder.encode_json(partition_data))
 
     return db
 

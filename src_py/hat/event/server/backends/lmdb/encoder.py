@@ -30,12 +30,12 @@ def decode_tuple_str(x: bytes) -> typing.Tuple[str, ...]:
     return tuple(json.decode(str(x, encoding='utf-8')))
 
 
-def encode_list_tuple_str(x: typing.List[typing.Tuple[str, ...]]) -> bytes:
-    return json.encode([list(i) for i in x]).encode('utf-8')
+def encode_json(x: json.Data) -> bytes:
+    return json.encode(x).encode('utf-8')
 
 
-def decode_list_tuple_str(x: bytes) -> typing.List[typing.Tuple[str, ...]]:
-    return [tuple(i) for i in json.decode(str(x, encoding='utf-8'))]
+def decode_json(x: bytes) -> json.Data:
+    return json.decode(str(x, encoding='utf-8'))
 
 
 def encode_uint_timestamp_uint(x: typing.Tuple[int, common.Timestamp, int]
