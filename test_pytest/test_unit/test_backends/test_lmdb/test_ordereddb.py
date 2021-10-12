@@ -95,13 +95,11 @@ def create_event():
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_create_empty(executor, env, query, order_by):
-    name = 'name'
     subscription = common.Subscription([])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -115,13 +113,11 @@ async def test_create_empty(executor, env, query, order_by):
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_add(executor, env, flush, query, create_event, order_by):
-    name = 'name'
     subscription = common.Subscription([('a',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -154,13 +150,11 @@ async def test_add(executor, env, flush, query, create_event, order_by):
 @pytest.mark.parametrize('order', common.Order)
 async def test_query_max_results(executor, env, flush, query, create_event,
                                  order_by, order):
-    name = 'name'
     subscription = common.Subscription([('a',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -212,13 +206,11 @@ async def test_query_max_results(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order', common.Order)
 async def test_query_timestamps(executor, env, flush, query, create_event,
                                 order_by, order):
-    name = 'name'
     subscription = common.Subscription([('a',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -295,13 +287,11 @@ async def test_query_timestamps(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_query_subscription(executor, env, flush, query, create_event,
                                   order_by):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -328,13 +318,11 @@ async def test_query_subscription(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_query_event_ids(executor, env, flush, query, create_event,
                                order_by):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -365,13 +353,11 @@ async def test_query_event_ids(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_query_payload(executor, env, flush, query, create_event,
                              order_by):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -402,13 +388,11 @@ async def test_query_payload(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_query_unique_type(executor, env, flush, query, create_event,
                                  order_by):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -434,14 +418,12 @@ async def test_query_unique_type(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_limit_max_entries(executor, env, flush, query, create_event,
                                  order_by):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     limit = {'max_entries': 3}
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -460,7 +442,6 @@ async def test_limit_max_entries(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_limit_min_entries(executor, env, flush, query, create_event,
                                  order_by):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     limit = {'min_entries': 5,
@@ -468,7 +449,6 @@ async def test_limit_min_entries(executor, env, flush, query, create_event,
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,
@@ -487,14 +467,12 @@ async def test_limit_min_entries(executor, env, flush, query, create_event,
 @pytest.mark.parametrize('order_by', common.OrderBy)
 async def test_limit_duration(executor, env, flush, query, create_event,
                               order_by):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     limit = {'duration': 1}
     db = await hat.event.server.backends.lmdb.ordereddb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions,
         order_by=order_by,

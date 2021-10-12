@@ -1,70 +1,70 @@
 import pytest
 
 from hat.event.server.backends.lmdb import common
-import hat.event.server.backends.lmdb.encoder
+from hat.event.server.backends.lmdb import encoder
 
 
-@pytest.mark.parametrize('event', [
+@pytest.mark.parametrize('x', [
+    0, 1, 1234, 0xFFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF
+])
+def test_uint(x):
+    encoded = encoder.encode_uint(x)
+    decoded = encoder.decode_uint(encoded)
+    assert x == decoded
+
+
+@pytest.mark.parametrize('x', [
+    common.now(),
+    common.Timestamp(s=-(1 << 63), us=0),
+    common.Timestamp(s=0, us=0),
+    common.Timestamp(s=(1 << 63) - 1, us=int(1e6))
+])
+def test_timestamp(x):
+    encoded = encoder.encode_timestamp(x)
+    decoded = encoder.decode_timestamp(encoded)
+    assert x == decoded
+
+
+@pytest.mark.parametrize('x', [
+    (),
+    ('', ),
+    ('a', 'b', 'c')
+])
+def test_tuple_str(x):
+    encoded = encoder.encode_tuple_str(x)
+    decoded = encoder.decode_tuple_str(encoded)
+    assert x == decoded
+
+
+@pytest.mark.parametrize('x', [
+    [],
+    [()],
+    [('a',),  ('b',), ('c',)],
+    [('a', 'b', 'c')]
+])
+def test_list_tuple_str(x):
+    encoded = encoder.encode_list_tuple_str(x)
+    decoded = encoder.decode_list_tuple_str(encoded)
+    assert x == decoded
+
+
+@pytest.mark.parametrize('x', [
+    (123, common.now(), 321)
+])
+def test_uint_timestamp_uint(x):
+    encoded = encoder.encode_uint_timestamp_uint(x)
+    decoded = encoder.decode_uint_timestamp_uint(encoded)
+    assert x == decoded
+
+
+@pytest.mark.parametrize('x', [
     common.Event(event_id=common.EventId(1, 2),
                  event_type=('a', 'b', 'c'),
                  timestamp=common.now(),
                  source_timestamp=None,
                  payload=None)
 ])
-def test_event(event):
-    encoded = hat.event.server.backends.lmdb.encoder.encode_event(event)
-    decoded = hat.event.server.backends.lmdb.encoder.decode_event(encoded)
-    assert event == decoded
-
-
-@pytest.mark.parametrize('timestamp_id', [
-    (common.now(), 123)
-])
-def test_timestamp_id(timestamp_id):
-    encoded = hat.event.server.backends.lmdb.encoder.encode_timestamp_id(
-        timestamp_id)
-    decoded = hat.event.server.backends.lmdb.encoder.decode_timestamp_id(
-        encoded)
-    assert timestamp_id == decoded
-
-
-@pytest.mark.parametrize('value', [
-    'abc'
-])
-def test_str(value):
-    encoded = hat.event.server.backends.lmdb.encoder.encode_str(value)
-    decoded = hat.event.server.backends.lmdb.encoder.decode_str(encoded)
-    assert value == decoded
-
-
-@pytest.mark.parametrize('value', [
-    [1, 2.3, True, {'a': None}]
-])
-def test_json(value):
-    encoded = hat.event.server.backends.lmdb.encoder.encode_json(value)
-    decoded = hat.event.server.backends.lmdb.encoder.decode_json(encoded)
-    assert value == decoded
-
-
-@pytest.mark.parametrize('data', [
-    common.SystemData(1, None, None),
-    common.SystemData(2, 3, common.now())
-])
-def test_system_data(data):
-    encoded = hat.event.server.backends.lmdb.encoder.encode_system_data(data)
-    decoded = hat.event.server.backends.lmdb.encoder.decode_system_data(
-        encoded)
-    assert data == decoded
-
-
-@pytest.mark.parametrize('tuple_str', [
-    (),
-    ('a',),
-    ('a', 'b')
-])
-def test_tuple_str(tuple_str):
-    encoded = hat.event.server.backends.lmdb.encoder.encode_tuple_str(
-        tuple_str)
-    decoded = hat.event.server.backends.lmdb.encoder.decode_tuple_str(
-        encoded)
-    assert tuple_str == decoded
+def test_event(x):
+    encoded = encoder.encode_event(x)
+    decoded = encoder.decode_event(encoded)
+    assert x == decoded

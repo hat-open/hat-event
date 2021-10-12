@@ -12,35 +12,69 @@ from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
+db_count = 3
+data_db_name = b'ordered_data'
+subscriptions_db_name = b'ordered_subscriptions'
+count_db_name = b'ordered_count'
+
+
 async def create(executor: aio.Executor,
                  env: lmdb.Environment,
-                 name: str,
                  subscription: common.Subscription,
                  conditions: Conditions,
                  order_by: common.OrderBy,
                  limit: typing.Optional[json.Data]
                  ) -> 'OrderedDb':
+    return await executor(_ext_create, executor, env, subscription, conditions,
+                          order_by, limit)
+
+
+def _ext_create(executor, env, subscription, conditions, order_by, limit):
     db = OrderedDb()
     db._executor = executor
     db._env = env
-    db._name = name
     db._subscription = subscription
     db._conditions = conditions
     db._order_by = order_by
     db._limit = limit
     db._changes = collections.deque()
-    db._db = await executor(db._ext_open_db)
+
+    db._data_db = env.open_db(data_db_name)
+    db._subscriptions_db = env.open_db(subscriptions_db_name)
+    db._count_db = env.open_db(count_db_name)
+
+    db._partition_id = None
+    last_partition_id = 0
+    subscriptions = sorted(subscription.get_query_types())
+
+    with env.begin(db=db._subscriptions_db, buffers=True) as txn:
+        for key, value in txn.cursor():
+            last_partition_id = encoder.decode_uint(key)
+            if encoder.decode_list_tuple_str(value) == subscriptions:
+                db._partition_id = last_partition_id
+                break
+
+    if db._partition_id is None:
+        db._partition_id = last_partition_id + 1
+        with env.begin(db=db._subscriptions_db, write=True) as txn:
+            txn.put(encoder.encode_uint(db._partition_id),
+                    encoder.encode_list_tuple_str(subscriptions))
+
     return db
 
 
 class OrderedDb:
 
     @property
+    def partition_id(self) -> int:
+        return self._partition_id
+
+    @property
     def subscription(self) -> common.Subscription:
         return self._subscription
 
     @property
-    def order_by(self):
+    def order_by(self) -> common.OrderBy:
         return self._order_by
 
     def add(self, event: common.Event) -> bool:
@@ -48,17 +82,17 @@ class OrderedDb:
             return False
 
         if self._order_by == common.OrderBy.TIMESTAMP:
-            key = event.timestamp, event.event_id.instance
+            timestamp = event.timestamp
 
         elif self._order_by == common.OrderBy.SOURCE_TIMESTAMP:
             if event.source_timestamp is None:
                 return False
-            key = event.source_timestamp, event.event_id.instance
+            timestamp = event.source_timestamp
 
         else:
             raise ValueError('unsupported order by')
 
-        self._changes.append((key, event))
+        self._changes.append((timestamp, event))
         return True
 
     async def query(self,
@@ -112,8 +146,7 @@ class OrderedDb:
         return events
 
     def create_ext_flush(self) -> common.ExtFlushCb:
-        changes = self._changes
-        self._changes = collections.deque()
+        changes, self._changes = self._changes, collections.deque()
         return functools.partial(self._ext_flush, changes)
 
     def _query_changes(self, subscription, event_ids, t_from, t_to,
@@ -180,9 +213,6 @@ class OrderedDb:
                                   t_to, source_t_from, source_t_to, payload,
                                   unique_types, max_results)
 
-    def _ext_open_db(self):
-        return self._env.open_db(bytes(self._name, encoding='utf-8'))
-
     def _ext_query(self, subscription, event_ids, t_from, t_to,
                    source_t_from, source_t_to, payload, order,
                    unique_types, max_results):
@@ -203,37 +233,37 @@ class OrderedDb:
         return list(events)
 
     def _ext_query_events(self, t_from, t_to, order):
-        from_key = (encoder.encode_timestamp_id((t_from, 0))
-                    if t_from is not None else None)
-        to_key = (encoder.encode_timestamp_id((t_to.add(1e6), 0))
-                  if t_to is not None else None)
+        if not t_from:
+            t_from = common.Timestamp(s=-(1 << 63), us=0)
+        from_key = self._partition_id, t_from, 0
+        from_key = encoder.encode_uint_timestamp_uint(from_key)
 
-        with self._env.begin(db=self._db, buffers=True) as txn:
+        if not t_to:
+            t_to = common.Timestamp(s=(1 << 63) - 1, us=int(1e6))
+        to_key = self._partition_id, t_to, ((1 << 64) - 1)
+        to_key = encoder.encode_uint_timestamp_uint(to_key)
+
+        with self._env.begin(db=self._data_db, buffers=True) as txn:
             cursor = txn.cursor()
 
             if order == common.Order.DESCENDING:
                 start_key, stop_key = to_key, from_key
 
-                if (start_key is not None and cursor.set_range(start_key)):
+                if cursor.set_range(start_key):
                     more = cursor.prev()
                 else:
                     more = cursor.last()
 
-                while more and (stop_key is None or
-                                stop_key <= bytes(cursor.key())):
+                while more and stop_key <= bytes(cursor.key()):
                     yield encoder.decode_event(cursor.value())
                     more = cursor.prev()
 
             elif order == common.Order.ASCENDING:
                 start_key, stop_key = from_key, to_key
 
-                if start_key is not None:
-                    more = cursor.set_range(start_key)
-                else:
-                    more = cursor.first()
+                more = cursor.set_range(start_key)
 
-                while more and (stop_key is None or
-                                bytes(cursor.key()) < stop_key):
+                while more and bytes(cursor.key()) < stop_key:
                     yield encoder.decode_event(cursor.value())
                     more = cursor.next()
 
@@ -241,40 +271,56 @@ class OrderedDb:
                 raise ValueError('unsupported order')
 
     def _ext_flush(self, changes, parent, now):
-        with self._env.begin(db=self._db, parent=parent, write=True) as txn:
-            stat = txn.stat(self._db)
+        with self._env.begin(db=self._count_db,
+                             parent=parent,
+                             buffers=True) as txn:
+            value = txn.get(encoder.encode_uint(self._partition_id))
+            entries_count = encoder.decode_uint(value) if value else 0
 
-            for key, value in changes:
-                # TODO: maybe call put with append=True
-                txn.put(encoder.encode_timestamp_id(key),
-                        encoder.encode_event(value))
+        with self._env.begin(db=self._data_db,
+                             parent=parent,
+                             write=True) as txn:
+            stat = txn.stat(self._data_db)
+
+            for timestamp, event in changes:
+                key = self._partition_id, timestamp, event.event_id.instance
+                txn.put(encoder.encode_uint_timestamp_uint(key),
+                        encoder.encode_event(event))
 
             if not self._limit:
                 return
 
+            timestamp = common.Timestamp(s=-(1 << 63), us=0)
+            start_key = self._partition_id, timestamp, 0
+            start_key = encoder.encode_uint_timestamp_uint(start_key)
+            stop_key = (self._partition_id + 1), timestamp, 0
+            stop_key = encoder.encode_uint_timestamp_uint(stop_key)
+
             min_entries = self._limit.get('min_entries', 0)
-            entries = stat['entries'] + len(changes)
+            entries_count += len(changes)
             cursor = txn.cursor()
-            more = cursor.first()
+            more = cursor.set_range(start_key)
 
             if 'max_entries' in self._limit:
                 max_entries = self._limit['max_entries']
 
                 while (more and
-                        entries > min_entries and
-                        entries > max_entries):
+                        entries_count > min_entries and
+                        entries_count > max_entries and
+                        bytes(cursor.key()) < stop_key):
                     more = cursor.delete()
-                    entries -= 1
+                    entries_count -= 1
 
             if 'duration' in self._limit:
                 duration = self._limit['duration']
-                stop_key = encoder.encode_timestamp_id((now.add(-duration), 0))
+                duration_key = self._partition_id, now.add(-duration), 0
+                duration_key = encoder.encode_uint_timestamp_uint(duration_key)
 
                 while (more and
-                        entries > min_entries and
-                        bytes(cursor.key()) < stop_key):
+                        entries_count > min_entries and
+                        bytes(cursor.key()) < duration_key):
                     more = cursor.delete()
-                    entries -= 1
+                    entries_count -= 1
 
             if 'size' in self._limit and stat['entries']:
                 total_size = stat['psize'] * (stat['branch_pages'] +
@@ -284,10 +330,17 @@ class OrderedDb:
                 max_entries = int(self._limit['size'] / entry_size)
 
                 while (more and
-                        entries > min_entries and
-                        entries > max_entries):
+                        entries_count > min_entries and
+                        entries_count > max_entries and
+                        bytes(cursor.key()) < stop_key):
                     more = cursor.delete()
-                    entries -= 1
+                    entries_count -= 1
+
+        with self._env.begin(db=self._count_db,
+                             parent=parent,
+                             write=True) as txn:
+            txn.put(encoder.encode_uint(self._partition_id),
+                    encoder.encode_uint(entries_count))
 
 
 def _filter_events(events, subscription, event_ids, t_from, t_to,

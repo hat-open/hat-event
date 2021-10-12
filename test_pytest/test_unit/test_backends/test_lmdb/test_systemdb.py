@@ -51,73 +51,65 @@ def flush(executor, env):
 
 
 async def test_create_empty(executor, env, flush):
-    name = 'name'
     server_id = 123
     db = await hat.event.server.backends.lmdb.systemdb.create(
         executor=executor,
         env=env,
-        name=name,
         server_id=server_id)
 
-    assert db.data == common.SystemData(server_id=server_id,
-                                        last_instance_id=None,
-                                        last_timestamp=None)
+    assert db.server_id == server_id
+    assert db.last_instance_id is None
+    assert db.last_timestamp is None
 
     await flush(db)
 
     db = await hat.event.server.backends.lmdb.systemdb.create(
         executor=executor,
         env=env,
-        name=name,
         server_id=server_id)
 
-    assert db.data == common.SystemData(server_id=server_id,
-                                        last_instance_id=None,
-                                        last_timestamp=None)
+    assert db.server_id == server_id
+    assert db.last_instance_id is None
+    assert db.last_timestamp is None
 
 
 async def test_change(executor, env, flush):
-    name = 'name'
     server_id = 123
     db = await hat.event.server.backends.lmdb.systemdb.create(
         executor=executor,
         env=env,
-        name=name,
         server_id=server_id)
 
     await flush(db)
 
-    assert db.data == common.SystemData(server_id=server_id,
-                                        last_instance_id=None,
-                                        last_timestamp=None)
+    assert db.server_id == server_id
+    assert db.last_instance_id is None
+    assert db.last_timestamp is None
 
     t = common.now()
     db.change(123, t)
 
-    assert db.data == common.SystemData(server_id=server_id,
-                                        last_instance_id=123,
-                                        last_timestamp=t)
+    assert db.server_id == server_id
+    assert db.last_instance_id == 123
+    assert db.last_timestamp == t
 
     await flush(db)
 
     db = await hat.event.server.backends.lmdb.systemdb.create(
         executor=executor,
         env=env,
-        name=name,
         server_id=server_id)
 
-    assert db.data == common.SystemData(server_id=server_id,
-                                        last_instance_id=123,
-                                        last_timestamp=t)
+    assert db.server_id == server_id
+    assert db.last_instance_id == 123
+    assert db.last_timestamp == t
 
 
 async def test_invalid_server_id(executor, env, flush):
-    name = 'name'
     server_id = 123
     db = await hat.event.server.backends.lmdb.systemdb.create(
         executor=executor,
         env=env,
-        name=name,
         server_id=server_id)
 
     await flush(db)
@@ -126,5 +118,4 @@ async def test_invalid_server_id(executor, env, flush):
         await hat.event.server.backends.lmdb.systemdb.create(
             executor=executor,
             env=env,
-            name=name,
             server_id=server_id + 1)

@@ -9,20 +9,37 @@ from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
+db_count = 1
+db_name = b'latest'
+
+
 async def create(executor: aio.Executor,
                  env: lmdb.Environment,
-                 name: str,
                  subscription: common.Subscription,
                  conditions: Conditions
                  ) -> 'LatestDb':
+    return await executor(_ext_create, env, subscription, conditions)
+
+
+def _ext_create(env, subscription, conditions):
     db = LatestDb()
     db._env = env
-    db._name = name
     db._subscription = subscription
     db._conditions = conditions
     db._changes = {}
-    db._db = await executor(db._ext_open_db)
-    db._events = await executor(db._ext_get_events)
+
+    db._db = env.open_db(db_name)
+
+    db._events = {}
+    with env.begin(db=db._db, buffers=True) as txn:
+        for _, value in txn.cursor():
+            event = encoder.decode_event(value)
+            if not subscription.matches(event.event_type):
+                continue
+            if not conditions.matches(event):
+                continue
+            db._events[event.event_type] = event
+
     return db
 
 
@@ -62,24 +79,8 @@ class LatestDb:
                     yield event
 
     def create_ext_flush(self) -> common.ExtFlushCb:
-        changes = self._changes
-        self._changes = {}
+        changes, self._changes = self._changes, {}
         return functools.partial(self._ext_flush, changes)
-
-    def _ext_open_db(self):
-        return self._env.open_db(bytes(self._name, encoding='utf-8'))
-
-    def _ext_get_events(self):
-        events = {}
-        with self._env.begin(db=self._db, buffers=True) as txn:
-            for _, value in txn.cursor():
-                event = encoder.decode_event(value)
-                if not self._subscription.matches(event.event_type):
-                    continue
-                if not self._conditions.matches(event):
-                    continue
-                events[event.event_type] = event
-        return events
 
     def _ext_flush(self, changes, parent, now):
         with self._env.begin(db=self._db, parent=parent, write=True) as txn:

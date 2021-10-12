@@ -70,13 +70,11 @@ def create_event():
 
 
 async def test_create_empty(executor, env):
-    name = 'name'
     subscription = common.Subscription([])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions)
 
@@ -86,13 +84,11 @@ async def test_create_empty(executor, env):
 
 
 async def test_add(executor, env, flush, create_event):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions)
 
@@ -122,7 +118,6 @@ async def test_add(executor, env, flush, create_event):
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions)
 
@@ -131,13 +126,11 @@ async def test_add(executor, env, flush, create_event):
 
 
 async def test_query(executor, env, flush, create_event):
-    name = 'name'
     subscription = common.Subscription([('a',), ('b',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions)
 
@@ -169,14 +162,12 @@ async def test_query(executor, env, flush, create_event):
 
 
 async def test_subscription_change(executor, env, flush, create_event):
-    name = 'name'
     subscription1 = common.Subscription([('a',)])
     subscription2 = common.Subscription([('b',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription1,
         conditions=conditions)
 
@@ -188,7 +179,6 @@ async def test_subscription_change(executor, env, flush, create_event):
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription1,
         conditions=conditions)
 
@@ -198,7 +188,6 @@ async def test_subscription_change(executor, env, flush, create_event):
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription2,
         conditions=conditions)
 
@@ -207,7 +196,6 @@ async def test_subscription_change(executor, env, flush, create_event):
 
 
 async def test_conditions_change(executor, env, flush, create_event):
-    name = 'name'
     subscription = common.Subscription([('*',)])
     conditions1 = hat.event.server.backends.lmdb.conditions.Conditions([])
     conditions2 = hat.event.server.backends.lmdb.conditions.Conditions([{
@@ -216,7 +204,6 @@ async def test_conditions_change(executor, env, flush, create_event):
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions1)
 
@@ -228,7 +215,6 @@ async def test_conditions_change(executor, env, flush, create_event):
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions1)
 
@@ -238,7 +224,6 @@ async def test_conditions_change(executor, env, flush, create_event):
     db = await hat.event.server.backends.lmdb.latestdb.create(
         executor=executor,
         env=env,
-        name=name,
         subscription=subscription,
         conditions=conditions2)
 
