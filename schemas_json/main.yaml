@@ -7,7 +7,6 @@ type: object
 required:
     - type
     - log
-    - monitor
     - backend_engine
     - module_engine
     - communication

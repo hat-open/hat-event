@@ -73,25 +73,29 @@ async def async_main(conf: json.Data):
     async_group.spawn(aio.call_on_cancel, asyncio.sleep, 0.1)
 
     try:
-        monitor = await hat.monitor.client.connect(conf['monitor'])
-        _bind_resource(async_group, monitor)
-
         backend_engine = await hat.event.server.backend_engine.create(
             conf['backend_engine'])
         _bind_resource(async_group, backend_engine)
 
-        component = hat.monitor.client.Component(monitor, run, conf,
-                                                 backend_engine)
-        component.set_enabled(True)
-        _bind_resource(async_group, component)
+        if 'monitor' in conf:
+            monitor = await hat.monitor.client.connect(conf['monitor'])
+            _bind_resource(async_group, monitor)
 
-        await async_group.wait_closing()
+            component = hat.monitor.client.Component(monitor, run, conf,
+                                                     backend_engine)
+            component.set_enabled(True)
+            _bind_resource(async_group, component)
+
+            await async_group.wait_closing()
+
+        else:
+            await async_group.spawn(run, None, conf, backend_engine)
 
     finally:
         await aio.uncancellable(async_group.async_close())
 
 
-async def run(component: hat.monitor.client.Component,
+async def run(component: typing.Optional[hat.monitor.client.Component],
               conf: json.Data,
               backend_engine: hat.event.server.backend_engine.BackendEngine):
     """Run monitor component"""
