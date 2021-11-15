@@ -1,6 +1,4 @@
 from pathlib import Path
-import subprocess
-import sys
 
 from hat import json
 from hat import sbs
@@ -32,8 +30,8 @@ schemas_sbs_dir = Path('schemas_sbs')
 build_py_dir = build_dir / 'py'
 build_docs_dir = build_dir / 'docs'
 
-json_schema_repo_path = src_py_dir / 'hat/event/json_schema_repo.json'
-sbs_repo_path = src_py_dir / 'hat/event/sbs_repo.json'
+json_schema_repo_path = src_py_dir / 'hat/event/common/json_schema_repo.json'
+sbs_repo_path = src_py_dir / 'hat/event/common/sbs_repo.json'
 
 
 def task_clean_all():

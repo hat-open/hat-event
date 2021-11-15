@@ -97,7 +97,7 @@ class BackendEngine(aio.Resource):
                              source_timestamp=process_event.source_timestamp,
                              payload=process_event.payload)
                 for process_event in process_events]
-        return self._register_cb(process_events)
+        return self._register_cb(list(process_events))
 
     async def query(self, data):
         if not self._query_cb:

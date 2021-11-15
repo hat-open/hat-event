@@ -171,4 +171,4 @@ class ModuleEngine(aio.Resource):
 
                 events = new_events
 
-        return list(all_events)
+        return all_events

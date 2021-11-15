@@ -38,7 +38,7 @@ class BackendEngine(aio.Resource):
         return await self._backend.get_last_event_id(self._server_id)
 
     async def register(self,
-                       process_events: typing.List[common.ProcessEvent]
+                       process_events: typing.Iterable[common.ProcessEvent]
                        ) -> typing.List[typing.Optional[common.Event]]:
         """Register events"""
         now = common.now()
