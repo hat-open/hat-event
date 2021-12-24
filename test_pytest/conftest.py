@@ -1,5 +1,4 @@
 from pathlib import Path
-import asyncio
 import collections
 import contextlib
 import cProfile
