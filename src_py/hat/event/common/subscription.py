@@ -1,4 +1,5 @@
 import collections
+import functools
 import typing
 
 from hat.event.common.data import EventType
@@ -50,10 +51,15 @@ def matches_query_type(event_type: EventType,
 class Subscription:
     """Subscription defined by query event types"""
 
-    def __init__(self, query_types: typing.Iterable[EventType]):
+    def __init__(self,
+                 query_types: typing.Iterable[EventType],
+                 cache_maxsize: typing.Optional[int] = 0):
         self._root = False, {}
         for query_type in query_types:
             self._root = _add_query_type(self._root, query_type)
+        if cache_maxsize is None or cache_maxsize > 0:
+            self.matches = functools.lru_cache(
+                maxsize=cache_maxsize)(self.matches)
 
     def get_query_types(self) -> typing.Iterable[EventType]:
         """Calculate sanitized query event types"""
