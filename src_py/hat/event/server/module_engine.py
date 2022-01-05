@@ -143,32 +143,38 @@ class ModuleEngine(aio.Resource):
 
     async def _process_sessions(self, events):
         all_events = collections.deque()
+        module_sessions = collections.deque()
 
-        async with self._async_group.create_subgroup() as subgroup:
-            module_sessions = collections.deque()
+        try:
             for module in self._modules:
-                session = await subgroup.spawn(module.create_session)
+                session = await module.create_session()
                 module_sessions.append((module, session))
-
-                subgroup.spawn(aio.call_on_cancel, session.async_close)
-                subgroup.spawn(aio.call_on_done, session.wait_closing(),
-                               subgroup.close)
 
             while events:
                 all_events.extend(events)
                 new_events = collections.deque()
 
                 for module, session in module_sessions:
+                    if not session.is_open:
+                        continue
                     filtered_events = [
                         event for event in events
                         if module.subscription.matches(event.event_type)]
                     if not filtered_events:
                         continue
 
-                    result = await subgroup.spawn(session.process,
-                                                  filtered_events)
+                    result = await session.process(filtered_events)
                     new_events.extend(result)
 
                 events = new_events
 
-        return all_events
+            return all_events
+
+        finally:
+            await aio.uncancellable(_async_close_resources(
+                session for _, session in module_sessions))
+
+
+async def _async_close_resources(resources):
+    for resource in resources:
+        await resource.async_close()
