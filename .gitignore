@@ -1,6 +1,9 @@
 /.doit.db
+/.peru
 /build
+/deps
 /src_py/**/json_schema_repo.json
 /src_py/**/sbs_repo.json
+/src_py/hat/event/common/_csubscription.*
 /test_pytest/.coverage
 __pycache__

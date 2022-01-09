@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 from hat import json
 from hat import sbs
@@ -10,6 +11,9 @@ from hat.doit.docs import (SphinxOutputType,
                            build_sphinx,
                            build_pdoc)
 
+from .csubscription import *  # NOQA
+from . import csubscription
+
 
 __all__ = ['task_clean_all',
            'task_build',
@@ -17,7 +21,10 @@ __all__ = ['task_clean_all',
            'task_test',
            'task_docs',
            'task_json_schema_repo',
-           'task_sbs_repo']
+           'task_sbs_repo',
+           'task_deps',
+           'task_format',
+           *csubscription.__all__]
 
 
 build_dir = Path('build')
@@ -57,7 +64,8 @@ def task_build():
 
     return {'actions': [build],
             'task_dep': ['json_schema_repo',
-                         'sbs_repo']}
+                         'sbs_repo',
+                         'csubscription']}
 
 
 def task_check():
@@ -71,7 +79,8 @@ def task_test():
     return {'actions': [lambda args: run_pytest(pytest_dir, *(args or []))],
             'pos_arg': 'args',
             'task_dep': ['json_schema_repo',
-                         'sbs_repo']}
+                         'sbs_repo',
+                         'csubscription']}
 
 
 def task_docs():
@@ -82,7 +91,8 @@ def task_docs():
                         (build_pdoc, ['hat.event',
                                       build_docs_dir / 'py_api'])],
             'task_dep': ['json_schema_repo',
-                         'sbs_repo']}
+                         'sbs_repo',
+                         'csubscription']}
 
 
 def task_json_schema_repo():
@@ -111,3 +121,18 @@ def task_sbs_repo():
     return {'actions': [generate],
             'file_dep': src_paths,
             'targets': [sbs_repo_path]}
+
+
+def task_deps():
+    """Dependencies"""
+    return {'actions': [f'{sys.executable} -m peru sync']}
+
+
+def task_format():
+    """Format"""
+    files = [*Path('src_c').rglob('*.c'),
+             *Path('src_c').rglob('*.h')]
+    for f in files:
+        yield {'name': str(f),
+               'actions': [f'clang-format -style=file -i {f}'],
+               'file_dep': [f]}

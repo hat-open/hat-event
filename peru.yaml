@@ -1,0 +1,6 @@
+imports:
+    hat-util: deps/hat-util
+
+git module hat-util:
+    url: https://github.com/hat-open/hat-util
+    pick: src_c/hat
