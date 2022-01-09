@@ -1,6 +1,13 @@
 import pytest
 
 from hat.event.server import common
+import hat.event.common._pysubscription
+import hat.event.common._csubscription
+
+
+subscription_classes = [hat.event.common._pysubscription.Subscription,
+                        # hat.event.common._csubscription.Subscription
+                        ]
 
 
 @pytest.mark.parametrize("event_type, query_type, is_match", [
@@ -129,6 +136,7 @@ def test_matches_query_type(event_type, query_type, is_match):
     assert result is is_match
 
 
+@pytest.mark.parametrize("Subscription", subscription_classes)
 @pytest.mark.parametrize("query_types, sanitized", [
     ([],
      []),
@@ -148,13 +156,14 @@ def test_matches_query_type(event_type, query_type, is_match):
     ([('a', '*'), ('b',), ('c', '?'), ('c', '*')],
      [('a', '*'), ('b',), ('c', '*')]),
 ])
-def test_subscription_get_query_types(query_types, sanitized):
-    subscription = common.Subscription(query_types)
+def test_subscription_get_query_types(Subscription, query_types, sanitized):
+    subscription = Subscription(query_types)
     result = list(subscription.get_query_types())
     assert len(result) == len(sanitized)
     assert {tuple(i) for i in result} == {tuple(i) for i in sanitized}
 
 
+@pytest.mark.parametrize("Subscription", subscription_classes)
 @pytest.mark.parametrize("query_types, matching, not_matching", [
     ([],
      [],
@@ -176,14 +185,16 @@ def test_subscription_get_query_types(query_types, sanitized):
      [('a',), ('a', 'b')],
      [(), ('a', 'b', 'c'), ('b',)]),
 ])
-def test_subscription_matches(query_types, matching, not_matching):
-    subscription = common.Subscription(query_types)
+def test_subscription_matches(Subscription, query_types, matching,
+                              not_matching):
+    subscription = Subscription(query_types)
     for i in matching:
         assert subscription.matches(i) is True
     for i in not_matching:
         assert subscription.matches(i) is False
 
 
+@pytest.mark.parametrize("Subscription", subscription_classes)
 @pytest.mark.parametrize("query_types, union", [
     ([],
      []),
@@ -200,13 +211,14 @@ def test_subscription_matches(query_types, matching, not_matching):
     ([[('a', 'b')], [('a', 'c')]],
      [('a', 'b'), ('a', 'c')]),
 ])
-def test_subscription_union(query_types, union):
-    subscription = common.Subscription([]).union(*(common.Subscription(i)
-                                                   for i in query_types))
+def test_subscription_union(Subscription, query_types, union):
+    subscription = Subscription([]).union(*(Subscription(i)
+                                            for i in query_types))
     result = subscription.get_query_types()
     assert set(result) == set(union)
 
 
+@pytest.mark.parametrize("Subscription", subscription_classes)
 @pytest.mark.parametrize("first, second, isdisjoint", [
     ([],
      [],
@@ -236,8 +248,8 @@ def test_subscription_union(query_types, union):
      [('*',)],
      False),
 ])
-def test_subscription_isdisjoint(first, second, isdisjoint):
-    first = common.Subscription(first)
-    second = common.Subscription(second)
+def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
+    first = Subscription(first)
+    second = Subscription(second)
     result = first.isdisjoint(second)
     assert result is isdisjoint

@@ -20,33 +20,162 @@ typedef struct {
 // clang-format on
 
 
+static void free_children(node_t *node) {
+    if (!node->children)
+        return;
+
+    node_t *child;
+    hat_ht_iter_t iter;
+    hat_ht_iter_init(node->children, &iter);
+
+    while (!HAT_HT_ITER_IS_END(iter)) {
+        hat_ht_iter_value(&iter, (void **)&child);
+        free_children(child);
+        PyMem_Free(child);
+        hat_ht_iter_next(&iter);
+    }
+
+    hat_ht_destroy(node->children);
+    node->children = NULL;
+}
+
+
 static int add_query_type(node_t *node, PyObject *query_type_iter) {
+    if (node->children && hat_ht_get(node->children, (uint8_t *)"*", 1))
+        return 0;
 
-    // TODO
+    PyObject *subtype = PyIter_Next(query_type_iter);
+    if (!subtype) {
+        node->is_leaf = true;
+        return 0;
+    }
 
-    return 1;
+    if (!PyUnicode_Check(subtype)) {
+        Py_DECREF(subtype);
+        PyErr_SetString(PyExc_ValueError, "invalid subtype type");
+        return 1;
+    }
+
+    Py_ssize_t key_size;
+    const char *key = PyUnicode_AsUTF8AndSize(subtype, &key_size);
+    if (!key) {
+        Py_DECREF(subtype);
+        PyErr_SetString(PyExc_RuntimeError, "conversion error");
+        return 1;
+    }
+
+    if (strcmp(key, "*") == 0) {
+        PyObject *next = PyIter_Next(query_type_iter);
+        if (next) {
+            Py_DECREF(next);
+            Py_DECREF(subtype);
+            PyErr_SetString(PyExc_ValueError, "invalid query event type");
+            return 1;
+        }
+        free_children(node);
+    }
+
+    if (!node->children) {
+        node->children = hat_ht_create(&py_allocator, 32);
+        if (!node->children) {
+            Py_DECREF(subtype);
+            PyErr_SetString(PyExc_RuntimeError, "internal error");
+            return 1;
+        }
+    }
+
+    node_t *child = hat_ht_get(node->children, (uint8_t *)key, key_size);
+    if (!child) {
+        child = PyMem_Malloc(sizeof(node_t));
+        if (!child) {
+            Py_DECREF(subtype);
+            PyErr_SetString(PyExc_RuntimeError, "allocation error");
+            return 1;
+        }
+
+        *child = (node_t){.is_leaf = false, .children = NULL};
+        if (hat_ht_set(node->children, (uint8_t *)key, key_size, child)) {
+            PyMem_Free(child);
+            Py_DECREF(subtype);
+            PyErr_SetString(PyExc_RuntimeError, "internal error");
+            return 1;
+        }
+    }
+    Py_DECREF(subtype);
+
+    return add_query_type(child, query_type_iter);
 }
 
 
 static int resize_children(node_t *node) {
+    if (!node->children)
+        return 0;
 
-    // TODO
+    node_t *child;
+    hat_ht_iter_t iter;
+    hat_ht_iter_init(node->children, &iter);
 
-    return 1;
-}
+    while (!HAT_HT_ITER_IS_END(iter)) {
+        hat_ht_iter_value(&iter, (void **)&child);
+        if (resize_children(child))
+            return 1;
+        hat_ht_iter_next(&iter);
+    }
 
-
-static void free_children(node_t *node) {
-
-    // TODO
+    return hat_ht_resize(node->children, hat_ht_count(node->children));
 }
 
 
 static int get_query_types(node_t *node, PyObject *prefix, PyObject *deque) {
+    if (node->is_leaf &&
+        !(node->children && hat_ht_get(node->children, (uint8_t *)"*", 1))) {
+        PyObject *result = PyObject_CallMethod(deque, "append", "(O)", prefix);
+        if (!result)
+            return 1;
+        Py_DECREF(result);
+    }
 
-    // TODO
+    if (!node->children)
+        return 0;
 
-    return 1;
+    hat_ht_iter_t iter;
+    hat_ht_iter_init(node->children, &iter);
+
+    while (!HAT_HT_ITER_IS_END(iter)) {
+        size_t key_size;
+        uint8_t *key;
+        hat_ht_iter_key(&iter, &key, &key_size);
+
+        node_t *child;
+        hat_ht_iter_value(&iter, (void **)&child);
+
+        Py_ssize_t child_prefix_len = PyTuple_GET_SIZE(prefix) + 1;
+        PyObject *child_prefix = PyTuple_New(child_prefix_len);
+        if (!child_prefix)
+            return 1;
+
+        PyObject *segment;
+        for (Py_ssize_t i = 0; i < child_prefix_len - 1; ++i) {
+            segment = PyTuple_GET_ITEM(prefix, i);
+            Py_INCREF(segment);
+            PyTuple_SET_ITEM(child_prefix, i, segment);
+        }
+        segment = PyUnicode_DecodeUTF8((char *)key, key_size, NULL);
+        if (!segment) {
+            Py_DECREF(child_prefix);
+            return 1;
+        }
+        PyTuple_SET_ITEM(child_prefix, child_prefix_len - 1, segment);
+
+        int err = get_query_types(child, child_prefix, deque);
+        Py_DECREF(child_prefix);
+        if (err)
+            return 1;
+
+        hat_ht_iter_next(&iter);
+    }
+
+    return 0;
 }
 
 
@@ -63,6 +192,7 @@ static int merge_node(node_t *node, node_t *other) {
 
     // TODO
 
+    PyErr_SetString(PyExc_NotImplementedError, "");
     return 1;
 }
 
@@ -300,7 +430,7 @@ PyMODINIT_FUNC PyInit__csubscription() {
         return NULL;
 
     Py_INCREF(&Subscription_Type);
-    if (PyModule_AddObject(module, "Connection",
+    if (PyModule_AddObject(module, "Subscription",
                            (PyObject *)&Subscription_Type)) {
         Py_DECREF(module);
         return NULL;
