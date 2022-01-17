@@ -131,13 +131,13 @@ async def test_client_connect_disconnect(comm_address, comm_conf,
 ])
 async def test_subscribe(comm_address, comm_conf, subscriptions):
     subscription = common.Subscription(subscriptions)
-    event_types = [[],
-                   ['a'],
-                   ['b'],
-                   ['a', 'a'],
-                   ['a', 'b'],
-                   ['a', 'b', 'c'],
-                   ['', '', '']]
+    event_types = [(),
+                   ('a',),
+                   ('b',),
+                   ('a', 'a'),
+                   ('a', 'b'),
+                   ('a', 'b', 'c'),
+                   ('', '', '')]
     filtered_event_types = [event_type for event_type in event_types
                             if subscription.matches(event_type)]
     events = [

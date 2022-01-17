@@ -9,10 +9,9 @@ except ImportError:
     _csubscription = None
 
 
-# Subscription: typing.Type = (_csubscription.Subscription
-#                              if _csubscription
-#                              else _pysubscription.Subscription)
-Subscription: typing.Type = _pysubscription.Subscription
+Subscription: typing.Type = (_csubscription.Subscription
+                             if _csubscription
+                             else _pysubscription.Subscription)
 """Default subscription implementation"""
 
 

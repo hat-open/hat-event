@@ -43,9 +43,11 @@ sbs_repo_path = src_py_dir / 'hat/event/common/sbs_repo.json'
 
 def task_clean_all():
     """Clean all"""
-    return {'actions': [(common.rm_rf, [build_dir,
-                                        json_schema_repo_path,
-                                        sbs_repo_path])]}
+    return {'actions': [(common.rm_rf, [
+        build_dir,
+        json_schema_repo_path,
+        sbs_repo_path,
+        *(src_py_dir / 'hat/event/common').glob('_csubscription.*')])]}
 
 
 def task_build():

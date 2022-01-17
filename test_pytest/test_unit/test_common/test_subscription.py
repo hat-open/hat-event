@@ -6,8 +6,7 @@ import hat.event.common._csubscription
 
 
 subscription_classes = [hat.event.common._pysubscription.Subscription,
-                        # hat.event.common._csubscription.Subscription
-                        ]
+                        hat.event.common._csubscription.Subscription]
 
 
 @pytest.mark.parametrize("event_type, query_type, is_match", [
