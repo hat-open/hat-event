@@ -12,9 +12,6 @@ import hat.event.client
 import hat.event.server.module_engine
 
 
-pytestmark = pytest.mark.asyncio
-
-
 @pytest.fixture
 def create_module():
     module_names = []

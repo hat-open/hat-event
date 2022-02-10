@@ -6,9 +6,6 @@ from hat.event.server.backends.lmdb import common
 import hat.event.server.backends.lmdb.backend
 
 
-pytestmark = pytest.mark.asyncio
-
-
 @pytest.fixture
 def db_path(tmp_path):
     return tmp_path / 'db'

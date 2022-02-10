@@ -20,7 +20,6 @@ async def client(server):
     await client.async_close()
 
 
-@pytest.mark.asyncio
 async def test_dummy(client):
     result = await client.query(common.QueryData(event_types=[('*',)]))
     assert result == []

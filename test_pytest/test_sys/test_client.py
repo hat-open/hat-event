@@ -5,7 +5,6 @@ from hat.event import common
 import hat.event.client
 
 
-@pytest.mark.asyncio
 async def test_connect(create_event_server):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
     modules_conf = []
@@ -18,7 +17,6 @@ async def test_connect(create_event_server):
         await client.async_close()
 
 
-@pytest.mark.asyncio
 async def test_register(create_event_server):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
     modules_conf = []
@@ -47,7 +45,6 @@ async def test_register(create_event_server):
         await client.async_close()
 
 
-@pytest.mark.asyncio
 async def test_register_with_response(create_event_server):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
     modules_conf = [{'module': 'test_sys.modules.copier',
@@ -77,7 +74,6 @@ async def test_register_with_response(create_event_server):
         await client.async_close()
 
 
-@pytest.mark.asyncio
 async def test_subscribe(create_event_server):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
     modules_conf = []
@@ -102,7 +98,6 @@ async def test_subscribe(create_event_server):
         await client.async_close()
 
 
-@pytest.mark.asyncio
 async def test_query(tmp_path, create_event_server):
     backend_conf = {'module': 'hat.event.server.backends.sqlite',
                     'db_path': str(tmp_path / 'event.db'),
@@ -131,7 +126,6 @@ async def test_query(tmp_path, create_event_server):
 
 
 @pytest.mark.parametrize("client_count", [1, 2, 5])
-@pytest.mark.asyncio
 async def test_multiple_clients(create_event_server, client_count):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
     modules_conf = []
@@ -158,7 +152,6 @@ async def test_multiple_clients(create_event_server, client_count):
 
 
 @pytest.mark.parametrize("client_count", [1, 2, 5])
-@pytest.mark.asyncio
 async def test_multiple_clients_comm_event(create_event_server, client_count):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
     modules_conf = []

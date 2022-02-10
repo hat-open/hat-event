@@ -27,7 +27,6 @@ def mock_module_conf(remote_address):
             'address': remote_address}
 
 
-@pytest.mark.asyncio
 async def test_create_module(create_event_server, remote_msgs,
                              mock_module_conf):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
@@ -45,7 +44,6 @@ async def test_create_module(create_event_server, remote_msgs,
     assert remote_msgs.empty()
 
 
-@pytest.mark.asyncio
 async def test_create_session(create_event_server, remote_msgs,
                               mock_module_conf):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}

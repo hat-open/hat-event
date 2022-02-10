@@ -4,9 +4,6 @@ from hat.event.server.registry import (EventTypeRegistryStorage,
                                        create_event_type_registry)
 
 
-pytestmark = pytest.mark.asyncio
-
-
 class MockEventTypeRegistryStorage(EventTypeRegistryStorage):
 
     def __init__(self, mappings):

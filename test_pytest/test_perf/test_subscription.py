@@ -80,6 +80,7 @@ def test_matches_with_cache(duration, Subscription, event_type_size,
     for event_type in event_types:
         subscription.matches(event_type)
 
+    event_types = get_event_types(event_type_size, matches_count)
     with duration(description):
         for event_type in event_types:
             subscription.matches(event_type)

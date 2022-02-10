@@ -4,9 +4,6 @@ from hat.event.server import common
 import hat.event.server.backends.dummy
 
 
-pytestmark = pytest.mark.asyncio
-
-
 async def test_create():
     conf = {'module': 'hat.event.server.backends.dummy'}
     backend = await hat.event.server.backends.dummy.create(conf)

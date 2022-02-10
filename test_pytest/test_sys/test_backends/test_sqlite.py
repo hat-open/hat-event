@@ -22,7 +22,6 @@ async def client(server):
     await client.async_close()
 
 
-@pytest.mark.asyncio
 async def test_empty(client):
     result = await client.query(common.QueryData(event_types=[('*',)]))
     assert len(result) == 1
@@ -31,7 +30,6 @@ async def test_empty(client):
 
 @pytest.mark.parametrize("register_count", [1, 2, 5])
 @pytest.mark.parametrize("register_size", [1, 2, 5])
-@pytest.mark.asyncio
 async def test_multiple_writes(client, register_count, register_size):
     for i in range(register_count):
         resp = await client.register_with_response(
@@ -48,7 +46,6 @@ async def test_multiple_writes(client, register_count, register_size):
     [common.EventPayloadType.JSON, {'a': [1, '2', None, True, False]}],
     [common.EventPayloadType.SBS, common.SbsData('a', 'b', b'xyz')]
 ])
-@pytest.mark.asyncio
 async def test_payload(client, payload_type, payload_data):
     resp = await client.register_with_response([common.RegisterEvent(
         ('a',), None, common.EventPayload(payload_type, payload_data))])

@@ -1,10 +1,5 @@
-import pytest
-
 from hat.event.server import common
 import hat.event.server.backends.memory
-
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_create():

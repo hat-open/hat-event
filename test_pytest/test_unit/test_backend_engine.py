@@ -10,9 +10,6 @@ from hat.event.server import common
 import hat.event.server.backend_engine
 
 
-pytestmark = pytest.mark.asyncio
-
-
 @pytest.fixture
 def backend_module_name():
     for i in itertools.count(1):

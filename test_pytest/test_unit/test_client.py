@@ -10,9 +10,6 @@ import hat.event.client
 import hat.monitor.common
 
 
-pytestmark = pytest.mark.asyncio
-
-
 @pytest.fixture
 def patch_reconnect_delay(monkeypatch):
     monkeypatch.setattr(hat.event.client, 'reconnect_delay', 0.01)

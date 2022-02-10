@@ -8,9 +8,6 @@ from hat.event.server.backends.lmdb import common
 import hat.event.server.backends.lmdb.systemdb
 
 
-pytestmark = pytest.mark.asyncio
-
-
 db_map_size = 1024 * 1024 * 1024
 db_max_dbs = 32
 

@@ -12,8 +12,6 @@ from hat import aio
 
 durations = collections.deque()
 
-loop = None
-
 
 def pytest_addoption(parser):
     parser.addoption("--perf",
@@ -22,8 +20,7 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    global loop
-    loop = aio.init_asyncio()
+    aio.init_asyncio()
     config.addinivalue_line("markers", "perf: mark performance test")
 
 
@@ -45,12 +42,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         description = i['description']
         dt = datetime.timedelta(seconds=i['dt'])
         terminalreporter.write(f"> {dt} [{identifier}] {description}\n")
-
-
-@pytest.fixture(scope='session')
-def event_loop():
-    yield loop
-    loop.close()
 
 
 @pytest.fixture

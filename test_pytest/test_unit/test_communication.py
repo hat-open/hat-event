@@ -9,9 +9,6 @@ import hat.event.client
 import hat.event.server.communication
 
 
-pytestmark = pytest.mark.asyncio
-
-
 @pytest.fixture
 def comm_port():
     return util.get_unused_tcp_port()
