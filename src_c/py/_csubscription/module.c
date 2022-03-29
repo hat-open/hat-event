@@ -239,8 +239,8 @@ static int merge_node(node_t *node, node_t *other) {
         }
     }
 
-
-    if (hat_ht_resize(node->children, hat_ht_count(node->children) + hat_ht_count(other->children))) {
+    if (hat_ht_resize(node->children, hat_ht_count(node->children) +
+                                          hat_ht_count(other->children))) {
         PyErr_SetString(PyExc_RuntimeError, "internal error");
         return 1;
     }

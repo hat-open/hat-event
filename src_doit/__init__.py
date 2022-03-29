@@ -62,7 +62,9 @@ def task_build():
             url='https://github.com/hat-open/hat-event',
             license=common.License.APACHE2,
             packages=['hat'],
-            console_scripts=['hat-event = hat.event.server.main:main'])
+            console_scripts=['hat-event = hat.event.server.main:main'],
+            py_versions=[common.target_py_version],
+            platform=common.target_platform)
 
     return {'actions': [build],
             'task_dep': ['json_schema_repo',
