@@ -1,9 +1,9 @@
 from pathlib import Path
 
-import sysconfig
-
 from hat.doit import common
 from hat.doit.c import (target_ext_suffix,
+                        get_py_cpp_flags,
+                        get_py_ld_flags,
                         CBuild)
 
 
@@ -51,27 +51,7 @@ def _cleanup():
 
 
 def _get_cpp_flags():
-    _, major, minor = common.target_py_version.value
-
-    if common.target_platform == common.local_platform:
-        if common.target_py_version == common.local_py_version:
-            include_path = sysconfig.get_path('include')
-            if include_path:
-                yield f'-I{include_path}'
-
-        elif common.local_platform == common.Platform.LINUX:
-            yield f'-I/usr/include/python{major}.{minor}'
-
-        else:
-            raise ValueError('unsupported version')
-
-    elif (common.local_platform, common.target_platform) == (
-            common.Platform.LINUX, common.Platform.WINDOWS):
-        yield f'-I/usr/x86_64-w64-mingw32/include/python{major}{minor}'
-
-    else:
-        raise ValueError('unsupported platform')
-
+    yield from get_py_cpp_flags()
     yield f"-I{deps_dir / 'hat-util/src_c'}"
     yield '-DMODULE_NAME="_csubscription"'
 
@@ -84,23 +64,7 @@ def _get_cc_flags():
 
 
 def _get_ld_flags():
-    _, major, minor = common.target_py_version.value
-
-    if common.target_platform == common.local_platform:
-        if common.local_platform == common.Platform.DARWIN:
-            stdlib_path = (Path(sysconfig.get_path('stdlib')) /
-                           f'config-{major}.{minor}-darwin')
-            yield f"-L{stdlib_path}"
-
-        elif common.local_platform == common.Platform.WINDOWS:
-            data_path = sysconfig.get_path('data')
-            yield f"-L{data_path}"
-
-    if common.target_platform == common.Platform.WINDOWS:
-        yield f"-lpython{major}{minor}"
-
-    elif common.target_platform == common.Platform.DARWIN:
-        yield f"-lpython{major}.{minor}"
+    yield from get_py_ld_flags()
 
 
 _build = CBuild(src_paths=[*(src_c_dir / 'py/_csubscription').rglob('*.c'),
