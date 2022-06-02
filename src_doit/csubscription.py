@@ -68,7 +68,7 @@ def _get_ld_flags():
 
 
 _build = CBuild(src_paths=[*(src_c_dir / 'py/_csubscription').rglob('*.c'),
-                           deps_dir / 'hat-util/src_c/hat/allocator.c',
+                           deps_dir / 'hat-util/src_c/hat/py_allocator.c',
                            deps_dir / 'hat-util/src_c/hat/ht.c'],
                 build_dir=(build_dir / 'csubscription' /
                            f'{common.target_platform.name.lower()}_'

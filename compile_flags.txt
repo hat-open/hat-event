@@ -1,2 +1,0 @@
--Ideps/hat-util/src_c
--I/usr/include/python3.10

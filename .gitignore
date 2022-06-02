@@ -1,6 +1,7 @@
 /.doit.db
 /.peru
 /build
+/compile_flags.txt
 /deps
 /src_py/**/json_schema_repo.json
 /src_py/**/sbs_repo.json
