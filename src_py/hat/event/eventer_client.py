@@ -1,18 +1,21 @@
-"""Library used by components for communication with Event Server
+"""Library used by components for communication with Event Server based on
+eventer protocol.
 
-This module provides low-level interface (connect/Client) and high-level
-interface (run_client) for communication with Event Server.
+This module provides low-level interface (connect/EventerClient) and high-level
+interface (run_eventer_client).
 
-:func:`connect` is used for establishing single chatter based connection
-with Event Server which is represented by :class:`Client`. Once connection
-is terminated (signaled with :meth:`Client.closed`), it is up to user to
-repeat :func:`connect` call and create new :class:`Client` instance, if
-additional communication with Event Server is required.
+:func:`connect` is used for establishing single eventer connection
+with Event Server which is represented by :class:`EventerClient`. Once
+connection is terminated (signaled with :meth:`EventerClient.closed`),
+it is up to user to repeat :func:`connect` call and create new
+:class:`EventerClient` instance, if additional communication with Event Server
+is required.
 
 Example of low-level interface usage::
 
-    client = await hat.event.client.connect('tcp+sbs://127.0.0.1:23012',
-                                            [['x', 'y', 'z']])
+    client = await hat.event.eventer_client.connect(
+        'tcp+sbs://127.0.0.1:23012',
+        [['x', 'y', 'z']])
 
     registered_events = await client.register_with_response([
         hat.event.common.RegisterEvent(
@@ -34,18 +37,19 @@ Example of low-level interface usage::
 
     await client.async_close()
 
-:func:`run_client` provides high-level interface for continuous communication
-with currenty active Event Server based on information obtained from Monitor
-Server. This function repeatedly tries to create active connection with
+:func:`run_eventer_client` provides high-level interface for continuous 
+communication with currenty active Event Server based on information obtained
+from Monitor Server.
+This function repeatedly tries to create active connection with
 Event Server. When this connection is created, users code is notified by
 calling `async_run_cb` callback. Once connection is closed, execution of
-`async_run_cb` is cancelled and :func:`run_client` repeats connection
+`async_run_cb` is cancelled and :func:`run_eventer_client` repeats connection
 estabishment process.
 
 Example of high-level interface usage::
 
     async def monitor_async_run(component):
-        await hat.event.client.run_client(
+        await hat.event.eventer_client.run_eventer_client(
             monitor_client=monitor,
             server_group='event servers',
             async_run_cb=event_async_run])
@@ -89,8 +93,8 @@ reconnect_delay: float = 0.5
 async def connect(address: str,
                   subscriptions: typing.List[common.EventType] = [],
                   **kwargs
-                  ) -> 'Client':
-    """Connect to event server
+                  ) -> 'EventerClient':
+    """Connect to eventer server
 
     For address format see `hat.chatter.connect` coroutine.
 
@@ -127,8 +131,8 @@ async def connect(address: str,
     return client
 
 
-class Client(aio.Resource):
-    """Event Server client
+class EventerClient(aio.Resource):
+    """Eventer client
 
     For creating new client see `connect` coroutine.
 
@@ -267,32 +271,33 @@ class Client(aio.Resource):
         f.set_result(events)
 
 
-async def run_client(monitor_client: hat.monitor.client.Client,
-                     server_group: str,
-                     async_run_cb: typing.Callable[[Client],
-                                                   typing.Awaitable[None]],
-                     subscriptions: typing.List[common.EventType] = []
-                     ) -> typing.Any:
+async def run_eventer_client(monitor_client: hat.monitor.client.Client,
+                             server_group: str,
+                             async_run_cb: typing.Callable[
+                                [EventerClient],
+                                typing.Awaitable[None]],
+                             subscriptions: typing.List[common.EventType] = []
+                             ) -> typing.Any:
     """Continuously communicate with currently active Event Server
 
     This function tries to establish active connection with Event Server
     within monitor component group `server_group`. Once this connection is
-    established, `async_run_cb` is called with currently active `Client`
+    established, `async_run_cb` is called with currently active `EventerClient`
     instance. Once connection to Event Server is closed or new active Event
     Server is detected, execution of `async_run_cb` is canceled. If new
     connection to Event Server is successfully established,
-    `async_run_cb` is called with new instance of `Client`.
+    `async_run_cb` is called with new instance of `EventerClient`.
 
     `async_run_cb` is called when:
-        * new active `Client` is created
+        * new active `EventerClient` is created
 
     `async_run_cb` execution is cancelled when:
-        * `run_client` finishes execution
+        * `run_eventer_client` finishes execution
         * connection to Event Server is closed
         * different active Event Server is detected from Monitor Server's list
           of components
 
-    `run_client` finishes execution when:
+    `run_eventer_client` finishes execution when:
         * connection to Monitor Server is closed
         * `async_run_cb` finishes execution (by returning value or raising
           exception, other than `asyncio.CancelledError`)
@@ -301,7 +306,7 @@ async def run_client(monitor_client: hat.monitor.client.Client,
     `async_run_cb`. If `async_run_cb` finishes by raising exception or if
     connection to Monitor Server is closed, ConnectionError is raised.
 
-    If execution of `run_client` is canceled while `async_run_cb` is
+    If execution of `run_eventer_client` is canceled while `async_run_cb` is
     running, connection to event server is closed after `async_run_cb`
     cancellation finishes.
 

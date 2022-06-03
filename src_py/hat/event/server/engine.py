@@ -1,4 +1,4 @@
-"""Module engine"""
+"""Engine"""
 
 import asyncio
 import collections
@@ -10,25 +10,28 @@ from hat import aio
 from hat import json
 from hat import util
 from hat.event.server import common
-import hat.event.server.backend_engine
+import hat.event.server.syncer_server
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
-async def create(conf: json.Data,
-                 backend_engine: hat.event.server.backend_engine.BackendEngine
-                 ) -> 'ModuleEngine':
-    """Create module engine
+async def create_engine(
+        conf: json.Data,
+        syncer_server: hat.event.server.syncer_server.SyncerServer,
+        backend: common.Backend
+        ) -> 'Engine':
+    """Create engine
 
     Args:
         conf: configuration defined by
-            ``hat-event://main.yaml#/definitions/module_engine``
-        backend_engine: backend engine
+            ``hat-event://main.yaml#/definitions/engine``
+        syncer_server: syncer server
+        backend: backend
 
     """
-    engine = ModuleEngine()
+    engine = Engine()
     engine._backend = backend_engine
     engine._async_group = aio.Group()
     engine._register_queue = aio.Queue()
@@ -55,7 +58,7 @@ async def create(conf: json.Data,
     return engine
 
 
-class ModuleEngine(aio.Resource):
+class Engine(aio.Resource):
 
     @property
     def async_group(self) -> aio.Group:
@@ -68,21 +71,6 @@ class ModuleEngine(aio.Resource):
                            ) -> util.RegisterCallbackHandle:
         """Register events callback"""
         return self._register_cbs.register(cb)
-
-    def create_process_event(self,
-                             source: common.Source,
-                             event: common.RegisterEvent
-                             ) -> common.ProcessEvent:
-        """Create process event"""
-        self._last_instance_id += 1
-        return common.ProcessEvent(
-            event_id=common.EventId(
-                server=self._server_id,
-                instance=self._last_instance_id),
-            source=source,
-            event_type=event.event_type,
-            source_timestamp=event.source_timestamp,
-            payload=event.payload)
 
     async def register(self,
                        source: common.Source,
@@ -178,3 +166,12 @@ class ModuleEngine(aio.Resource):
 async def _async_close_resources(resources):
     for resource in resources:
         await resource.async_close()
+
+
+# now = common.now()
+# events = [common.Event(event_id=process_event.event_id,
+#                        event_type=process_event.event_type,
+#                        timestamp=now,
+#                        source_timestamp=process_event.source_timestamp,
+#                        payload=process_event.payload)
+#           for process_event in process_events]

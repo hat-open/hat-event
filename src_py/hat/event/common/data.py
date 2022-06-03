@@ -79,6 +79,7 @@ class RegisterEvent(typing.NamedTuple):
 
 
 class QueryData(typing.NamedTuple):
+    # TODO query by server_id?
     event_ids: typing.Optional[typing.List[EventId]] = None
     event_types: typing.Optional[typing.List[EventType]] = None
     t_from: typing.Optional['Timestamp'] = None

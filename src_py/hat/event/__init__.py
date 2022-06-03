@@ -1,1 +1,1 @@
-"""Event server and client library"""
+"""Event Server and client libraries"""

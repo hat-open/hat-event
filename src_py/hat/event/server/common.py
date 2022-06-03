@@ -6,40 +6,37 @@ import typing
 
 from hat import aio
 from hat import json
+from hat import util
 from hat.event.common import (EventId,
-                              EventType,
-                              Timestamp,
-                              EventPayload,
                               Event,
                               QueryData,
-                              Subscription)
+                              Subscription,
+                              RegisterEvent)
 from hat.event.common import *  # NOQA
 
 
 SourceType = enum.Enum('SourceType', [
-    'COMMUNICATION',
+    'SYNCER',
+    'EVENTER',
     'MODULE'])
 
 
 class Source(typing.NamedTuple):
     type: SourceType
-    name: typing.Optional[str]
     id: int
-
-
-class ProcessEvent(typing.NamedTuple):
-    event_id: EventId
-    source: Source
-    event_type: EventType
-    source_timestamp: typing.Optional[Timestamp]
-    payload: typing.Optional[EventPayload]
 
 
 BackendConf = json.Data
 """Backend configuration"""
 
-CreateBackend = typing.Callable[[BackendConf], typing.Awaitable['Backend']]
+CreateBackend = typing.Callable[[BackendConf], aio.AsyncCallable['Backend']]
 """Create backend callable"""
+
+
+SyncerClientState = enum.Enum('SyncerClientState', [
+    'CONNECTED',
+    'SYNCED',
+    'DISCONNECTED'])
 
 
 class Backend(aio.Resource):
@@ -60,6 +57,13 @@ class Backend(aio.Resource):
     """
 
     @abc.abstractmethod
+    def register_events_cb(self,
+                           cb: typing.Callable[[typing.List[Event]],
+                                               None]
+                           ) -> util.RegisterCallbackHandle:
+        """Register events callback"""
+
+    @abc.abstractmethod
     async def get_last_event_id(self,
                                 server_id: int
                                 ) -> EventId:
@@ -77,12 +81,19 @@ class Backend(aio.Resource):
                     ) -> typing.List[Event]:
         """Query events"""
 
+    @abc.abstractmethod
+    async def query_from_event_id(self,
+                                  event_id: EventId
+                                  ) -> typing.AsyncIterable(Event):
+        """Get events with the same event_id.server, and event_id.instance
+           greater than provided"""
+
 
 ModuleConf = json.Data
 
 CreateModule = typing.Callable[
-    [ModuleConf, 'hat.event.module_engine.ModuleEngine'],  # NOQA
-    typing.Awaitable['Module']]
+    [ModuleConf, 'hat.event.module_engine.ModuleEngine', Source],
+    aio.AsyncCallable['Module']]
 
 
 class Module(aio.Resource):
@@ -118,15 +129,15 @@ class ModuleSession(aio.Resource):
 
     @abc.abstractmethod
     async def process(self,
-                      events: typing.List[ProcessEvent]
-                      ) -> typing.Iterable[ProcessEvent]:
-        """Process new session process events
+                      event: Event,
+                      source: Source
+                      ) -> typing.AsyncIterable[RegisterEvent]:
+        """Process new session event.
 
-        Provided process events include only those which are matched by modules
-        subscription filter.
+        Provided event is matched by modules subscription filter.
 
-        Processing of session process events can result in registration of
-        new process events.
+        Processing of session event can result in registration of
+        new register events.
 
         Single module session process is always called sequentially.
 

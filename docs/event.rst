@@ -81,8 +81,8 @@ Event data structure:
         be optionally decoded by Event Server's modules.
 
 
-Server - Client communication
------------------------------
+Eventer communication
+---------------------
 
 Communication between server and client is based on chatter communication
 utilizing following messages:
@@ -219,12 +219,35 @@ communication messages:
             'unique type'.
 
 
-Server - Server communication
------------------------------
+Syncer communication
+--------------------
+
+Communication for the purpose of event synchronization.
+Essentially aimed for event synchronization between two redundant
+event servers. Event server implements both server and client side of this
+communication.
+
+
+    +--------------------+----------------------+-----------+
+    |                    | Conversation         |           |
+    | Message            +-------+------+-------+ Direction |
+    |                    | First | Last | Token |           |
+    +====================+=======+======+=======+===========+
+    | MsgReq             | T     | T    | T     | c |arr| s |
+    +--------------------+-------+------+-------+-----------+
+    | MsgSynced          | T     | T    | T     | s |arr| c |
+    +--------------------+-------+------+-------+-----------+
+    | MsgEvents          | T     | T    | T     | s |arr| c |
+    +--------------------+-------+------+-------+-----------+
 
 .. todo::
-
-    define backend engine sync messages
+    * clarify difference between HatSyncer.MsgEvents and MsgNotify
+    * until MsgReq message is not received, connection is not considered 
+      established
+    * three states identified on server side:
+        - CONNECTED (on MsgReq)
+        - SYNCED (on MsgSynced)
+        - DISCONNECTED (on tcp closed)
 
 
 Components
@@ -339,17 +362,33 @@ selecting subset of event notifications which are sent to associated connection.
 Communication module is responsible for registering events each time new
 chatter connection is established and existing chatter connection is closed:
 
-    * 'event', 'communication', 'connected'
+    * 'event', 'eventer'
 
         * `source timestamp` - None
 
-        * `payload` - None
+        * `payload`
+            enum:
+                - CONNECTED
+                - DISCONNECTED
 
-    * 'event', 'communication', 'disconnected'
+    * 'event', 'syncer', '<client_name>'
 
         * `source timestamp` - None
 
-        * `payload` - None
+        * `payload`
+            enum:
+                - CONNECTED
+                - SYNCED
+                - DISCONNECTED
+
+    * 'event', 'engine'
+
+        * `source timestamp` - None
+
+        * `payload`
+          enum:
+            - STARTED
+            - STOPPED
 
 
 Module engine

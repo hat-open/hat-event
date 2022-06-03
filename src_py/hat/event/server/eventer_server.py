@@ -1,4 +1,4 @@
-"""Event server's communication"""
+"""Eventer server"""
 
 import contextlib
 import logging
@@ -7,22 +7,22 @@ from hat import aio
 from hat import chatter
 from hat import json
 from hat.event.server import common
-import hat.event.server.module_engine
+import hat.event.server.engine
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
-async def create(conf: json.Data,
-                 engine: hat.event.server.module_engine.ModuleEngine
-                 ) -> 'Communication':
-    """Create communication
+async def create_eventer_server(conf: json.Data,
+                                engine: hat.event.server.engine.Engine
+                                ) -> 'EventerServer':
+    """Create eventer server
 
     Args:
         conf: configuration defined by
-            ``hat-event://main.yaml#/definitions/communication``
-        engine: module engine
+            ``hat-event://main.yaml#/definitions/eventer_server``
+        engine: engine
 
     """
     comm = Communication()
@@ -37,7 +37,7 @@ async def create(conf: json.Data,
     return comm
 
 
-class Communication(aio.Resource):
+class EventerServer(aio.Resource):
 
     @property
     def async_group(self) -> aio.Group:
