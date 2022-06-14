@@ -84,9 +84,11 @@ class Backend(aio.Resource):
     @abc.abstractmethod
     async def query_from_event_id(self,
                                   event_id: EventId
-                                  ) -> typing.AsyncIterable(Event):
+                                  ) -> typing.AsyncIterable[
+                                        typing.List[Event]]:
         """Get events with the same event_id.server, and event_id.instance
-           greater than provided"""
+           greater than provided. Iterates over lists of Events from the
+           same session."""
 
 
 ModuleConf = json.Data
