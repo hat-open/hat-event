@@ -49,6 +49,8 @@ class EventId(typing.NamedTuple):
     """server identifier"""
     instance: int
     """event instance identifier"""
+    session: int
+    """session identifier"""
 
 
 class EventPayload(typing.NamedTuple):

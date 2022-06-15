@@ -122,12 +122,15 @@ class Module(aio.Resource):
     def subscription(self) -> Subscription:
         """Subscribed event types filter"""
 
-    @abc.abstractmethod
-    async def create_session(self) -> 'ModuleSession':
-        """Create new module session"""
+    async def on_session_start(self,
+                               session_id: int):
+        """Called on start of a session, identified by session_id."""
+        pass
 
-
-class ModuleSession(aio.Resource):
+    async def on_session_stop(self,
+                              session_id: int):
+        """Called on stop of a session, identified by session_id."""
+        pass
 
     @abc.abstractmethod
     async def process(self,
