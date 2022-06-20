@@ -13,7 +13,7 @@ import sqlite3
 from hat import aio
 from hat import json
 from hat.event.server import common
-from hat.event.server import registry
+from hat.event.server.backends.sqlite import registry
 
 
 json_schema_id = "hat-event://backends/sqlite.yaml#"

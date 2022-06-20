@@ -10,16 +10,19 @@ from hat import aio
 from hat import json
 from hat import util
 from hat.event.server import common
-import hat.event.server.syncer_server
+from hat.event.server.syncer_server import SyncerServer
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
+EventsCb = typing.Callable[[typing.List[common.Event]], None]
+"""Events callback"""
+
 
 async def create_engine(
         conf: json.Data,
-        syncer_server: hat.event.server.syncer_server.SyncerServer,
+        syncer_server: SyncerServer,
         backend: common.Backend
         ) -> 'Engine':
     """Create engine
@@ -32,28 +35,35 @@ async def create_engine(
 
     """
     engine = Engine()
-    engine._backend = backend_engine
+    engine._backend = backend
     engine._async_group = aio.Group()
     engine._register_queue = aio.Queue()
     engine._register_cbs = util.CallbackRegistry()
 
-    last_event_id = await engine._backend.get_last_event_id()
-    engine._server_id = last_event_id.server
-    engine._last_instance_id = last_event_id.instance
+    engine._last_event_id = await backend.get_last_event_id(conf['server_id'])
+    if not engine._last_event_id:
+        engine._last_event_id = common.EventId(server=conf['server_id'],
+                                               session=0,
+                                               instance=0)
 
-    engine._modules = []
-    for module_conf in conf['modules']:
+    engine.register(source=common.Source(type=common.SourceType.ENGINE,
+                                         id=0),
+                    events=[engine._create_status_event('STARTED')])
+
+    engine._source_modules = collections.deque()
+    for source_id, module_conf in enumerate(conf['modules']):
+        source = common.Source(type=common.SourceType.MODULE,
+                               id=source_id)
         py_module = importlib.import_module(module_conf['module'])
-        module = await py_module.create(module_conf, engine)
-        engine._async_group.spawn(aio.call_on_cancel,
-                                  module.async_close)
-        engine._modules.append(module)
+        module = await aio.call(py_module.create, module_conf, engine, source)
+        engine.async_group.spawn(aio.call_on_cancel, module.async_close)
+        engine._source_modules.append((source, module))
 
-    engine._async_group.spawn(engine._register_loop)
+    engine.async_group.spawn(engine._register_loop)
 
-    for module in engine._modules:
-        engine._async_group.spawn(aio.call_on_done, module.wait_closing(),
-                                  engine.close)
+    for _, module in engine._source_modules:
+        engine.async_group.spawn(aio.call_on_done, module.wait_closing(),
+                                 engine.close)
 
     return engine
 
@@ -66,8 +76,7 @@ class Engine(aio.Resource):
         return self._async_group
 
     def register_events_cb(self,
-                           cb: typing.Callable[[typing.List[common.Event]],
-                                               None]
+                           cb: EventsCb
                            ) -> util.RegisterCallbackHandle:
         """Register events callback"""
         return self._register_cbs.register(cb)
@@ -79,6 +88,7 @@ class Engine(aio.Resource):
         """Register events"""
         if not events:
             return []
+
         future = asyncio.Future()
         self._register_queue.put_nowait((future, source, events))
         return await future
@@ -92,21 +102,20 @@ class Engine(aio.Resource):
     async def _register_loop(self):
         future = None
         mlog.debug("starting register loop")
+
         try:
             while True:
                 mlog.debug("waiting for register requests")
                 future, source, register_events = \
                     await self._register_queue.get()
 
-                mlog.debug("processing register requests")
-                initial_events = [self.create_process_event(source, i)
-                                  for i in register_events]
+                mlog.debug("processing session")
+                events = await self._process_sessions(source, register_events)
 
-                process_events = await self._process_sessions(initial_events)
+                mlog.debug("registering to backend")
+                events = await self._backend.register(events)
 
-                events = await self._backend.register(process_events)
-
-                result = events[:len(initial_events)]
+                result = events[:len(register_events)]
                 if not future.done():
                     future.set_result(result)
 
@@ -129,49 +138,63 @@ class Engine(aio.Resource):
                     break
                 future, _, __ = self._register_queue.get_nowait()
 
-    async def _process_sessions(self, events):
-        all_events = collections.deque()
-        module_sessions = collections.deque()
+            events = [self._create_status_event('STOPPED')]
+            await self._backend.register(events)
 
-        try:
-            for module in self._modules:
-                session = await module.create_session()
-                module_sessions.append((module, session))
+    async def _process_sessions(self, source, register_events):
+        timestamp = common.now()
+        self._last_event_id = self._last_event_id._replace(
+            session=self._last_event_id.session + 1)
 
-            while events:
-                all_events.extend(events)
-                new_events = collections.deque()
+        for _, module in self._source_modules:
+            await module.start_session(self._last_event_id.session)
 
-                for module, session in module_sessions:
-                    if not session.is_open:
+        events = collections.deque(
+            self._create_event(timestamp, register_event)
+            for register_event in register_events)
+
+        input_source_events = [(source, event) for event in events]
+        while input_source_events:
+            output_source_events = collections.deque()
+
+            for output_source, module in self._source_modules:
+                for input_source, input_event in input_source_events:
+                    if not module.subscription.matches(input_event.event_type):
                         continue
-                    filtered_events = [
-                        event for event in events
-                        if module.subscription.matches(event.event_type)]
-                    if not filtered_events:
-                        continue
 
-                    result = await session.process(filtered_events)
-                    new_events.extend(result)
+                    async for register_event in module.process(input_source,
+                                                               input_event):
+                        output_event = self._create_event(timestamp,
+                                                          register_event)
+                        output_source_events.append((output_source,
+                                                     output_event))
+                        events.append(output_event)
 
-                events = new_events
+            input_source_events = output_source_events
 
-            return all_events
+        for _, module in self._source_modules:
+            await module.stop_session(self._last_event_id.session)
 
-        finally:
-            await aio.uncancellable(_async_close_resources(
-                session for _, session in module_sessions))
+        return events
 
+    def _create_status_event(self, status):
+        self._last_event_id = self._last_event_id._replace(
+            session=self._last_event_id.session + 1,
+            instance=self._last_event_id.instance + 1)
+        return common.Event(
+            event_id=self._last_event_id,
+            event_type=('event', 'engine'),
+            timestamp=common.now(),
+            source_timestamp=None,
+            payload=common.EventPayload(
+                type=common.EventPayloadType.JSON,
+                data=status))
 
-async def _async_close_resources(resources):
-    for resource in resources:
-        await resource.async_close()
-
-
-# now = common.now()
-# events = [common.Event(event_id=process_event.event_id,
-#                        event_type=process_event.event_type,
-#                        timestamp=now,
-#                        source_timestamp=process_event.source_timestamp,
-#                        payload=process_event.payload)
-#           for process_event in process_events]
+    def _create_event(self, timestamp, register_event):
+        self._last_event_id = self._last_event_id._replace(
+            instance=self._last_event_id.instance + 1)
+        return common.Event(event_id=self._last_event_id,
+                            event_type=register_event.event_type,
+                            timestamp=timestamp,
+                            source_timestamp=register_event.source_timestamp,
+                            payload=register_event.payload)

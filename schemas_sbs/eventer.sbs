@@ -22,6 +22,7 @@ Timestamp = Tuple {
 
 EventId = Tuple {
     server:    Integer
+    session:   Integer
     instance:  Integer
 }
 

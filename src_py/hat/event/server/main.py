@@ -1,6 +1,7 @@
 """Event server main"""
 
 from pathlib import Path
+import argparse
 import asyncio
 import contextlib
 import importlib
@@ -9,14 +10,14 @@ import sys
 import typing
 
 import appdirs
-import click
 
 from hat import aio
 from hat import json
 from hat.event.server import common
-import hat.event.server.backend_engine
-import hat.event.server.communication
-import hat.event.server.module_engine
+from hat.event.server.engine import create_engine
+from hat.event.server.eventer_server import create_eventer_server
+from hat.event.server.syncer_server import create_syncer_server, SyncerServer
+from hat.event.syncer_client import create_syncer_client
 import hat.monitor.client
 import hat.monitor.common
 
@@ -28,22 +29,32 @@ user_conf_dir: Path = Path(appdirs.user_config_dir('hat'))
 """User configuration directory path"""
 
 
-@click.command()
-@click.option('--conf', default=None, metavar='PATH', type=Path,
-              help="configuration defined by hat-event://main.yaml# "
-                   "(default $XDG_CONFIG_HOME/hat/event.{yaml|yml|json})")
-def main(conf: typing.Optional[Path]):
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Create argument parser"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--conf', metavar='PATH', type=Path, default=None,
+        help="configuration defined by hat-event://main.yaml# "
+             "(default $XDG_CONFIG_HOME/hat/event.{yaml|yml|json})")
+    return parser
+
+
+def main():
     """Event Server"""
-    if not conf:
+    parser = create_argument_parser()
+    args = parser.parse_args()
+
+    conf_path = args.conf
+    if not conf_path:
         for suffix in ('.yaml', '.yml', '.json'):
-            conf = (user_conf_dir / 'event').with_suffix(suffix)
-            if conf.exists():
+            conf_path = (user_conf_dir / 'event').with_suffix(suffix)
+            if conf_path.exists():
                 break
 
-    if conf == Path('-'):
+    if conf_path == Path('-'):
         conf = json.decode_stream(sys.stdin)
     else:
-        conf = json.decode_file(conf)
+        conf = json.decode_file(conf_path)
 
     sync_main(conf)
 
@@ -54,8 +65,7 @@ def sync_main(conf: json.Data):
 
     common.json_schema_repo.validate('hat-event://main.yaml#', conf)
 
-    sub_confs = ([conf['backend_engine']['backend']] +
-                 conf['module_engine']['modules'])
+    sub_confs = [conf['backend'], *conf['engine']['modules']]
     for sub_conf in sub_confs:
         module = importlib.import_module(sub_conf['module'])
         if module.json_schema_repo and module.json_schema_id:
@@ -73,23 +83,31 @@ async def async_main(conf: json.Data):
     async_group.spawn(aio.call_on_cancel, asyncio.sleep, 0.1)
 
     try:
-        backend_engine = await hat.event.server.backend_engine.create(
-            conf['backend_engine'])
-        _bind_resource(async_group, backend_engine)
+        py_module = importlib.import_module(conf['backend']['module'])
+        backend = await aio.call(py_module.create, conf['backend'])
+        _bind_resource(async_group, backend)
+
+        syncer_server = await create_syncer_server(conf['syncer_server'],
+                                                   backend)
+        _bind_resource(async_group, syncer_server)
 
         if 'monitor' in conf:
             monitor = await hat.monitor.client.connect(conf['monitor'])
             _bind_resource(async_group, monitor)
 
+            syncer_client = await create_syncer_client(
+                backend, monitor, conf['monitor']['group'])
+            _bind_resource(async_group, syncer_client)
+
             component = hat.monitor.client.Component(monitor, run, conf,
-                                                     backend_engine)
+                                                     backend, syncer_server)
             component.set_enabled(True)
             _bind_resource(async_group, component)
 
             await async_group.wait_closing()
 
         else:
-            await async_group.spawn(run, None, conf, backend_engine)
+            await async_group.spawn(run, None, conf, backend, syncer_server)
 
     finally:
         await aio.uncancellable(async_group.async_close())
@@ -97,20 +115,33 @@ async def async_main(conf: json.Data):
 
 async def run(component: typing.Optional[hat.monitor.client.Component],
               conf: json.Data,
-              backend_engine: hat.event.server.backend_engine.BackendEngine):
+              backend: common.Backend,
+              syncer_server: SyncerServer):
     """Run monitor component"""
+
+    def on_syncer_client_state(source, client_name, state):
+        event = common.RegisterEvent(
+            event_type=('event', 'syncer', client_name),
+            source_timestamp=None,
+            payload=common.EventPayload(
+                type=common.EventPayloadType.JSON,
+                data=state.name))
+        async_group.spawn(engine.register, source, [event])
+
     async_group = aio.Group()
 
+    # TODO wait depending on ???
+
     try:
-        module_engine = await hat.event.server.module_engine.create(
-            conf['module_engine'], backend_engine)
-        _bind_resource(async_group, module_engine)
+        engine = await create_engine(conf['engine'], backend)
+        _bind_resource(async_group, engine)
 
-        communication = await hat.event.server.communication.create(
-            conf['communication'], module_engine)
-        _bind_resource(async_group, communication)
+        with syncer_server.register_client_state_cb(on_syncer_client_state):
+            eventer_server = await create_eventer_server(
+                conf['eventer_server'], engine)
+            _bind_resource(async_group, eventer_server)
 
-        await async_group.wait_closing()
+            await async_group.wait_closing()
 
     finally:
         await aio.uncancellable(async_group.async_close())

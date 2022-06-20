@@ -18,7 +18,8 @@ from hat.event.common import *  # NOQA
 SourceType = enum.Enum('SourceType', [
     'SYNCER',
     'EVENTER',
-    'MODULE'])
+    'MODULE',
+    'ENGINE'])
 
 
 class Source(typing.NamedTuple):
@@ -29,7 +30,7 @@ class Source(typing.NamedTuple):
 BackendConf = json.Data
 """Backend configuration"""
 
-CreateBackend = typing.Callable[[BackendConf], aio.AsyncCallable['Backend']]
+CreateBackend = aio.AsyncCallable[[BackendConf], 'Backend']
 """Create backend callable"""
 
 
@@ -66,7 +67,7 @@ class Backend(aio.Resource):
     @abc.abstractmethod
     async def get_last_event_id(self,
                                 server_id: int
-                                ) -> EventId:
+                                ) -> typing.Optional[EventId]:
         """Get last registered event id associated with server id"""
 
     @abc.abstractmethod
@@ -87,15 +88,15 @@ class Backend(aio.Resource):
                                   ) -> typing.AsyncIterable[
                                         typing.List[Event]]:
         """Get events with the same event_id.server, and event_id.instance
-           greater than provided. Iterates over lists of Events from the
-           same session."""
+        greater than provided. Iterates over lists of Events from the
+        same session."""
 
 
 ModuleConf = json.Data
 
-CreateModule = typing.Callable[
-    [ModuleConf, 'hat.event.module_engine.ModuleEngine', Source],
-    aio.AsyncCallable['Module']]
+CreateModule = typing.AsyncCallable[
+    [ModuleConf, 'hat.event.module_engine.ModuleEngine', Source],  # NOQA
+    'Module']
 
 
 class Module(aio.Resource):
@@ -125,17 +126,15 @@ class Module(aio.Resource):
     async def on_session_start(self,
                                session_id: int):
         """Called on start of a session, identified by session_id."""
-        pass
 
     async def on_session_stop(self,
                               session_id: int):
         """Called on stop of a session, identified by session_id."""
-        pass
 
     @abc.abstractmethod
     async def process(self,
-                      event: Event,
-                      source: Source
+                      source: Source,
+                      event: Event
                       ) -> typing.AsyncIterable[RegisterEvent]:
         """Process new session event.
 

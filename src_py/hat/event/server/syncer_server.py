@@ -22,10 +22,11 @@ async def create_syncer_server(conf: json.Data,
     return srv
 
 
-StateCb = typing.Callable[[str, common.SyncerClientState], None]
+StateCb = typing.Callable[[common.Source, str, common.SyncerClientState], None]
 """Syncer client state callback
 
-Callback is called with syncer client name and current syncer state
+Callback is called with source identifier, syncer client name and current
+syncer state
 
 """
 

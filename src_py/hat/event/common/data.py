@@ -47,10 +47,10 @@ EventPayloadType = enum.Enum('EventPayloadType', [
 class EventId(typing.NamedTuple):
     server: int
     """server identifier"""
-    instance: int
-    """event instance identifier"""
     session: int
     """session identifier"""
+    instance: int
+    """event instance identifier"""
 
 
 class EventPayload(typing.NamedTuple):
@@ -213,11 +213,13 @@ def event_payload_from_sbs(data: sbs.Data) -> EventPayload:
 
 def _event_id_to_sbs(event_id):
     return {'server': event_id.server,
+            'session': event_id.session,
             'instance': event_id.instance}
 
 
 def _event_id_from_sbs(data):
     return EventId(server=data['server'],
+                   session=data['session'],
                    instance=data['instance'])
 
 

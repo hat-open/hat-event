@@ -7,13 +7,13 @@ type: object
 required:
     - type
     - log
-    - backend_engine
-    - module_engine
-    - communication
+    - backend
+    - engine
+    - eventer_server
+    - syncer_server
 properties:
     type:
-        enum:
-            - event
+        const: event
         description: configuration type identification
     version:
         type: string
@@ -22,40 +22,13 @@ properties:
         "$ref": "hat-json://logging.yaml#"
     monitor:
         "$ref": "hat-monitor://client.yaml#"
-    backend_engine:
-        "$ref": "hat-event://main.yaml#/definitions/backend_engine"
-    module_engine:
-        "$ref": "hat-event://main.yaml#/definitions/module_engine"
-    communication:
+    backend:
+        "$ref": "hat-event://main.yaml#/definitions/backend"
+    engine:
+        "$ref": "hat-event://main.yaml#/definitions/engine"
+    eventer:
         "$ref": "hat-event://main.yaml#/definitions/communication"
 definitions:
-    backend_engine:
-        type: object
-        required:
-            - server_id
-            - backend
-        properties:
-            server_id:
-                type: integer
-            backend:
-                "$ref": "hat-event://main.yaml#/definitions/backend"
-    module_engine:
-        type: object
-        required:
-            - modules
-        properties:
-            modules:
-                type: array
-                items:
-                    "$ref": "hat-event://main.yaml#/definitions/module"
-    communication:
-        type: object
-        required:
-            - address
-        properties:
-            address:
-                type: string
-                default: "tcp+sbs://localhost:23012"
     backend:
         type: object
         description: |
@@ -78,4 +51,32 @@ definitions:
                 type: string
                 description: |
                     full python module name that implements module
+    engine:
+        type: object
+        required:
+            - server_id
+            - modules
+        properties:
+            server_id:
+                type: integer
+            modules:
+                type: array
+                items:
+                    "$ref": "hat-event://main.yaml#/definitions/module"
+    eventer_server:
+        type: object
+        required:
+            - address
+        properties:
+            address:
+                type: string
+                default: "tcp+sbs://localhost:23012"
+    syncer_server:
+        type: object
+        required:
+            - address
+        properties:
+            address:
+                type: string
+                default: "tcp+sbs://localhost:23013"
 ...

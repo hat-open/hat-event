@@ -1,7 +1,7 @@
 module HatSyncer
 
 MsgReq = {
-    lastEventId:  HatEventer.EventId
+    lastEventId:  Maybe(HatEventer.EventId)
     clientName:   String
     subscription: Array(HatEventer.EventType)
 }

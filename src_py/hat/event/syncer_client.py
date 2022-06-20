@@ -1,20 +1,20 @@
 from hat import aio
-from hat import json
 from hat.event.server import common
 import hat.monitor.client
 
 
-async def create_syncer_client(conf: json.Data,
-                               backend: common.Backend,
-                               monitor_client: hat.monitor.client.Client
+async def create_syncer_client(backend: common.Backend,
+                               monitor_client: hat.monitor.client.Client,
+                               monitor_group: str,
+                               **kwargs
                                ) -> 'SyncerClient':
     """Create syncer client
 
     Args:
-        conf: configuration defined by
-            ``hat-event://main.yaml#/definitions/syncer_client``
         backend: backend
         monitor_client: monitor client
+        monitor_group: monitor group name
+        kwargs: additional arguments passed to `hat.chatter.connect` coroutine
 
     """
     cli = SyncerClient()
