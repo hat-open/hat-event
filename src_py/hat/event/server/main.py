@@ -87,27 +87,38 @@ async def async_main(conf: json.Data):
         backend = await aio.call(py_module.create, conf['backend'])
         _bind_resource(async_group, backend)
 
-        syncer_server = await create_syncer_server(conf['syncer_server'],
-                                                   backend)
-        _bind_resource(async_group, syncer_server)
+        async_subgroup = async_group.create_subgroup()
 
-        if 'monitor' in conf:
-            monitor = await hat.monitor.client.connect(conf['monitor'])
-            _bind_resource(async_group, monitor)
+        try:
+            syncer_server = await create_syncer_server(conf['syncer_server'],
+                                                       backend)
+            _bind_resource(async_subgroup, syncer_server)
 
-            syncer_client = await create_syncer_client(
-                backend, monitor, conf['monitor']['group'])
-            _bind_resource(async_group, syncer_client)
+            if 'monitor' in conf:
+                data = {'server_id': conf['server_id'],
+                        'eventer_server': conf['eventer_server']['address'],
+                        'syncer_server': conf['syncer_server']['address']}
+                monitor = await hat.monitor.client.connect(conf['monitor'],
+                                                           data)
+                _bind_resource(async_subgroup, monitor)
 
-            component = hat.monitor.client.Component(monitor, run, conf,
-                                                     backend, syncer_server)
-            component.set_enabled(True)
-            _bind_resource(async_group, component)
+                syncer_client = await create_syncer_client(
+                    backend, monitor, conf['monitor']['group'])
+                _bind_resource(async_subgroup, syncer_client)
 
-            await async_group.wait_closing()
+                component = hat.monitor.client.Component(
+                    monitor, run, conf, backend, syncer_server)
+                component.set_ready(True)
+                _bind_resource(async_subgroup, component)
 
-        else:
-            await async_group.spawn(run, None, conf, backend, syncer_server)
+                await async_subgroup.wait_closing()
+
+            else:
+                await async_subgroup.spawn(run, None, conf, backend,
+                                           syncer_server)
+
+        finally:
+            await aio.uncancellable(async_subgroup.async_close())
 
     finally:
         await aio.uncancellable(async_group.async_close())
