@@ -5,14 +5,14 @@ from hat.event.server import common
 
 @pytest.mark.parametrize("event", [
     common.Event(
-        event_id=common.EventId(0, 0),
+        event_id=common.EventId(0, 0, 0),
         event_type=('a',),
         timestamp=common.now(),
         source_timestamp=None,
         payload=None),
 
     common.Event(
-        event_id=common.EventId(0, 0),
+        event_id=common.EventId(0, 0, 0),
         event_type=('a',),
         timestamp=common.now(),
         source_timestamp=common.now(),
@@ -21,7 +21,7 @@ from hat.event.server import common
             data=b'123')),
 
     common.Event(
-        event_id=common.EventId(123, 456),
+        event_id=common.EventId(123, 456, 789),
         event_type=('a', 'b', 'c'),
         timestamp=common.now(),
         source_timestamp=common.now(),
@@ -30,7 +30,7 @@ from hat.event.server import common
             data=None)),
 
     common.Event(
-        event_id=common.EventId(123, 456),
+        event_id=common.EventId(123, 456, 789),
         event_type=('a', 'b', 'c'),
         timestamp=common.now(),
         source_timestamp=common.now(),
