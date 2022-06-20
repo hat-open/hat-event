@@ -37,7 +37,7 @@ Example of low-level interface usage::
 
     await client.async_close()
 
-:func:`run_eventer_client` provides high-level interface for continuous 
+:func:`run_eventer_client` provides high-level interface for continuous
 communication with currenty active Event Server based on information obtained
 from Monitor Server.
 This function repeatedly tries to create active connection with
@@ -114,20 +114,18 @@ async def connect(address: str,
         kwargs: additional arguments passed to `hat.chatter.connect` coroutine
 
     """
-    client = Client()
-    client._async_group = aio.Group()
+    client = EventerClient()
     client._conv_futures = {}
     client._event_queue = aio.Queue()
 
     client._conn = await chatter.connect(common.sbs_repo, address, **kwargs)
-    client._async_group.spawn(aio.call_on_cancel, client._conn.async_close)
 
     if subscriptions:
         client._conn.send(chatter.Data(module='HatEvent',
                                        type='MsgSubscribe',
                                        data=[list(i) for i in subscriptions]))
 
-    client._async_group.spawn(client._receive_loop)
+    client.async_group.spawn(client._receive_loop)
     return client
 
 
@@ -141,7 +139,7 @@ class EventerClient(aio.Resource):
     @property
     def async_group(self) -> aio.Group:
         """Async group"""
-        return self._async_group
+        return self._conn.async_group
 
     async def receive(self) -> typing.List[common.Event]:
         """Receive subscribed event notifications
@@ -235,7 +233,7 @@ class EventerClient(aio.Resource):
 
         finally:
             mlog.debug("stopping receive loop")
-            self._async_group.close()
+            self.close()
             self._event_queue.close()
             for f in self._conv_futures.values():
                 f.set_exception(ConnectionError())
@@ -307,7 +305,7 @@ async def run_eventer_client(monitor_client: hat.monitor.client.Client,
     connection to Monitor Server is closed, ConnectionError is raised.
 
     If execution of `run_eventer_client` is canceled while `async_run_cb` is
-    running, connection to event server is closed after `async_run_cb`
+    running, connection to Event Server is closed after `async_run_cb`
     cancellation finishes.
 
     """
@@ -352,9 +350,9 @@ async def _address_loop(monitor_client, server_group, address_queue):
         while True:
             info = util.first(monitor_client.components, lambda c: (
                 c.group == server_group and
-                c.blessing is not None and
-                c.blessing == c.ready))
-            address = info.address if info else None
+                c.blessing_req.token is not None and
+                c.blessing_req.token == c.blessing_res.token))
+            address = info.data['eventer_server_address'] if info else None
 
             if address != last_address and not address_queue.is_closed:
                 mlog.debug("new server address: %s", address)
@@ -366,7 +364,7 @@ async def _address_loop(monitor_client, server_group, address_queue):
 
 async def _client_loop(address, subscriptions, async_run_cb):
     while True:
-        async_group = aio.Group()
+        client = None
         try:
             mlog.debug("connecting to server %s", address)
             try:
@@ -377,19 +375,16 @@ async def _client_loop(address, subscriptions, async_run_cb):
                 continue
 
             mlog.debug("connected to server - running async_run_cb")
-            async_group.spawn(aio.call_on_cancel, client.async_close)
-            async_group.spawn(aio.call_on_done, client.wait_closing(),
-                              async_group.close)
 
-            async with async_group.create_subgroup() as subgroup:
-                run_future = subgroup.spawn(async_run_cb, client)
-                await asyncio.wait([run_future])
+            run_future = client.async_group.spawn(async_run_cb, client)
+            await asyncio.wait([run_future])
 
             with contextlib.suppress(asyncio.CancelledError):
                 return run_future.result()
 
         finally:
-            await aio.uncancellable(async_group.async_close())
+            if client:
+                await aio.uncancellable(client.async_close())
 
         mlog.debug("connection to server closed")
         await asyncio.sleep(reconnect_delay)

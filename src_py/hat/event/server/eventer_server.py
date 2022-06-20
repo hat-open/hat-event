@@ -1,6 +1,7 @@
 """Eventer server"""
 
 import contextlib
+import itertools
 import logging
 
 from hat import aio
@@ -25,9 +26,9 @@ async def create_eventer_server(conf: json.Data,
         engine: engine
 
     """
-    comm = Communication()
+    comm = EventerServer()
     comm._engine = engine
-    comm._last_source_id = 0
+    comm._next_source_id = itertools.count(1)
 
     comm._server = await chatter.listen(sbs_repo=common.sbs_repo,
                                         address=conf['address'],
@@ -45,8 +46,8 @@ class EventerServer(aio.Resource):
         return self._server.async_group
 
     def _on_connection(self, conn):
-        self._last_source_id += 1
-        _Connection(conn, self._engine, self._last_source_id)
+        source_id = next(self._next_source_id)
+        _Connection(conn, self._engine, source_id)
 
 
 class _Connection(aio.Resource):
@@ -55,8 +56,7 @@ class _Connection(aio.Resource):
         self._conn = conn
         self._engine = engine
         self._subscription = None
-        self._source = common.Source(type=common.SourceType.COMMUNICATION,
-                                     name=None,
+        self._source = common.Source(type=common.SourceType.EVENTER,
                                      id=source_id)
 
         self.async_group.spawn(self._connection_loop)
@@ -82,7 +82,7 @@ class _Connection(aio.Resource):
         mlog.debug("starting new client connection loop")
         try:
             with self._engine.register_events_cb(self._on_events):
-                await self._register_communication_event('connected')
+                await self._register_eventer_event('CONNECTED')
 
                 while True:
                     mlog.debug("waiting for incomming messages")
@@ -114,7 +114,7 @@ class _Connection(aio.Resource):
             mlog.debug("closing client connection loop")
             self.close()
             with contextlib.suppress(Exception):
-                await self._register_communication_event('disconnected')
+                await self._register_eventer_event('DISCONNECTED')
 
     async def _process_msg_subscribe(self, msg):
         self._subscription = common.Subscription([tuple(i)
@@ -142,9 +142,10 @@ class _Connection(aio.Resource):
                             data=[common.event_to_sbs(e) for e in events])
         self._conn.send(data, conv=msg.conv)
 
-    async def _register_communication_event(self, status):
+    async def _register_eventer_event(self, status):
         register_event = common.RegisterEvent(
-            event_type=('event', 'communication', status),
+            event_type=('event', 'eventer'),
             source_timestamp=None,
-            payload=None)
+            payload=common.EventPayload(type=common.EventPayloadType.JSON,
+                                        data=status))
         await self._engine.register(self._source, [register_event])
