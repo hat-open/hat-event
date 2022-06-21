@@ -62,8 +62,7 @@ Example of high-level interface usage::
     monitor = await hat.monitor.client.connect({
         'name': 'client',
         'group': 'test clients',
-        'monitor_address': 'tcp+sbs://127.0.0.1:23010',
-        'component_address': None})
+        'monitor_address': 'tcp+sbs://127.0.0.1:23010'})
     component = hat.monitor.client.Component(monitor, monitor_async_run)
     component.set_enabled(True)
     await monitor.async_close()

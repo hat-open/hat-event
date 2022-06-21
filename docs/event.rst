@@ -6,6 +6,35 @@ Event Server
 Event Server is a central component responsible for registering, processing,
 storing and providing access to events.
 
+Configuration for Event Server is defined with schema
+``hat-event://main.yaml#``, available :ref:`here <event-schema>`. When
+`monitor` parameter is defined in configuration, it is on order to connect to a
+`Monitor Server`_ in order to run multiple redundant Event Servers. Event Server
+connects to configured Monitor Server and creates a corresponding Monitor
+Component. Besides redundant execution, Monitor Server is also used for service
+discovery. Each Monitor Component is described with its `info`, that is
+`Component Information`_. One of the properties of component `info` is `data`,
+through which a component can share some arbitrary information with any other
+component. Event server uses `data` (specified by
+``hat-event://monitor_data.yaml#``) to share the following information:
+
+.. _monitor_component_data:
+
+    * `eventer_server_address` - Eventer server address is needed to any
+      component that uses Eventer client to interact with currently active
+      Event Server by Events.
+    * `syncer_server_address` - Syncer server address is needed to any component
+      that uses Syncer client to synchronize with currently active Event
+      Server.
+    * `server_id` - Event server unique identifier (defined in configuration as
+      `server_id`). Needed to Syncer client in order to request synchronization
+      with the specific server.
+    * `syncer_token` - (optional property) this token string is used as a key for synchronization
+      between servers. Event server will request synchronization with a remote
+      Event server only if their `syncer_token` are identical (for more 
+      details see `Syncer Client`_). If this token is not defined, 
+      synchronization is performed irrespective.
+
 
 Running
 -------
@@ -20,30 +49,38 @@ Event
 -----
 
 Event is a generic data structure used for communication and storage of relevant
-changes happening through time in a Hat system. For example, event can represent
-a data change triggered by a device outside of the system, or an inner
-notification created by a component inside the system. Each event is immutable
-and uniquely identified by its event id. Event Server is the only component
-responsible for creating events - all other components shall request Event
-Server to create a new event.
+changes happening through time in a Hat system. For example, event can
+represent a data change triggered by a device outside of the system, or an
+inner notification created by a component inside the system. Each event is
+immutable and uniquely identified by its event id. Event Server is the only
+component responsible for creating events - all other components shall request
+Event Server to create a new event.
 
 Event data structure:
 
     * id
 
-        A unique Event identifier containing Event Server identifier and event
-        instance identifier. This property is always set by the server.
+        A unique Event identifier always set by the server. It contains:
 
+            * `server` - Event Server unique identifier (defined in
+              configuration as `server_id`).
+            * `session` - unique identifier of event processing session. 
+            * `instance` - unique identifier of an Event instance (unique only
+              on the server that creates it). It is sequential integer that
+              starts from 1. Instance of value 0 is never assigned to event,
+              but it has semantic that no any event is registered at the
+              server.
+        
     * type
 
-        Type is a user (client) defined list of strings. Semantics of the
-        list's elements and their position in the list is determined by the user
-        and is not predefined by the Event server. This list should be used as
-        the main identifier of the occurred event's type. Each component
+        Type is a user (client) defined list of strings. Semantics of the list's
+        elements and their position in the list is determined by the user and
+        is not predefined by the Event server. This list should be used as the
+        main identifier of the occurred event's type. Each component
         registering an event should have its own naming convention defined
         which does not collide with other components' naming conventions. This
-        property is set by the user while registering an event. Subtypes
-        ``?`` and ``*`` are not allowed as parts of event type.
+        property is set by the user while registering an event. Subtypes ``?``
+        and ``*`` are not allowed as parts of event type.
 
         When used in querying and subscription, this property has additional
         semantics. Any string in the list can be replaced with ``?`` while the
@@ -61,13 +98,15 @@ Event data structure:
 
     * timestamp
 
-        This property determines the moment when the event was registered on
-        the server. It is always set by the server.
+        This property determines the moment when the event was registered on the
+        server. It is always set by the server.
 
     * source timestamp
 
         This property is optional. It represents the moment the Event occurred
-        as detected by the source of the Event. It is always set by the client.
+        as detected by the source of the Event. It is always set by the
+        `Eventer Client`_ (in the remainder of this article mostly referenced
+        only as `client`).
 
     * payload
 
@@ -77,15 +116,18 @@ Event data structure:
         **type** and can be decoded by clients who understand Events of that
         **type**. Payload can be encoded as binary data, JSON data or SBS
         encoded data. Event server doesn't decode payload while receiving
-        event requests, storing events or providing query results. Payload can
-        be optionally decoded by Event Server's modules.
+        event requests, storing events or providing query results. Payload
+        can be optionally decoded by Event Server's modules.
 
 
 Eventer communication
 ---------------------
 
-Communication between server and client is based on chatter communication
-utilizing following messages:
+Communication between `Eventer Server`_ and `Eventer Client`_ (in the remainder
+of this article, mostly referred only as `server` and `client`) is based on
+chatter communication, defined in `HatEventer` SBS module (see `Eventer chatter
+messages`_) with the following messages:
+
 
     +--------------------+----------------------+-----------+
     |                    | Conversation         |           |
@@ -137,7 +179,7 @@ communication messages:
         create new event for each register event. All events created based on a
         single `MsgRegisterReq` have the same timestamp. If a client doesn't
         end chatter conversation (`MsgRegisterReq` last flag is false),
-        once associated events are created server will respond with
+        once associated events are created, server will respond with
         `MsgRegisterRes` and end conversation. For each register event in
         `MsgRegisterReq`, associated `MsgRegisterRes` contains newly created
         event, or information about event registration failure.
@@ -222,11 +264,16 @@ communication messages:
 Syncer communication
 --------------------
 
-Communication for the purpose of event synchronization.
-Essentially aimed for event synchronization between two redundant
-event servers. Event server implements both server and client side of this
-communication.
+Communication between `Syncer Server`_ and `Syncer Client`_, based on chatter
+communication, is aimed primarily for events synchronization between two, or
+more redundant Event Servers. Thus, each Event server implements both server
+and client side of this communication. Generally, this communication is made
+not to be exclusively used within an Event server: Syncer Client can be used to
+establish synchronization of any remote instance (e.g. an arbitrary database)
+with an Event server.
 
+Messages used in Syncer communication, defined in `HatSyncer` SBS
+module (see `Syncer chatter messages`_), are the following:
 
     +--------------------+----------------------+-----------+
     |                    | Conversation         |           |
@@ -240,15 +287,31 @@ communication.
     | MsgEvents          | T     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
 
-.. todo::
-    * clarify difference between HatSyncer.MsgEvents and MsgNotify
-    * until MsgReq message is not received, connection is not considered 
-      established
-    * three states identified on server side:
-        - CONNECTED (on MsgReq)
-        - SYNCED (on MsgSynced)
-        - DISCONNECTED (on tcp closed)
+Communication between Syncer Client and Server starts with synchronization
+request initiated by the Client with `MsgReq` message. Until `MsgReq` message
+is not received on the Server, connection is not considered established. By
+this message, client requests events that it needs in order to get 
+"synchronized". More specifically, by `MsgReq` client represents itself by
+`clientName` and requests all events that have
+`EventId` such that `instance` is newer than `lastEventId` and `server`
+corresponds to Syncer server's Event Server.
 
+Upon receiving `MsgReq`, Server communicates back the requested events by
+`MsgEvents` message. Events are grouped in `MsgEvents` such that all events in
+the message are from the same session (`session` of `EventId`). Once all of
+these events are sent, server sends `MsgSynced` message in order to signalize
+the client that synchronization phase ended.
+
+All the events that Server received after the `MsgReq` (and before `MsgSynced`)
+are not included in the synchronization phase. They are buffered on the server
+side and sent to client only after the `MsgSynced` message, using the same
+`MsgEvents` message. In the remaining life of the connection between Syncer
+server and client, only `MsgEvents` messages are sent from server to a client
+in order to notify it with the new Events. All events in one `MsgEvents` message 
+always belong to the same session.
+
+
+.. todo:: add `subscription` to `MsgReq`.
 
 Components
 ----------
@@ -258,25 +321,22 @@ Event Server functionality can be defined by using the following components:
 .. uml::
 
     folder "Component 1" <<Component>> {
-        component "Event Client" as Client1
+        component "Eventer Client" as EventerClient1
     }
 
     folder "Component 2" <<Component>> {
-        component " Event Client" as Client2
+        component " Eventer Client" as EventerClient2
     }
 
     folder "Event Server" {
-        component Communication
-        component "Module Engine" as ModuleEngine
-        component "Generic Module 1" <<Module>> as Module1
-        component "Generic Module 2" <<Module>> as Module2
-        component "Specialized Module Engine" <<Module>> as SpecModuleEngine
-        component "Specialized Module 1" <<Specialized Module>> as SpecModule1
-        component "Specialized Module 2" <<Specialized Module>> as SpecModule2
-        component "Backend Engine" as BackendEngine
+        component "Eventer Server" as EventerServer
+        component "Engine" as Engine
+        component "Module 1" <<Module>> as Module1
+        component "Module 2" <<Module>> as Module2
+        component "Module 3" <<Module>> as Module3
         component "Backend" as Backend
-        component "Backend 1" <<Backend>> as Backend1
-        component "Backend 2" <<Backend>> as Backend2
+        component "Syncer server" as SyncerServer
+        component "Syncer client" as SyncerClient
 
         interface subscribe
         interface notify
@@ -285,153 +345,239 @@ Event Server functionality can be defined by using the following components:
     }
 
     folder "Remote Event Server" {
-        component "Backend Engine" as RemoteBackendEngine
+        component "Syncer server" as RemoteSyncerServer
+        component "Syncer client" as RemoteSyncerClient
+        component "Backend" as RemoteBackend
     }
 
-    database "Database 1" <<Database>> as Database1
-    database "Database 2" <<Database>> as Database2
+    database "Database" as Database
+    database "Database" as RemoteDatabase
 
-    Communication -- subscribe
-    Communication -- notify
-    Communication -- register
-    Communication -- query
+    EventerServer -- subscribe
+    EventerServer -- notify
+    EventerServer -- register
+    EventerServer -- query
 
-    subscribe <-- Client1
-    notify --> Client1
-    register <-- Client1
-    query <-- Client1
+    subscribe <-- EventerClient1
+    notify --> EventerClient1
+    register <-- EventerClient1
+    query <-- EventerClient1
 
-    subscribe <-- Client2
-    notify --> Client2
-    register <-- Client2
-    query <-- Client2
+    subscribe <-- EventerClient2
+    notify --> EventerClient2
+    register <-- EventerClient2
+    query <-- EventerClient2
 
-    ModuleEngine <-> Communication
-    ModuleEngine --> BackendEngine
+    Engine <-> EventerServer
+    Engine <--> Backend
 
-    Module1 --o ModuleEngine
-    Module2 --o ModuleEngine
-    SpecModuleEngine --o ModuleEngine
-    SpecModule1 --o SpecModuleEngine
-    SpecModule2 --o SpecModuleEngine
+    Module1 --o Engine
+    Module2 --o Engine
+    Module3 --o Engine
 
-    BackendEngine o-- Backend
-    Backend <|-- Backend1
-    Backend <|-- Backend2
+    Backend <--> Database
 
-    Backend1 --> Database1
-    Backend2 --> Database2
+    SyncerServer <-- Backend
+    SyncerClient --> Backend
+    SyncerServer --> Engine
 
-    RemoteBackendEngine <--> BackendEngine
+    RemoteSyncerServer <-- RemoteBackend
+    RemoteSyncerClient --> RemoteBackend
+    RemoteBackend <--> RemoteDatabase
 
-
-Client
-''''''
-
-Event client is any component that provides client functionality in
-`Server - Client` communication. Package `hat-event` provides python
-implementation of `hat.event.client` module which can be used as a basis for
-communication with Event Server. This module provides low-level and high-level
-communication API. For more detail see documentation of `hat.event.client`
-module.
+    RemoteSyncerClient <--> SyncerServer
+    SyncerClient <--> RemoteSyncerServer
 
 
-Communication
-'''''''''''''
+Eventer Client
+''''''''''''''
 
-Event Server's communication module is responsible for providing implementation
-of server side `Server - Client` communication. This component translates
-client requests to module engine's method calls. At the same time, it observes
-all new event notifications made by module engine and notifies clients with
-appropriate messages.
+Eventer client is a component that provides client functionality in `Eventer
+communication`_. Package `hat-event` provides python implementation of
+`hat.event.eventer_client` module which can be used as a basis for
+communication with Eventer Server. This module provides low-level and
+high-level communication API. For more detail see documentation of
+`hat.event.eventer_client` module.
 
-`RegisterEvent` objects obtained from client's register requests must be
-converted to `ProcessEvent` before they can be passed for further processing
-to module engine. This conversion is done by module engine, as it is the only
-entity responsible for creating new `ProcessEvent` objects.
+
+Eventer Server
+''''''''''''''
+
+Eventer Server module is responsible for providing implementation of server side
+of `Eventer communication`_. This component translates client requests to
+engine's method calls. At the same time, it observes all new event
+notifications made by engine and notifies clients with appropriate messages.
+
+`RegisterEvent` objects obtained from client's register requests are forwarded
+to engine which converts them to `Event` and submits to further processing.
 
 A unique identifier is assigned to each chatter connection established with
-communication (unique for the single execution lifetime of Event Server
-process). This identifier is associated with all `ProcessEvent` objects obtained
-from corresponding connection.
+Eventer server (unique for the single execution lifetime of Event Server
+process). This identifier is associated with all `Event`s obtained from the
+corresponding connection as through `id` of `Source` (`type` is `EVENTER`).
 
-Communication associates connection with information received as part of
-connection's last subscribe message. This subscription is used as a filter for
-selecting subset of event notifications which are sent to associated connection.
+Each client makes its subscription to Eventer Server by its last subscription
+message `MsgSubscribe`. This subscription is used as a filter for selecting
+subset of event notifications which are sent to associated connection.
 
-Communication module is responsible for registering events each time new
-chatter connection is established and existing chatter connection is closed:
+Eventer server module is responsible for registering events each time new
+chatter connection is established and each time existing chatter connection is
+closed. These events are defined as::
 
     * 'event', 'eventer'
 
-        * `source timestamp` - None
+        * `source_timestamp` is ``None``
 
-        * `payload`
-            enum:
-                - CONNECTED
-                - DISCONNECTED
+        * `payload` is specified by
+          ``hat-event://main.yaml#/definitions/events/eventer``.
+
+This event is registered through `Engine`_ with `Source.type` ``EVENTER``.
+
+
+Syncer Client
+'''''''''''''
+
+Syncer Client module is responsible for providing implementation of client side
+of `Syncer communication`_. It is instanced by `create_syncer_client` which
+receives a Backend instance and a Monitor `Client` instance from
+`hat.monitor.client.Client` (see `Monitor Server`_).
+
+Event server uses Syncer client to synchronize with a remote Event server. In
+case when Event server is run without Monitor Server (without `monitor` in
+configuration), Syncer client is not run: no other Event Servers are expected,
+so there is no need for synchronization.
+
+Syncer Client uses Monitor Client in order to discover remote Event Servers,
+that is their Syncer Servers. It registers corresponding callback to Monitor
+client's `register_change_cb` and tracks `ComponentInfo` (see `Component
+Information`_) of components from the same `group` (correspond to remote Event
+Server). Once it gets `ComponentInfo`, it is interested in its `data` property
+in order to get `syncer_token`, `server_id` and `syncer_server_address`
+(see :ref:`here <monitor_component_data>`). First it checks that `syncer_token`
+of the remote server matches with its  own `syncer_token`(defined in
+configuration). If they doesn't match, client ignores that component and
+doesn't connect to its Syncer server. Otherwise, client uses
+`syncer_server_address` to connect to the remote Syncer server. Once it
+connects, client immediately sends `MsgReq` in order to request
+synchronization. The main reference for synchronization of events is
+`lastEventId`, that it gets from Backend's `get_last_event_id` method using
+`server_id` obtained from Monitor client.
+
+On all the `MsgEvents` messages received from the Syncer server, client
+transforms messages to corresponding Events and registers them to Backend by
+calling its `register` method (see `Syncer communication`_ for more details
+about messages exchanged with server).
+
+In case client discovered (through Monitor Client) multiple Syncer Servers, it
+will connect to all of them and try to synchronize with all of them
+independently. 
+
+
+Syncer Server
+'''''''''''''
+
+Syncer Server module is responsible for providing implementation of server side
+of `Syncer communication`_. It is in charge of synchronizing arbitrary number
+of clients connected to it, with all the events from its Event Server they are
+subscribed to. 
+
+Server is instanced by `create_syncer_server` which receives a Backend instance.
+It registers corresponding callback with `register_events_cb` method, in order
+to notify the Server with all the events being registered to Backend. Server
+also retrieves events from Backend, needed for a client synchronization, by its
+`query_from_event_id` method, 
+
+Syncer server is responsible for registering events in regard to connection
+status of the specific Syncer client. Events are defined as:
 
     * 'event', 'syncer', '<client_name>'
 
-        * `source timestamp` - None
+       where '<client_name>' is name of the
+       syncer client defined as `clientName`in `MsgReq` message (see `Syncer
+       communication`_).
 
-        * `payload`
-            enum:
-                - CONNECTED
-                - SYNCED
-                - DISCONNECTED
+        * `source_timestamp` is ``None``
+
+        * `payload` is specified by
+          ``hat-event://main.yaml#/definitions/events/syncer``.
+
+This event is registered by `Engine`_ on behalf of Syncer server with
+`Source.type` set to ``SYNCER``. Engine uses Syncer server's
+`register_client_state_cb` method to register corresponding callback that is in
+charge of registering this event (for the sake of simplicity hereafter we
+consider as Syncer server registers this event).
+
+Payload of this event defines three states of a client connection:
+``CONNECTED``, ``DISCONNECTED`` and ``SYNCED``. Only then, server registers
+event with payload ``CONNECTED``. Once server has sent all the events that
+client requested to get "synchronized", it sends `MsgSynced` message and also
+registers event with payload `SYNCED`. Once connection to a client is lost,
+event with payload ``DISCONNECTED`` is registered by the Server.(see `Syncer
+communication`_ for more details about messages exchanged with client).
+
+Multiple clients can be connected to a server, where each connection is handled
+independently, as described.
+
+
+Engine
+''''''
+
+Engine is responsible for creating modules and coordinating event registration,
+processing and querying between Eventer server, modules and Backend.
+
+Engine's method `register` enables registration of events to Backend based on a
+list of register events. Entity who requests registration is identified by
+`Source` identifier which is used only during processing of events and is
+discarded once event is created. There are three types of sources that may
+register events on Engine: 
+
+    - ``SYNCER``: `Syncer Server`_
+    - ``EVENTER``: `Eventer Server`_
+    - ``ENGINE``: `Engine`
+    - ``MODULE``: any of the `Modules`_
+
+By creating event, Engine enhances register event with
+
+    - `event_id`: unique event identifier,
+    - `timestamp`: single point in time when events are registered. All events
+      registered in a single session get the same `timestamp`.
+    
+Process of creating events based on a single list of register events provided
+through `register` is called session. Engine starts new session each time
+Eventer server, Syncer server or a module requests new registration through
+`register` method. Session ends once Backend returns result of event
+registration. Start and end of each session is notified to each module by
+calling module's `on_session_start` and `on_session_stop` methods respectively.
+These methods are called sequentially for each module: only when method of one
+module ended, method of the other module can be called.
+
+During session processing, each module is notified with a newly created event in
+case it matches its subscription. By subscription, each module defines event
+type filter condition used for filtering new events that will get notified to
+the module. Processing of this event by module can result with new register
+events. Out of register events, Engine creates events and adds them to the
+current session. All modules, including the one that added that new events, are
+notified with new additions. This process continues iteratively until all
+modules return empty lists of new register events. Processing events by single
+module is always sequential - Engine keeps order of new events added to session
+so that new events are always added to the end of the queue for module
+notification.
+
+.. warning ::
+    
+    Care should be taken by module implementation not to cause self recursive or
+    mutually recursive endless processing loop.
+
+Engine registers an event that signalizes when the Engine was started or
+stopped. Event is registered by Engine, with `Source.Type` set to
+`ENGINE` and with the following definition::
 
     * 'event', 'engine'
 
         * `source timestamp` - None
 
-        * `payload`
-          enum:
-            - STARTED
-            - STOPPED
-
-
-Module engine
-'''''''''''''
-
-Module engine is responsible for creating modules and coordinating event
-registration, processing and querying between communication, modules and
-backend engine.
-
-Module engine provides method for creating process events utilized by
-communication and modules. By creating process events, register events are
-enhanced with unique identifier and source identification. Identifier
-assigned to process event is the same one that is assigned to corresponding
-event. Information regarding source identifier is available only during
-processing of process event and is discarded once event is created.
-
-Process of creating events based on a single set of process events is called
-session. Module engine starts new session each time communication or module
-requests new registration. Session ends once backend engine returns result
-of event registration. Start and end of each session is notified to each module
-by creating and closing module session. Each module instantiates its own module
-session.
-
-During session processing, each module session is notified with a list of newly
-created process events which are not previously presented to that module.
-Processing these process events by module session can result in new process
-events which are to be added to current session. All module sessions, including
-the one that added new process events, are notified with new additions. This
-process continues iteratively until all module sessions return empty lists of
-new process events. Processing process events by single module session is
-always sequential - module session is notified with session changes after its
-previous notification processing is finished. Different module sessions may be
-processed concurrently. Module engine keeps order of new process events added
-to session, but it is allowed to aggregate processing results from multiple
-module sessions into a single session change notification.
-
-Care should be taken by module implementation not to cause self recursive or
-mutually recursive endless processing loop.
-
-Each module can define its event type filter condition (subscription) which is
-used for filtering new process events that will get notified to module
-session. When session finishes, module session is closed by calling its
-`async_close` method.
+        * `payload`  is specified by
+          ``hat-event://main.yaml#/definitions/events/engine``.
 
 
 Modules
@@ -440,42 +586,26 @@ Modules
 .. warning::
 
     Event server does not provide sandbox environment for loading end executing
-    modules. Modules have full access to Event Server functionality which
-    is controlled with module execution. Module implementation and
-    configuration should be written in accordance to other modules and
-    Event Server as a whole, keeping in mind processing execution time overhead
-    and possible interference between modules.
+    modules. Modules have full access to Event Server functionality which is
+    controlled with module execution. Module implementation and configuration
+    should be written in accordance to other modules and Event Server as a
+    whole, keeping in mind processing execution time overhead and possible
+    interference between modules.
 
 Each module represents predefined and configurable closely related functions
 that can modify the process of registering new events or initiate new event
 registration sessions. When created, module is provided with reference to
-module engine which can be used for creating new process events, registering
-process events and querying events. Responsibility of each module, upon
-creation, is to create its own source identifier which will be unique for
-single Event Server process execution.
+Engine which can be used for registering and querying events. Responsibility of
+each module, upon creation, is to create its own source identifier `Source.id`
+which will be unique for single Event Server process execution(`Source.type` is
+``MODULE``).
 
 
-Backend engine
-''''''''''''''
+Backend
+'''''''
 
-Backend engine is responsible for actions involving persisting process events
-and querying events. During initialization, backend engine creates a single
-instance of backend which is used for storage.
-
-During registration of events, backend engine converts process events to
-backend events. This conversion involves setting event's timestamp (which is
-the same for all events registered in a single session).
-
-.. todo::
-
-    sync between backend engines
-
-
-Backends
-''''''''
-
-Backends are wrappers for storing and retrieving events from specialized
-storage engines.
+Backend is wrapper for storing and retrieving events from specialized storage
+engines.
 
 Backends available as part of `hat-event` package:
 
@@ -492,3 +622,32 @@ Implementation
 Documentation is available as part of generated API reference:
 
     * `Python hat.event module <py_api/hat/event/index.html>`_
+
+
+Eventer chatter messages
+------------------------
+
+.. literalinclude:: ../schemas_sbs/eventer.sbs
+    :language: none
+
+
+Syncer chatter messages
+-----------------------
+
+.. literalinclude:: ../schemas_sbs/syncer.sbs
+    :language: none
+
+
+.. _event-schema:
+
+Configuration
+-------------
+
+.. literalinclude:: ../schemas_json/main.yaml
+    :language: yaml
+
+
+.. external references
+
+.. _Monitor Server: https://hat-monitor.hat-open.com/monitor.html
+.. _Component Information: https://hat-monitor.hat-open.com/monitor.html#component-information

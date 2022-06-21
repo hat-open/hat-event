@@ -67,7 +67,7 @@ class Backend(aio.Resource):
     @abc.abstractmethod
     async def get_last_event_id(self,
                                 server_id: int
-                                ) -> typing.Optional[EventId]:
+                                ) -> EventId:
         """Get last registered event id associated with server id"""
 
     @abc.abstractmethod

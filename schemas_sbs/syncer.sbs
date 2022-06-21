@@ -1,9 +1,8 @@
 module HatSyncer
 
-MsgReq = {
-    lastEventId:  Maybe(HatEventer.EventId)
+MsgReq = Tuple {
+    lastEventId:  HatEventer.EventId
     clientName:   String
-    subscription: Array(HatEventer.EventType)
 }
 
 MsgSynced = None

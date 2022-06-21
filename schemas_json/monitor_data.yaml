@@ -1,0 +1,20 @@
+---
+"$schema": "http://json-schema.org/schema#"
+id: "hat-event://monitor_data.yaml#"
+title: monitor data
+description: data property of monitor component info 
+type: object
+required:
+    - eventer_server_address
+    - syncer_server_address
+    - server_id
+properties:
+    eventer_server_address:
+        type: string
+    syncer_server_address:
+        type: string
+    server_id:
+        type: integer
+    syncer_token:
+        type: string
+...
