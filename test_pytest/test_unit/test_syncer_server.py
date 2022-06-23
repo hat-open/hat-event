@@ -56,7 +56,7 @@ class Backend(aio.Resource):
 
 async def test_create(conf):
     backend = create_backend()
-    syncer_server = create_syncer_server(conf, backend)
+    syncer_server = await create_syncer_server(conf, backend)
 
     assert isinstance(syncer_server, SyncerServer)
     assert syncer_server.is_open
@@ -75,7 +75,7 @@ async def test_connect(conf):
         client_state_queue.put_nowait((source, client_name, client_state))
 
     backend = create_backend()
-    syncer_server = create_syncer_server(conf, backend)
+    syncer_server = await create_syncer_server(conf, backend)
     syncer_server.register_client_state_cb(on_client_change)
 
     conn = await chatter.connect(common.sbs_repo, conf['address'])
@@ -130,7 +130,7 @@ async def test_sync(conf):
         payload=common.EventPayload(common.EventPayloadType.JSON, i))
         for i in range(10)]
     backend = create_backend(query_from_event_id_events=events)
-    syncer_server = create_syncer_server(conf, backend)
+    syncer_server = await create_syncer_server(conf, backend)
     syncer_server.register_client_state_cb(on_client_change)
 
     conn = await chatter.connect(common.sbs_repo, conf['address'])
@@ -172,7 +172,7 @@ async def test_register(conf):
         client_state_queue.put_nowait((source, client_name, client_state))
 
     backend = create_backend()
-    syncer_server = create_syncer_server(conf, backend)
+    syncer_server = await create_syncer_server(conf, backend)
     syncer_server.register_client_state_cb(on_client_change)
 
     conn = await chatter.connect(common.sbs_repo, conf['address'])
@@ -229,7 +229,7 @@ async def test_register_while_sync(conf):
     sync_events = events[:10]
     register_events = events[10:]
     backend = create_backend(query_from_event_id_events=sync_events)
-    syncer_server = create_syncer_server(conf, backend)
+    syncer_server = await create_syncer_server(conf, backend)
     syncer_server.register_client_state_cb(on_client_change)
 
     conn = await chatter.connect(common.sbs_repo, conf['address'])
