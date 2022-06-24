@@ -10,7 +10,6 @@ from hat import aio
 from hat import json
 from hat import util
 from hat.event.server import common
-from hat.event.server.syncer_server import SyncerServer
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
@@ -20,17 +19,14 @@ EventsCb = typing.Callable[[typing.List[common.Event]], None]
 """Events callback"""
 
 
-async def create_engine(
-        conf: json.Data,
-        syncer_server: SyncerServer,
-        backend: common.Backend
-        ) -> 'Engine':
+async def create_engine(conf: json.Data,
+                        backend: common.Backend
+                        ) -> 'Engine':
     """Create engine
 
     Args:
         conf: configuration defined by
             ``hat-event://main.yaml#/definitions/engine``
-        syncer_server: syncer server
         backend: backend
 
     """
@@ -39,31 +35,33 @@ async def create_engine(
     engine._async_group = aio.Group()
     engine._register_queue = aio.Queue()
     engine._register_cbs = util.CallbackRegistry()
+    engine._source_modules = collections.deque()
 
     engine._last_event_id = await backend.get_last_event_id(conf['server_id'])
-    if not engine._last_event_id:
-        engine._last_event_id = common.EventId(server=conf['server_id'],
-                                               session=0,
-                                               instance=0)
 
-    engine.register(source=common.Source(type=common.SourceType.ENGINE,
-                                         id=0),
-                    events=[engine._create_status_event('STARTED')])
+    future = asyncio.Future()
+    source = common.Source(type=common.SourceType.ENGINE, id=0)
+    events = [engine._create_status_event('STARTED')]
+    engine._register_queue.put_nowait((future, source, events))
 
-    engine._source_modules = collections.deque()
-    for source_id, module_conf in enumerate(conf['modules']):
-        source = common.Source(type=common.SourceType.MODULE,
-                               id=source_id)
-        py_module = importlib.import_module(module_conf['module'])
-        module = await aio.call(py_module.create, module_conf, engine, source)
-        engine.async_group.spawn(aio.call_on_cancel, module.async_close)
-        engine._source_modules.append((source, module))
+    try:
+        for source_id, module_conf in enumerate(conf['modules']):
+            py_module = importlib.import_module(module_conf['module'])
 
-    engine.async_group.spawn(engine._register_loop)
+            source = common.Source(type=common.SourceType.MODULE,
+                                   id=source_id)
 
-    for _, module in engine._source_modules:
-        engine.async_group.spawn(aio.call_on_done, module.wait_closing(),
-                                 engine.close)
+            module = await engine.async_group.spawn(
+                aio.call, py_module.create, module_conf, engine, source)
+            engine.async_group.spawn(aio.call_on_cancel, module.async_close)
+            engine.async_group.spawn(aio.call_on_done, module.wait_closing(),
+                                     engine.close)
+
+            engine._source_modules.append((source, module))
+
+    except BaseException:
+        await aio.uncancellable(engine.async_close())
+        raise
 
     return engine
 
@@ -115,8 +113,8 @@ class Engine(aio.Resource):
                 mlog.debug("registering to backend")
                 events = await self._backend.register(events)
 
-                result = events[:len(register_events)]
                 if not future.done():
+                    result = events[:len(register_events)]
                     future.set_result(result)
 
                 events = [event for event in events if event]
@@ -128,7 +126,7 @@ class Engine(aio.Resource):
 
         finally:
             mlog.debug("register loop closed")
-            self._async_group.close()
+            self.close()
             self._register_queue.close()
 
             while True:
@@ -181,6 +179,7 @@ class Engine(aio.Resource):
         self._last_event_id = self._last_event_id._replace(
             session=self._last_event_id.session + 1,
             instance=self._last_event_id.instance + 1)
+
         return common.Event(
             event_id=self._last_event_id,
             event_type=('event', 'engine'),
@@ -193,6 +192,7 @@ class Engine(aio.Resource):
     def _create_event(self, timestamp, register_event):
         self._last_event_id = self._last_event_id._replace(
             instance=self._last_event_id.instance + 1)
+
         return common.Event(event_id=self._last_event_id,
                             event_type=register_event.event_type,
                             timestamp=timestamp,

@@ -95,9 +95,12 @@ async def async_main(conf: json.Data):
             _bind_resource(async_subgroup, syncer_server)
 
             if 'monitor' in conf:
-                data = {'server_id': conf['server_id'],
-                        'eventer_server': conf['eventer_server']['address'],
-                        'syncer_server': conf['syncer_server']['address']}
+                data = {
+                    'server_id': conf['server_id'],
+                    'eventer_server_address': conf['eventer_server']['address'],  # NOQA
+                    'syncer_server_address': conf['syncer_server']['address']}
+                if 'syncer_token' in conf:
+                    data['syncer_token'] = conf['syncer_token']
                 monitor = await hat.monitor.client.connect(conf['monitor'],
                                                            data)
                 _bind_resource(async_subgroup, monitor)

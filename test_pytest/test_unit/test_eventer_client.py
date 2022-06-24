@@ -32,7 +32,7 @@ def component_info(server_address):
         mid=2,
         name='name',
         group='group',
-        data={'eventer_server': server_address},
+        data={'eventer_server_address': server_address},
         rank=3,
         blessing_req=hat.monitor.common.BlessingReq(token=None,
                                                     timestamp=None),
