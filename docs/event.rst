@@ -7,15 +7,28 @@ Event Server is a central component responsible for registering, processing,
 storing and providing access to events.
 
 Configuration for Event Server is defined with schema
-``hat-event://main.yaml#``, available :ref:`here <event-schema>`. When
-`monitor` parameter is defined in configuration, it is on order to connect to a
-`Monitor Server`_ in order to run multiple redundant Event Servers. Event Server
-connects to configured Monitor Server and creates a corresponding Monitor
-Component. Besides redundant execution, Monitor Server is also used for service
-discovery. Each Monitor Component is described with its `info`, that is
-`Component Information`_. One of the properties of component `info` is `data`,
-through which a component can share some arbitrary information with any other
-component. Event server uses `data` (specified by
+``hat-event://main.yaml#``, available :ref:`here <event-schema>`.
+
+
+Running
+-------
+
+By installing Event Server from `hat-event` package, executable `hat-event`
+becomes available and can be used for starting this component.
+
+    .. program-output:: python -m hat.event.server --help
+
+
+Redundancy
+----------
+
+To run multiple redundant Event Servers, `monitor` parameter has to be defined
+in the configuration. Event Server connects to configured `Monitor Server`_ and
+creates a corresponding Monitor Component. Besides redundant execution, Monitor
+Server is also used for service discovery. Each Monitor Component is described
+with its `info`, that is `Component Information`_. One of the properties of
+component `info` is `data`, through which a component can share some arbitrary
+information with any other component. Event server uses `data` (specified by
 ``hat-event://monitor_data.yaml#``) to share the following information:
 
 .. _monitor_component_data:
@@ -29,20 +42,12 @@ component. Event server uses `data` (specified by
     * `server_id` - Event server unique identifier (defined in configuration as
       `server_id`). Needed to Syncer client in order to request synchronization
       with the specific server.
-    * `syncer_token` - (optional property) this token string is used as a key for synchronization
-      between servers. Event server will request synchronization with a remote
+    * `syncer_token` - (optional property) this token string is used as a key
+      for synchronization between servers. Event server will request
+      synchronization with a remote
       Event server only if their `syncer_token` are identical (for more 
       details see `Syncer Client`_). If this token is not defined, 
       synchronization is performed irrespective.
-
-
-Running
--------
-
-By installing Event Server from `hat-event` package, executable `hat-event`
-becomes available and can be used for starting this component.
-
-    .. program-output:: python -m hat.event.server --help
 
 
 Event
@@ -67,15 +72,14 @@ Event data structure:
             * `session` - unique identifier of event processing session. 
             * `instance` - unique identifier of an Event instance (unique only
               on the server that creates it). It is sequential integer that
-              starts from 1. Instance of value 0 is never assigned to event,
-              but it has semantic that no any event is registered at the
-              server.
+              starts from 1. Instance of value 0 is never assigned to an event,
+              but it has semantic that no events are registered at the server.
         
     * type
 
         Type is a user (client) defined list of strings. Semantics of the list's
         elements and their position in the list is determined by the user and
-        is not predefined by the Event server. This list should be used as the
+        is not predefined by the Event Server. This list should be used as the
         main identifier of the occurred event's type. Each component
         registering an event should have its own naming convention defined
         which does not collide with other components' naming conventions. This
@@ -268,9 +272,9 @@ Communication between `Syncer Server`_ and `Syncer Client`_, based on chatter
 communication, is aimed primarily for events synchronization between two, or
 more redundant Event Servers. Thus, each Event server implements both server
 and client side of this communication. Generally, this communication is made
-not to be exclusively used within an Event server: Syncer Client can be used to
+not to be exclusively used within an Event Server: Syncer Client can be used to
 establish synchronization of any remote instance (e.g. an arbitrary database)
-with an Event server.
+with an Event Server.
 
 Messages used in Syncer communication, defined in `HatSyncer` SBS
 module (see `Syncer chatter messages`_), are the following:
@@ -288,13 +292,13 @@ module (see `Syncer chatter messages`_), are the following:
     +--------------------+-------+------+-------+-----------+
 
 Communication between Syncer Client and Server starts with synchronization
-request initiated by the Client with `MsgReq` message. Until `MsgReq` message
-is not received on the Server, connection is not considered established. By
-this message, client requests events that it needs in order to get 
-"synchronized". More specifically, by `MsgReq` client represents itself by
-`clientName` and requests all events that have
-`EventId` such that `instance` is newer than `lastEventId` and `server`
-corresponds to Syncer server's Event Server.
+request initiated by the Client with `MsgReq` message. The connection between
+Server and Client is considered established when `MsgReq` message is received
+on the Server side. With this message, Client requests for Server events in
+order to get "synchronized". More specifically, by `MsgReq` client represents
+itself by `clientName` and requests all the events that have `EventId` such
+that `instance` is greater (ie. newer) than `lastEventId` and `server`
+corresponds to Syncer Server's Event Server.
 
 Upon receiving `MsgReq`, Server communicates back the requested events by
 `MsgEvents` message. Events are grouped in `MsgEvents` such that all events in
@@ -392,7 +396,7 @@ Event Server functionality can be defined by using the following components:
 Eventer Client
 ''''''''''''''
 
-Eventer client is a component that provides client functionality in `Eventer
+Eventer Client is a component that provides client functionality in `Eventer
 communication`_. Package `hat-event` provides python implementation of
 `hat.event.eventer_client` module which can be used as a basis for
 communication with Eventer Server. This module provides low-level and
@@ -408,19 +412,19 @@ of `Eventer communication`_. This component translates client requests to
 engine's method calls. At the same time, it observes all new event
 notifications made by engine and notifies clients with appropriate messages.
 
-`RegisterEvent` objects obtained from client's register requests are forwarded
+`RegisterEvent` objects obtained from Client's register requests are forwarded
 to engine which converts them to `Event` and submits to further processing.
 
 A unique identifier is assigned to each chatter connection established with
-Eventer server (unique for the single execution lifetime of Event Server
+Eventer Server (unique for the single execution lifetime of Event Server
 process). This identifier is associated with all `Event`s obtained from the
 corresponding connection as through `id` of `Source` (`type` is `EVENTER`).
 
-Each client makes its subscription to Eventer Server by its last subscription
+Each Client makes its subscription to Eventer Server by its last subscription
 message `MsgSubscribe`. This subscription is used as a filter for selecting
 subset of event notifications which are sent to associated connection.
 
-Eventer server module is responsible for registering events each time new
+Eventer Server module is responsible for registering events each time new
 chatter connection is established and each time existing chatter connection is
 closed. These events are defined as::
 
@@ -442,23 +446,24 @@ of `Syncer communication`_. It is instanced by `create_syncer_client` which
 receives a Backend instance and a Monitor `Client` instance from
 `hat.monitor.client.Client` (see `Monitor Server`_).
 
-Event server uses Syncer client to synchronize with a remote Event server. In
-case when Event server is run without Monitor Server (without `monitor` in
-configuration), Syncer client is not run: no other Event Servers are expected,
+Event Server uses Syncer Client to synchronize with a remote Event Server. In
+case when Event Server is run without Monitor Server (without `monitor` in
+configuration), Syncer Client is not run: no other Event Servers are expected,
 so there is no need for synchronization.
 
 Syncer Client uses Monitor Client in order to discover remote Event Servers,
 that is their Syncer Servers. It registers corresponding callback to Monitor
-client's `register_change_cb` and tracks `ComponentInfo` (see `Component
+Client's `register_change_cb` and tracks `ComponentInfo` (see `Component
 Information`_) of components from the same `group` (correspond to remote Event
 Server). Once it gets `ComponentInfo`, it is interested in its `data` property
-in order to get `syncer_token`, `server_id` and `syncer_server_address`
-(see :ref:`here <monitor_component_data>`). First it checks that `syncer_token`
-of the remote server matches with its  own `syncer_token`(defined in
-configuration). If they doesn't match, client ignores that component and
-doesn't connect to its Syncer server. Otherwise, client uses
-`syncer_server_address` to connect to the remote Syncer server. Once it
-connects, client immediately sends `MsgReq` in order to request
+in order to get `syncer_token`, `server_id` and `syncer_server_address` (see
+:ref:`here <monitor_component_data>`). First it checks that `syncer_token` of
+the remote server matches with its own `syncer_token` (defined in
+configuration). This mechanism can be used, for example, to check if remote
+server node has matching system configuration. If they doesn't match, client
+ignores that component and doesn't connect to its Syncer Server.  Otherwise,
+client uses `syncer_server_address` to connect to the remote Syncer server.
+Once it connects, client immediately sends `MsgReq` in order to request
 synchronization. The main reference for synchronization of events is
 `lastEventId`, that it gets from Backend's `get_last_event_id` method using
 `server_id` obtained from Monitor client.
@@ -470,7 +475,7 @@ about messages exchanged with server).
 
 In case client discovered (through Monitor Client) multiple Syncer Servers, it
 will connect to all of them and try to synchronize with all of them
-independently. 
+independently.
 
 
 Syncer Server
@@ -479,16 +484,16 @@ Syncer Server
 Syncer Server module is responsible for providing implementation of server side
 of `Syncer communication`_. It is in charge of synchronizing arbitrary number
 of clients connected to it, with all the events from its Event Server they are
-subscribed to. 
+subscribed to.
 
 Server is instanced by `create_syncer_server` which receives a Backend instance.
 It registers corresponding callback with `register_events_cb` method, in order
 to notify the Server with all the events being registered to Backend. Server
 also retrieves events from Backend, needed for a client synchronization, by its
-`query_from_event_id` method, 
+`query_from_event_id` method.
 
 Syncer server is responsible for registering events in regard to connection
-status of the specific Syncer client. Events are defined as:
+status of the specific Syncer Client. Events are defined as:
 
     * 'event', 'syncer', '<client_name>'
 
@@ -501,21 +506,21 @@ status of the specific Syncer client. Events are defined as:
         * `payload` is specified by
           ``hat-event://main.yaml#/definitions/events/syncer``.
 
-This event is registered by `Engine`_ on behalf of Syncer server with
-`Source.type` set to ``SYNCER``. Engine uses Syncer server's
+This event is registered by `Engine`_ on behalf of Syncer Server with
+`Source.type` set to ``SYNCER``. Engine uses Syncer Server's
 `register_client_state_cb` method to register corresponding callback that is in
 charge of registering this event (for the sake of simplicity hereafter we
-consider as Syncer server registers this event).
+consider as Syncer Server registers this event).
 
 Payload of this event defines three states of a client connection:
-``CONNECTED``, ``DISCONNECTED`` and ``SYNCED``. Only then, server registers
-event with payload ``CONNECTED``. Once server has sent all the events that
+``CONNECTED``, ``DISCONNECTED`` and ``SYNCED``. Only then, Server registers
+event with payload ``CONNECTED``. Once Server has sent all the events that
 client requested to get "synchronized", it sends `MsgSynced` message and also
-registers event with payload `SYNCED`. Once connection to a client is lost,
-event with payload ``DISCONNECTED`` is registered by the Server.(see `Syncer
-communication`_ for more details about messages exchanged with client).
+registers event with payload `SYNCED`. Once connection to a Client is lost,
+event with payload ``DISCONNECTED`` is registered by the Server (see `Syncer
+communication`_ for more details about messages exchanged with Client).
 
-Multiple clients can be connected to a server, where each connection is handled
+Multiple Clients can be connected to a Server, where each connection is handled
 independently, as described.
 
 
@@ -523,13 +528,13 @@ Engine
 ''''''
 
 Engine is responsible for creating modules and coordinating event registration,
-processing and querying between Eventer server, modules and Backend.
+processing and querying between Eventer Server, modules and Backend.
 
 Engine's method `register` enables registration of events to Backend based on a
 list of register events. Entity who requests registration is identified by
 `Source` identifier which is used only during processing of events and is
 discarded once event is created. There are three types of sources that may
-register events on Engine: 
+register events on Engine:
 
     - ``SYNCER``: `Syncer Server`_
     - ``EVENTER``: `Eventer Server`_
@@ -541,10 +546,10 @@ By creating event, Engine enhances register event with
     - `event_id`: unique event identifier,
     - `timestamp`: single point in time when events are registered. All events
       registered in a single session get the same `timestamp`.
-    
+
 Process of creating events based on a single list of register events provided
 through `register` is called session. Engine starts new session each time
-Eventer server, Syncer server or a module requests new registration through
+Eventer Server, Syncer Server or a module requests new registration through
 `register` method. Session ends once Backend returns result of event
 registration. Start and end of each session is notified to each module by
 calling module's `on_session_start` and `on_session_stop` methods respectively.
@@ -564,7 +569,7 @@ so that new events are always added to the end of the queue for module
 notification.
 
 .. warning ::
-    
+
     Care should be taken by module implementation not to cause self recursive or
     mutually recursive endless processing loop.
 
