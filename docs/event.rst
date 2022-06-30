@@ -54,7 +54,7 @@ Event data structure:
 
                 Unique identifier of an Event instance (unique only
                 for the session and server that created it). It is sequential
-                integer that starts from ``1``. Instance of value 0 is never
+                integer that starts from ``1``. Instance of value ``0`` is never
                 assigned to an event, it is reserved for identifier of
                 non-existing instance preceding first available instance in
                 associated session.
@@ -87,7 +87,7 @@ Event data structure:
     * `timestamp`
 
         This property determines the moment when the event was registered on the
-        server. It is always set by the server.
+        server. It is always set by the server (that is by `Engine`_).
 
     * `source timestamp`
 
@@ -179,43 +179,43 @@ communication messages:
         filter conditions which ALL must be met for all events provided to
         client as query result. Query request contains:
 
-        * ids - optional filter condition
+        * `event_ids` - optional filter condition
 
             If set, only events with ids which are defined as part of filter
             condition are matched.
 
-        * types - optional filter condition
+        * `event_types` - optional filter condition
 
             List of event types. If set, event type has to match at least one
             type from the list. Matching is done as defined in event's **type**
             property description - including the ``?`` and ``*`` options.
 
-        * from timestamp - optional filter condition
+        * `t_from` - from timestamp, optional filter condition
 
             If set, only events with `timestamp` greater than or equal are
             matched.
 
-        * to timestamp - optional filter condition
+        * `t_to` - to timestamp, optional filter condition
 
             If set, only events with **timestamp** lower than or equal are
             matched.
 
-        * from source timestamp - optional filter condition
+        * `source_t_from` - from source timestamp, optional filter condition
 
             If set, only events with `source timestamp` defined, and greater
             than or equal, are matched.
 
-        * to source timestamp - optional filter condition
+        * `source_t_to` - to source timestamp, optional filter condition
 
             If set, only events with `source timestamp` defined, and lower
             than or equal, are matched.
 
-        * payload - optional filter condition
+        * `payload` - optional filter condition
 
             If set, only events with `payload` defined and whose `payload`
             is the same as the query's `payload` are matched.
 
-        * order
+        * `order`
 
             Can be set to ``ascending`` or ``descending``. If set to
             ``ascending``, matched Events will be returned ordered from the
@@ -225,13 +225,13 @@ communication messages:
             meaning greater timestamp. If set to descending the same logic
             applies, but the order is reversed.
 
-        * order by
+        * `order_by`
 
             Can be set to ``timestamp`` or ``source timestamp``. Ordering Events
             by ``source timestamp`` has events with `source timestamp` undefined
             returned last in an arbitrary order.
 
-        * unique type
+        * `unique_type`
 
             If set to ``true``, it determines whether the matched Events will
             contain only one event instance of the same type. With the query
@@ -240,11 +240,11 @@ communication messages:
             `order` to ``ascending`` will match the Event with the lowest
             `timestamp` or `source timestamp`.
 
-        * max results
+        * `max_results`
 
             If set, limits the number of matched Events to this number. Matched
             Events are dependent on the query `order` the same way as in
-            `unique type`.
+            `unique_type`.
 
 
 Redundancy
@@ -257,7 +257,8 @@ algorithm, Monitor Server is also used for service discovery. Each Monitor
 Component is described with its `info`, that is `Component Information`_. One
 of the properties of component `info` is `data`, through which a component can
 share some arbitrary information with any other component. Event server uses
-`data` (specified by ``hat-event://monitor_data.yaml#``) to share the following information:
+`data` (specified by ``hat-event://monitor_data.yaml#``) to share the following
+information:
 
 .. _monitor_component_data:
 
@@ -477,8 +478,9 @@ so there is no need for synchronization.
 Syncer Client uses Monitor Client in order to discover remote Event Servers,
 that is their syncer servers. It registers for notifications made by Monitor
 Client once global state changes. Once it gets `ComponentInfo`, with same
-`group` as it's own (correspond to remote Event Server), it is interested in
-its `data` property in order to get `syncer_token`, `server_id` and `syncer_server_address` (see :ref:`here <monitor_component_data>`). First it
+`group` as its own (correspond to remote Event Server), it is interested in
+its `data` property in order to get `syncer_token`, `server_id` and
+`syncer_server_address` (see :ref:`here <monitor_component_data>`). First it
 checks that `syncer_token` of the remote server matches with its own
 `syncer_token` (defined in configuration). This mechanism can be used, for
 example, to check if remote server node has matching system configuration. If
@@ -504,12 +506,12 @@ Syncer Server
 
 Syncer Server module is responsible for providing implementation of server side
 of `Syncer communication`_. It is in charge of synchronizing arbitrary number
-of clients connected to it, with all the events from its Event Server they are
-subscribed to.
+of clients connected to it, with all the events from its Event Server.
 
 Server is instanced with Backend instance. It registers to Backend notifications
 of newly stored events. Server also retrieves events from Backend, needed for a
-client synchronization, by its query method specialized for syncer server usage.
+client synchronization, by its query method `query_from_event_id`, specialized
+for syncer server usage.
 
 Syncer server is responsible for registering events in regard to connection
 status of the specific syncer client. Events are defined with unique event type:
@@ -525,18 +527,20 @@ status of the specific syncer client. Events are defined with unique event type:
         * `payload` is specified by
           ``hat-event://main.yaml#/definitions/events/syncer``.
 
-This event is registered on behalf of syncer server with `Source.type` set to
-``SYNCER`` (for the sake of simplicity hereafter we consider as syncer server
-registers this event).
+More precisely, this event is not registered by the Syncer server itself, but
+Event Server registers it on behalf of syncer server,
+(using `register_client_state_cb`) with `Source.type` set to ``SYNCER``(for the
+sake of simplicity hereafter we consider as syncer server registers this
+event).
 
 Payload of this event defines three states of a client connection:
-``CONNECTED``, ``DISCONNECTED`` and ``SYNCED``. Once server receives
-`MsgReq` from client, only then, server registers event with payload
-``CONNECTED``. Once Server has sent all the events that client requested to
-get "synchronized", it sends `MsgSynced` message and also registers event with
-payload `SYNCED`. Once connection to a Client is lost, event with payload
-``DISCONNECTED`` is registered by the Server (see `Syncer
-communication`_ for more details about messages exchanged with Client).
+``CONNECTED``, ``DISCONNECTED`` and ``SYNCED``. Once server receives `MsgReq`
+from client, only then, server registers event with payload ``CONNECTED``. Once
+Server has sent all the events that client requested to get "synchronized", it
+sends `MsgSynced` message and also registers event with payload `SYNCED`. Once
+connection to a Client is lost, event with payload ``DISCONNECTED`` is
+registered by the Server (see `Syncer communication`_ for more details about
+messages exchanged with Client).
 
 Multiple clients can be connected to a server, where each connection is handled
 independently, as described.
@@ -618,7 +622,7 @@ Modules
 Each module represents predefined and configurable closely related functions
 that can modify the process of registering new events or initiate new event
 registration sessions. When created, module is provided with reference to
-`Engine`_ which can be used for registering and querying events and it's own
+`Engine`_ which can be used for registering and querying events and its own
 unique source identification (used in case of registering new events).
 
 Implementation of specific module can be maintained independently of Event
