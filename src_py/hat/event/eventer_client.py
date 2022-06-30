@@ -120,7 +120,7 @@ async def connect(address: str,
     client._conn = await chatter.connect(common.sbs_repo, address, **kwargs)
 
     if subscriptions:
-        client._conn.send(chatter.Data(module='HatEvent',
+        client._conn.send(chatter.Data(module='HatEventer',
                                        type='MsgSubscribe',
                                        data=[list(i) for i in subscriptions]))
 
@@ -160,7 +160,7 @@ class EventerClient(aio.Resource):
             ConnectionError
 
         """
-        msg_data = chatter.Data(module='HatEvent',
+        msg_data = chatter.Data(module='HatEventer',
                                 type='MsgRegisterReq',
                                 data=[common.register_event_to_sbs(i)
                                       for i in events])
@@ -179,7 +179,7 @@ class EventerClient(aio.Resource):
             ConnectionError
 
         """
-        msg_data = chatter.Data(module='HatEvent',
+        msg_data = chatter.Data(module='HatEventer',
                                 type='MsgRegisterReq',
                                 data=[common.register_event_to_sbs(i)
                                       for i in events])
@@ -195,7 +195,7 @@ class EventerClient(aio.Resource):
             ConnectionError
 
         """
-        msg_data = chatter.Data(module='HatEvent',
+        msg_data = chatter.Data(module='HatEventer',
                                 type='MsgQueryReq',
                                 data=common.query_to_sbs(data))
         conv = self._conn.send(msg_data, last=False)
@@ -209,15 +209,15 @@ class EventerClient(aio.Resource):
                 msg = await self._conn.receive()
                 msg_type = msg.data.module, msg.data.type
 
-                if msg_type == ('HatEvent', 'MsgNotify'):
+                if msg_type == ('HatEventer', 'MsgNotify'):
                     mlog.debug("received event notification")
                     self._process_msg_notify(msg)
 
-                elif msg_type == ('HatEvent', 'MsgQueryRes'):
+                elif msg_type == ('HatEventer', 'MsgQueryRes'):
                     mlog.debug("received query response")
                     self._process_msg_query_res(msg)
 
-                elif msg_type == ('HatEvent', 'MsgRegisterRes'):
+                elif msg_type == ('HatEventer', 'MsgRegisterRes'):
                     mlog.debug("received register response")
                     self._process_msg_register_res(msg)
 

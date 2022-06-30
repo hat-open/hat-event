@@ -73,7 +73,7 @@ class _Connection(aio.Resource):
         if not events:
             return
 
-        data = chatter.Data('HatEvent', 'MsgNotify',
+        data = chatter.Data('HatEventer', 'MsgNotify',
                             [common.event_to_sbs(e) for e in events])
         with contextlib.suppress(ConnectionError):
             self._conn.send(data)
@@ -89,15 +89,15 @@ class _Connection(aio.Resource):
                     msg = await self._conn.receive()
                     msg_type = msg.data.module, msg.data.type
 
-                    if msg_type == ('HatEvent', 'MsgSubscribe'):
+                    if msg_type == ('HatEventer', 'MsgSubscribe'):
                         mlog.debug("received subscribe message")
                         await self._process_msg_subscribe(msg)
 
-                    elif msg_type == ('HatEvent', 'MsgRegisterReq'):
+                    elif msg_type == ('HatEventer', 'MsgRegisterReq'):
                         mlog.debug("received register request")
                         await self._process_msg_register(msg)
 
-                    elif msg_type == ('HatEvent', 'MsgQueryReq'):
+                    elif msg_type == ('HatEventer', 'MsgQueryReq'):
                         mlog.debug("received query request")
                         await self._process_msg_query(msg)
 
@@ -127,7 +127,7 @@ class _Connection(aio.Resource):
         if msg.last:
             return
 
-        data = chatter.Data(module='HatEvent',
+        data = chatter.Data(module='HatEventer',
                             type='MsgRegisterRes',
                             data=[(('event', common.event_to_sbs(e))
                                    if e is not None else ('failure', None))
@@ -137,7 +137,7 @@ class _Connection(aio.Resource):
     async def _process_msg_query(self, msg):
         query_data = common.query_from_sbs(msg.data.data)
         events = await self._engine.query(query_data)
-        data = chatter.Data(module='HatEvent',
+        data = chatter.Data(module='HatEventer',
                             type='MsgQueryRes',
                             data=[common.event_to_sbs(e) for e in events])
         self._conn.send(data, conv=msg.conv)

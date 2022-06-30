@@ -69,21 +69,21 @@ class Connection(aio.Resource):
         return self._conn.async_group
 
     def send_notify(self, events):
-        data = chatter.Data(module='HatEvent',
+        data = chatter.Data(module='HatEventer',
                             type='MsgNotify',
                             data=[common.event_to_sbs(event)
                                   for event in events])
         self._conn.send(data)
 
     def send_query_res(self, conv, events):
-        data = chatter.Data(module='HatEvent',
+        data = chatter.Data(module='HatEventer',
                             type='MsgQueryRes',
                             data=[common.event_to_sbs(event)
                                   for event in events])
         self._conn.send(data, conv=conv)
 
     def send_register_res(self, conv, events):
-        data = chatter.Data(module='HatEvent',
+        data = chatter.Data(module='HatEventer',
                             type='MsgRegisterRes',
                             data=[(('event', common.event_to_sbs(event))
                                    if event else ('failure', None))
@@ -157,7 +157,7 @@ async def test_client_subscriptions(server_address):
     msg = await conn.receive()
     assert msg.first is True
     assert msg.last is True
-    assert msg.data == chatter.Data('HatEvent', 'MsgSubscribe',
+    assert msg.data == chatter.Data('HatEventer', 'MsgSubscribe',
                                     [list(i) for i in subscriptions])
 
     await conn.async_close()
@@ -212,13 +212,13 @@ async def test_client_register(server_address):
     msg = await conn.receive()
     assert msg.first is True
     assert msg.last is True
-    assert msg.data == chatter.Data('HatEvent', 'MsgRegisterReq', [])
+    assert msg.data == chatter.Data('HatEventer', 'MsgRegisterReq', [])
 
     client.register(register_events)
     msg = await conn.receive()
     assert msg.first is True
     assert msg.last is True
-    assert msg.data == chatter.Data('HatEvent', 'MsgRegisterReq',
+    assert msg.data == chatter.Data('HatEventer', 'MsgRegisterReq',
                                     [common.register_event_to_sbs(i)
                                      for i in register_events])
 
@@ -258,7 +258,7 @@ async def test_client_register_with_response(server_address):
     msg = await conn.receive()
     assert msg.first is True
     assert msg.last is False
-    assert msg.data == chatter.Data('HatEvent', 'MsgRegisterReq', [])
+    assert msg.data == chatter.Data('HatEventer', 'MsgRegisterReq', [])
     assert not register_future.done()
     conn.send_register_res(msg.conv, [])
     received = await register_future
@@ -269,7 +269,7 @@ async def test_client_register_with_response(server_address):
     msg = await conn.receive()
     assert msg.first is True
     assert msg.last is False
-    assert msg.data == chatter.Data('HatEvent', 'MsgRegisterReq',
+    assert msg.data == chatter.Data('HatEventer', 'MsgRegisterReq',
                                     [common.register_event_to_sbs(i)
                                      for i in register_events])
     assert not register_future.done()
@@ -304,7 +304,7 @@ async def test_client_query(server_address):
     msg = await conn.receive()
     assert msg.first is True
     assert msg.last is False
-    assert msg.data == chatter.Data('HatEvent', 'MsgQueryReq',
+    assert msg.data == chatter.Data('HatEventer', 'MsgQueryReq',
                                     common.query_to_sbs(query_data))
     assert not query_future.done()
     conn.send_query_res(msg.conv, [])
@@ -316,7 +316,7 @@ async def test_client_query(server_address):
     msg = await conn.receive()
     assert msg.first is True
     assert msg.last is False
-    assert msg.data == chatter.Data('HatEvent', 'MsgQueryReq',
+    assert msg.data == chatter.Data('HatEventer', 'MsgQueryReq',
                                     common.query_to_sbs(query_data))
     assert not query_future.done()
     conn.send_query_res(msg.conv, events)

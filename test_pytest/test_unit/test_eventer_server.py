@@ -393,7 +393,7 @@ async def test_query(server_address, server_conf):
                    ('', '', '')]
     events = [
         hat.event.common.Event(
-            event_id=hat.event.common.EventId(server=0, instance=i),
+            event_id=hat.event.common.EventId(server=0, session=1, instance=i),
             event_type=event_type,
             timestamp=common.now(),
             source_timestamp=None,
