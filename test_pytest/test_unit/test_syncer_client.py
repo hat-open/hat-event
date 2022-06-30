@@ -18,21 +18,6 @@ def server_address_factory():
     return f
 
 
-@pytest.fixture
-def component_info(server_address):
-    return hat.monitor.common.ComponentInfo(
-        cid=1,
-        mid=2,
-        name='name',
-        group='group',
-        data={'eventer_server': server_address},
-        rank=3,
-        blessing_req=hat.monitor.common.BlessingReq(token=None,
-                                                    timestamp=None),
-        blessing_res=hat.monitor.common.BlessingRes(token=None,
-                                                    ready=False))
-
-
 async def create_server(address):
     server = Server()
     server._conn_queue = aio.Queue()
@@ -104,7 +89,8 @@ class MonitorClient(aio.Resource):
 async def test_create():
     backend = Backend()
     monitor_client = MonitorClient()
-    syncer_client = await create_syncer_client(backend, monitor_client, 'abc')
+    syncer_client = await create_syncer_client(
+        backend, monitor_client, 'group', 'name')
 
     assert isinstance(syncer_client, SyncerClient)
     assert syncer_client.is_open
@@ -117,30 +103,38 @@ async def test_create():
     assert syncer_client.is_closed
 
 
-async def test_connect(server_address_factory):
+@pytest.mark.parametrize("syncer_token",  ['abc123', None])
+async def test_connect(server_address_factory, syncer_token):
     server_address = server_address_factory()
-    events_queue = aio.Queue()
+    server_id = 13
     last_session_id = 789
     last_instance_id = 112233
+    group = 'abc'
+    client_name = 'c1'
+    events_queue = aio.Queue()
     backend = Backend(last_session_id, last_instance_id)
     backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
     monitor_client = MonitorClient()
-    group = 'abc'
-    syncer_token = 'abc123'
-    client_name = 'c1'
-    syncer_client = await create_syncer_client(backend, monitor_client, group,
-                                               syncer_token, client_name)
+
+    if syncer_token is not None:
+        syncer_client = await create_syncer_client(
+            backend, monitor_client, group, client_name, syncer_token)
+    else:
+        syncer_client = await create_syncer_client(
+            backend, monitor_client, group, client_name)
 
     syncer_server = await create_server(server_address)
+    component_data = {'syncer_server_address': server_address,
+                      'server_id': server_id}
+    if syncer_token is not None:
+        component_data['syncer_token'] = syncer_token
     monitor_client.change(components=[
         hat.monitor.common.ComponentInfo(
             cid=1,
             mid=2,
             name='name',
             group=group,
-            data={'syncer_server_address': server_address,
-                  'server_id': 13,
-                  'syncer_token': syncer_token},
+            data=component_data,
             rank=3,
             blessing_req=hat.monitor.common.BlessingReq(token=123,
                                                         timestamp=456),
@@ -150,15 +144,15 @@ async def test_connect(server_address_factory):
     conn = await syncer_server.get_connection()
     msg = await conn.receive()
     assert msg.data.type == 'MsgReq'
-    assert msg.data.data['lastEventId']['server'] == 13
+    assert msg.data.data['lastEventId']['server'] == server_id
     assert msg.data.data['lastEventId']['session'] == last_session_id
     assert msg.data.data['lastEventId']['instance'] == last_instance_id
     assert msg.data.data['lastEventId']['clientName'] == client_name
 
     events = [common.Event(
-        event_id=common.EventId(server=13,
-                                session=2,
-                                instance=i),
+        event_id=common.EventId(server=server_id,
+                                session=last_session_id + 1,
+                                instance=last_instance_id + (i + 1)),
         event_type=('a', 'b', 'cdef', str(i)),
         timestamp=common.now(),
         source_timestamp=common.now(),
@@ -176,58 +170,34 @@ async def test_connect(server_address_factory):
     await monitor_client.async_close()
 
 
-async def test_not_connect(server_address_factory):
+async def test_token_not_valid(server_address_factory):
     server_address = server_address_factory()
-    events_queue = aio.Queue()
-    last_session_id = 789
-    last_instance_id = 112233
-    backend = Backend(last_session_id, last_instance_id)
-    backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
-    monitor_client = MonitorClient()
     group = 'abc'
     syncer_token = 'abc123'
     client_name = 'c1'
+    events_queue = aio.Queue()
+    backend = Backend()
+    backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
+    monitor_client = MonitorClient()
     syncer_client = await create_syncer_client(backend, monitor_client, group,
-                                               syncer_token, client_name)
+                                               client_name, syncer_token)
 
     syncer_server = await create_server(server_address)
 
-    valid_component_info = hat.monitor.common.ComponentInfo(
-        cid=1,
-        mid=2,
-        name='name',
-        group=group,
-        data={'syncer_server_address': server_address,
-              'server_id': 13,
-              'syncer_token': syncer_token},
-        rank=3,
-        blessing_req=hat.monitor.common.BlessingReq(token=123,
-                                                    timestamp=456),
-        blessing_res=hat.monitor.common.BlessingRes(token=123,
-                                                    ready=True))
-
-    # syncer_tokens don't match
     monitor_client.change(components=[
-        valid_component_info._replace(
+        hat.monitor.common.ComponentInfo(
+            cid=1,
+            mid=2,
+            name='name',
+            group=group,
             data={'syncer_server_address': server_address,
                   'server_id': 13,
-                  'syncer_token': 'blabla'})])
-    with pytest.raises(asyncio.TimeoutError):
-        await asyncio.wait_for(syncer_server.get_connection(), 0.01)
-
-    # no blessing
-    monitor_client.change(components=[
-        valid_component_info._replace(
-            blessing_req=hat.monitor.common.BlessingReq(token=None,
-                                                        timestamp=None))])
-    with pytest.raises(asyncio.TimeoutError):
-        await asyncio.wait_for(syncer_server.get_connection(), 0.01)
-
-    # no ready
-    monitor_client.change(components=[
-        valid_component_info._replace(
-            blessing_req=hat.monitor.common.BlessingRes(token=None,
-                                                        ready=False))])
+                  'syncer_token': 'blabla'},
+            rank=3,
+            blessing_req=hat.monitor.common.BlessingReq(token=123,
+                                                        timestamp=456),
+            blessing_res=hat.monitor.common.BlessingRes(token=123,
+                                                        ready=True))])
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(syncer_server.get_connection(), 0.01)
 
@@ -238,24 +208,23 @@ async def test_not_connect(server_address_factory):
 
 
 async def test_connect_multiple(server_address_factory):
-    server_address = server_address_factory()
     servers_cnt = 10
-    events_queue = aio.Queue()
-    last_session_id = 789
-    last_instance_id = 112233
-    backend = Backend(last_session_id, last_instance_id)
-    backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
-    monitor_client = MonitorClient()
     group = 'abc'
     syncer_token = 'abc123'
     client_name = 'c1'
+    events_queue = aio.Queue()
+    backend = Backend()
+    backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
+    monitor_client = MonitorClient()
     syncer_client = await create_syncer_client(backend, monitor_client, group,
-                                               syncer_token, client_name)
+                                               client_name, syncer_token)
 
     servers = []
-    for _ in range(servers_cnt):
+    for i in range(servers_cnt):
+        srv_id = 123 + i * 2
+        server_address = server_address_factory()
         srv = await create_server(server_address)
-        servers.append(srv)
+        servers.append((server_address, srv_id, srv))
     monitor_client.change(components=[
         hat.monitor.common.ComponentInfo(
             cid=srv_id,
@@ -270,15 +239,15 @@ async def test_connect_multiple(server_address_factory):
                                                         timestamp=456),
             blessing_res=hat.monitor.common.BlessingRes(token=123,
                                                         ready=True))
-        for srv_id in range(servers_cnt)])
+        for server_address, srv_id, _ in servers])
 
-    for srv_id, srv in enumerate(servers):
+    for _, srv_id, srv in servers:
         conn = await srv.get_connection()
         msg = await conn.receive()
         assert msg.data.type == 'MsgReq'
         assert msg.data.data['lastEventId']['server'] == srv_id
 
-    for srv in enumerate(servers):
+    for _, _, srv in servers:
         await srv.async_close()
 
     await syncer_client.async_close()
