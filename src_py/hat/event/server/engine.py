@@ -41,9 +41,8 @@ async def create_engine(conf: json.Data,
 
     future = asyncio.Future()
     source = common.Source(type=common.SourceType.ENGINE, id=0)
-    events = [engine._create_status_event('STARTED')]
+    events = [engine._create_status_reg_event('STARTED')]
     engine._register_queue.put_nowait((future, source, events))
-
     try:
         for source_id, module_conf in enumerate(conf['modules']):
             py_module = importlib.import_module(module_conf['module'])
@@ -58,6 +57,8 @@ async def create_engine(conf: json.Data,
                                      engine.close)
 
             engine._source_modules.append((source, module))
+
+        engine.async_group.spawn(engine._register_loop)
 
     except BaseException:
         await aio.uncancellable(engine.async_close())
@@ -106,13 +107,11 @@ class Engine(aio.Resource):
                 mlog.debug("waiting for register requests")
                 future, source, register_events = \
                     await self._register_queue.get()
-
                 mlog.debug("processing session")
                 events = await self._process_sessions(source, register_events)
 
                 mlog.debug("registering to backend")
                 events = await self._backend.register(events)
-
                 if not future.done():
                     result = events[:len(register_events)]
                     future.set_result(result)
@@ -136,7 +135,8 @@ class Engine(aio.Resource):
                     break
                 future, _, __ = self._register_queue.get_nowait()
 
-            events = [self._create_status_event('STOPPED')]
+            status_reg_event = self._create_status_reg_event('STOPPED')
+            events = [self._create_event(common.now(), status_reg_event)]
             await self._backend.register(events)
 
     async def _process_sessions(self, source, register_events):
@@ -145,7 +145,7 @@ class Engine(aio.Resource):
             session=self._last_event_id.session + 1)
 
         for _, module in self._source_modules:
-            await module.start_session(self._last_event_id.session)
+            await module.on_session_start(self._last_event_id.session)
 
         events = collections.deque(
             self._create_event(timestamp, register_event)
@@ -171,19 +171,13 @@ class Engine(aio.Resource):
             input_source_events = output_source_events
 
         for _, module in self._source_modules:
-            await module.stop_session(self._last_event_id.session)
+            await module.on_session_stop(self._last_event_id.session)
 
-        return events
+        return list(events)
 
-    def _create_status_event(self, status):
-        self._last_event_id = self._last_event_id._replace(
-            session=self._last_event_id.session + 1,
-            instance=self._last_event_id.instance + 1)
-
-        return common.Event(
-            event_id=self._last_event_id,
+    def _create_status_reg_event(self, status):
+        return common.RegisterEvent(
             event_type=('event', 'engine'),
-            timestamp=common.now(),
             source_timestamp=None,
             payload=common.EventPayload(
                 type=common.EventPayloadType.JSON,
