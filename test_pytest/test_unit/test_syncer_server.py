@@ -4,7 +4,7 @@ import pytest
 from hat import aio
 from hat import chatter
 from hat import util
-from hat.event import common
+from hat.event.server import common
 from hat.event.server.syncer_server import create_syncer_server, SyncerServer
 
 
@@ -47,7 +47,8 @@ class Backend(aio.Resource):
 
     async def query_from_event_id(self, event_id):
         self._from_event_id = event_id
-        return self._query_from_event_id_events
+        if len(self._query_from_event_id_events) != 0:
+            yield self._query_from_event_id_events
 
     @property
     def from_event_id(self):
@@ -84,9 +85,10 @@ async def test_connect(conf):
 
     conn.send(chatter.Data(module='HatSyncer',
                            type='MsgReq',
-                           data={'lastEventId': None,
-                                 'clientName': 'abcd',
-                                 'subscription': []}))
+                           data={'lastEventId': {'server': 1,
+                                                 'session': 0,
+                                                 'instance': 0},
+                                 'clientName': 'abcd'}))
     source, client_name, client_state = await client_state_queue.get()
     assert client_state == common.SyncerClientState.CONNECTED
     assert isinstance(source, common.Source)
@@ -181,9 +183,10 @@ async def test_register(conf):
 
     conn.send(chatter.Data(module='HatSyncer',
                            type='MsgReq',
-                           data={'lastEventId': None,
-                                 'clientName': 'abcd',
-                                 'subscription': []}))
+                           data={'lastEventId': {'server': 1,
+                                                 'session': 0,
+                                                 'instance': 0},
+                                 'clientName': 'abcd'}))
 
     msg = await conn.receive()
     assert msg.data.type == 'MsgSynced'
@@ -238,11 +241,12 @@ async def test_register_while_sync(conf):
 
     conn.send(chatter.Data(module='HatSyncer',
                            type='MsgReq',
-                           data={'lastEventId': None,
-                                 'clientName': 'abcd',
-                                 'subscription': []}))
+                           data={'lastEventId': {'server': 1,
+                                                 'session': 1,
+                                                 'instance': 0},
+                                 'clientName': 'abcd'}))
 
-    _, _, client_state = client_state_queue.get()
+    _, _, client_state = await client_state_queue.get()
     assert client_state == common.SyncerClientState.CONNECTED
 
     for e in register_events:
@@ -254,7 +258,7 @@ async def test_register_while_sync(conf):
 
     msg = await conn.receive()
     assert msg.data.type == 'MsgSynced'
-    _, _, client_state = client_state_queue.get()
+    _, _, client_state = await client_state_queue.get()
     assert client_state == common.SyncerClientState.SYNCED
 
     for e in register_events:
