@@ -78,6 +78,9 @@ async def test_connect(conf):
     backend = create_backend()
     syncer_server = await create_syncer_server(conf, backend)
     syncer_server.register_client_state_cb(on_client_change)
+    source = common.Source(type=common.SourceType.SYNCER,
+                           id=1)
+    client_name = 'abcd1234'
 
     conn = await chatter.connect(common.sbs_repo, conf['address'])
     assert conn.is_open
@@ -88,28 +91,26 @@ async def test_connect(conf):
                            data={'lastEventId': {'server': 1,
                                                  'session': 0,
                                                  'instance': 0},
-                                 'clientName': 'abcd'}))
-    source, client_name, client_state = await client_state_queue.get()
+                                 'clientName': client_name}))
+    source_res, client_name_res, client_state = await client_state_queue.get()
+    assert source_res == source
+    assert client_name_res == client_name
     assert client_state == common.SyncerClientState.CONNECTED
-    assert isinstance(source, common.Source)
-    assert source.type == common.SourceType.SYNCER
-    assert isinstance(source.id, int) and source.id > 0
-    assert client_name == 'abcd'
 
     msg = await conn.receive()
     assert msg.data.type == 'MsgSynced'
     assert msg.data.data is None
 
-    source, client_name, client_state = await client_state_queue.get()
+    source_res, client_name_res, client_state = await client_state_queue.get()
+    assert source_res == source
+    assert client_name_res == client_name
     assert client_state == common.SyncerClientState.SYNCED
-    assert client_name == 'abcd'
-    assert source.type == common.SourceType.SYNCER
 
     conn.close()
-    source, client_name, client_state = await client_state_queue.get()
+    source_res, client_name_res, client_state = await client_state_queue.get()
+    assert source_res == source
+    assert client_name_res == client_name
     assert client_state == common.SyncerClientState.DISCONNECTED
-    assert client_name == 'abcd'
-    assert source.type == common.SourceType.SYNCER
 
     await conn.wait_closed()
     await backend.async_close()
@@ -139,13 +140,12 @@ async def test_sync(conf):
     assert conn.is_open
     assert client_state_queue.empty()
 
-    last_event_id = common.EventId(server=1, session=123, instance=456)
+    last_event_id = common.EventId(server=321, session=123, instance=456)
     conn.send(chatter.Data(module='HatSyncer',
                            type='MsgReq',
                            data={'lastEventId': last_event_id._asdict(),
-                                 'clientName': 'abcd',
-                                 'subscription': []}))
-    source, client_name, client_state = await client_state_queue.get()
+                                 'clientName': 'abcd'}))
+    _, _, client_state = await client_state_queue.get()
     assert client_state == common.SyncerClientState.CONNECTED
 
     msg = await conn.receive()
@@ -268,6 +268,76 @@ async def test_register_while_sync(conf):
 
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(conn.receive(), 0.01)
+
+    await conn.async_close()
+    await backend.async_close()
+    await syncer_server.async_close()
+
+
+async def test_multi_clients(conf):
+    client_state_queue = aio.Queue()
+
+    def on_client_change(source, client_name, client_state):
+        client_state_queue.put_nowait((source, client_name, client_state))
+
+    clients_count = 3
+    events = [common.Event(
+        event_id=common.EventId(server=1,
+                                session=2,
+                                instance=i),
+        event_type=('a', 'b', 'c'),
+        timestamp=common.now(),
+        source_timestamp=common.now(),
+        payload=common.EventPayload(common.EventPayloadType.JSON, i))
+        for i in range(10)]
+    backend = create_backend(query_from_event_id_events=events)
+    syncer_server = await create_syncer_server(conf, backend)
+    syncer_server.register_client_state_cb(on_client_change)
+
+    conns = []
+    for i in range(clients_count):
+        conn = await chatter.connect(common.sbs_repo, conf['address'])
+        last_event_id = common.EventId(
+            server=321, session=123 + i, instance=456 + i)
+        conn.client_name = f"cli{i}"
+        conn.source = common.Source(type=common.SourceType.SYNCER,
+                                    id=i + 1)
+        conns.append(conn)
+        conn.send(chatter.Data(module='HatSyncer',
+                               type='MsgReq',
+                               data={'lastEventId': last_event_id._asdict(),
+                                     'clientName': conn.client_name}))
+
+    for conn in conns:
+        source, client_name, client_state = await client_state_queue.get()
+        assert client_name == conn.client_name
+        assert source == conn.source
+        assert client_state == common.SyncerClientState.CONNECTED
+
+        msg = await conn.receive()
+        assert msg.data.type == 'MsgEvents'
+        assert [common.event_from_sbs(i) for i in msg.data.data] == events
+
+        msg = await conn.receive()
+        assert msg.data.type == 'MsgSynced'
+        assert msg.data.data is None
+
+        source, client_name, client_state = await client_state_queue.get()
+        assert client_name == conn.client_name
+        assert source == conn.source
+        assert client_state == common.SyncerClientState.SYNCED
+
+    for conn in conns:
+        conn.close()
+
+    for conn in conns:
+        source, client_name, client_state = await client_state_queue.get()
+        assert client_name == conn.client_name
+        assert source == conn.source
+        assert client_state == common.SyncerClientState.DISCONNECTED
+
+    for conn in conns:
+        await conn.async_close()
 
     await conn.async_close()
     await backend.async_close()
