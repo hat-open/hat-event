@@ -1,6 +1,7 @@
 import collections
 import functools
 import itertools
+import struct
 import typing
 
 import lmdb
@@ -8,7 +9,6 @@ import lmdb
 from hat import aio
 from hat import json
 from hat.event.server.backends.lmdb import common
-from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
@@ -16,6 +16,76 @@ db_count = 3
 data_db_name = b'ordered_data'
 partition_db_name = b'ordered_partition'
 count_db_name = b'ordered_count'
+
+PartitionId = int
+
+DataKey = typing.Tuple[PartitionId, common.Timestamp, common.EventId]
+DataValue = common.Event
+
+PartitionKey = PartitionId
+PartitionValue = json.Data
+
+CountKey = PartitionId
+CountValue = int
+
+
+def encode_data_key(key: DataKey) -> bytes:
+    partition_id, timestamp, event_id = key
+    return struct.pack(">QQIQQQ", partition_id, timestamp.s + (1 << 63),
+                       timestamp.us, event_id.server, event_id.session,
+                       event_id.instance)
+
+
+def decode_data_key(key_bytes: bytes) -> DataKey:
+    partition_id, s, us, server_id, session_id, instance_id, *_ = \
+        struct.unpack(">QQIQQQ", key_bytes)
+    timestamp = common.Timestamp(s - (1 << 63), us)
+    event_id = common.EventId(server=server_id,
+                              session=session_id,
+                              instance=instance_id)
+    return partition_id, timestamp, event_id
+
+
+def encode_data_value(value: DataValue) -> bytes:
+    event_sbs = common.event_to_sbs(value)
+    return common.sbs_repo.encode('HatEvent', 'Event', event_sbs)
+
+
+def decode_data_value(value_bytes: bytes) -> DataValue:
+    event_sbs = common.sbs_repo.decode('HatEvent', 'Event', value_bytes)
+    return common.event_from_sbs(event_sbs)
+
+
+def encode_partition_key(key: PartitionKey) -> bytes:
+    return struct.pack(">Q", key)
+
+
+def decode_partition_key(key_bytes: bytes) -> PartitionKey:
+    return struct.unpack(">Q", key_bytes)[0]
+
+
+def encode_partition_value(value: PartitionValue) -> bytes:
+    return json.encode(value).encode('utf-8')
+
+
+def decode_partition_value(value_bytes: bytes) -> PartitionValue:
+    return json.decode(str(value_bytes, encoding='utf-8'))
+
+
+def encode_count_key(key: CountKey) -> bytes:
+    return struct.pack(">Q", key)
+
+
+def decode_count_key(key_bytes: bytes) -> CountKey:
+    return struct.unpack(">Q", key_bytes)[0]
+
+
+def encode_count_value(value: CountValue) -> bytes:
+    return struct.pack(">Q", value)
+
+
+def decode_count_value(value_bytes: bytes) -> CountValue:
+    return struct.unpack(">Q", value_bytes)[0]
 
 
 async def create(executor: aio.Executor,

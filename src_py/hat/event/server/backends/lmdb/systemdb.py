@@ -1,15 +1,37 @@
 import functools
+import struct
 import typing
 
 import lmdb
 
 from hat import aio
+from hat import json
 from hat.event.server.backends.lmdb import common
-from hat.event.server.backends.lmdb import encoder
 
 
 db_count = 1
 db_name = b'system'
+
+ServerId = int
+
+Key = ServerId
+Value = json.Data
+
+
+def encode_key(key: Key) -> bytes:
+    return struct.pack(">Q", key)
+
+
+def decode_key(key_bytes: bytes) -> Key:
+    return struct.unpack(">Q", key_bytes)[0]
+
+
+def encode_value(value: Value) -> bytes:
+    return json.encode(value).encode('utf-8')
+
+
+def decode_value(value_bytes: bytes) -> Value:
+    return json.decode(str(value_bytes, encoding='utf-8'))
 
 
 async def create(executor: aio.Executor,

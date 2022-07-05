@@ -8,6 +8,7 @@ import lmdb
 
 from hat import aio
 from hat import json
+from hat import util
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import latestdb
 from hat.event.server.backends.lmdb import ordereddb
@@ -69,6 +70,12 @@ class LmdbBackend(common.Backend):
     def async_group(self) -> aio.Group:
         return self._async_group
 
+    def register_events_cb(self,
+                           cb: typing.Callable[[typing.List[common.Event]],
+                                               None]
+                           ) -> util.RegisterCallbackHandle:
+        pass
+
     async def get_last_event_id(self,
                                 server_id: int
                                 ) -> common.EventId:
@@ -83,8 +90,7 @@ class LmdbBackend(common.Backend):
     async def register(self,
                        events: typing.List[common.Event]
                        ) -> typing.List[common.Event]:
-        sorted_events = sorted(events, key=lambda x: x.event_id)
-        for event in sorted_events:
+        for event in events:
             server_id = self._sys_db.server_id
             if server_id != event.event_id.server:
                 mlog.warning("event registration skipped: invalid server id")
@@ -169,6 +175,11 @@ class LmdbBackend(common.Backend):
 
         return []
 
+    async def query_from_event_id(self,
+                                  event_id: common.EventId
+                                  ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
+        pass
+
     async def _write_loop(self):
         try:
             while True:
@@ -186,6 +197,7 @@ class LmdbBackend(common.Backend):
         dbs = [self._sys_db, self._latest_db, *self._ordered_dbs]
         ext_db_flush_fns = [db.create_ext_flush() for db in dbs]
         await self._executor(_ext_flush, self._env, ext_db_flush_fns)
+        # TODO: notify for eaach session
 
     async def _close_env(self):
         await self._flush_env()

@@ -1,16 +1,63 @@
 import functools
+import struct
 import typing
 
 import lmdb
 
 from hat import aio
+from hat import json
 from hat.event.server.backends.lmdb import common
-from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
-db_count = 1
-db_name = b'latest'
+db_count = 2
+data_db_name = b'latest_data'
+type_db_name = b'latest_type'
+
+EventTypeRef = int
+
+DataKey = EventTypeRef
+DataValue = common.Event
+
+TypeKey = EventTypeRef
+TypeValue = common.EventType
+
+Changes = typing.Tuple[typing.Dict[DataKey, DataValue],
+                       typing.Dict[TypeKey, TypeValue]]
+
+
+def encode_data_key(key: DataKey) -> bytes:
+    return struct.pack(">Q", key)
+
+
+def decode_data_key(key_bytes: bytes) -> DataKey:
+    return struct.unpack(">Q", key_bytes)[0]
+
+
+def encode_data_value(value: DataValue) -> bytes:
+    event_sbs = common.event_to_sbs(value)
+    return common.sbs_repo.encode('HatEvent', 'Event', event_sbs)
+
+
+def decode_data_value(value_bytes: bytes) -> DataValue:
+    event_sbs = common.sbs_repo.decode('HatEvent', 'Event', value_bytes)
+    return common.event_from_sbs(event_sbs)
+
+
+def encode_type_key(key: TypeKey) -> bytes:
+    return struct.pack(">Q", key)
+
+
+def decode_type_key(key_bytes: bytes) -> TypeKey:
+    return struct.unpack(">Q", key_bytes)[0]
+
+
+def encode_type_value(value: TypeValue) -> bytes:
+    return json.encode(list(value)).encode('utf-8')
+
+
+def decode_type_value(value_bytes: bytes) -> TypeValue:
+    return tuple(json.decode(str(value_bytes, encoding='utf-8')))
 
 
 async def create(executor: aio.Executor,
@@ -26,19 +73,27 @@ def _ext_create(env, subscription, conditions):
     db._env = env
     db._subscription = subscription
     db._conditions = conditions
-    db._changes = {}
+    db._changes = ({}, {})
 
-    db._db = env.open_db(db_name)
+    db._data_db = env.open_db(data_db_name)
+    db._type_db = env.open_db(type_db_name)
 
     db._events = {}
-    with env.begin(db=db._db, buffers=True) as txn:
+    with env.begin(db=db._data_db, buffers=True) as txn:
         for _, value in txn.cursor():
-            event = encoder.decode_event(value)
+            event = decode_data_value(value)
             if not subscription.matches(event.event_type):
                 continue
             if not conditions.matches(event):
                 continue
             db._events[event.event_type] = event
+
+    db._type_refs = {}
+    with env.begin(db=db._type_db, buffers=True) as txn:
+        for key, value in txn.cursor():
+            ref = decode_type_key(key)
+            event_type = decode_type_value(value)
+            db._type_refs[event_type] = ref
 
     return db
 
@@ -53,9 +108,15 @@ class LatestDb:
         if not self._subscription.matches(event.event_type):
             return False
 
-        key, value = event.event_type, event
-        self._events[key] = value
-        self._changes[key] = value
+        ref = self._type_refs.get(event.event_type)
+        if ref is None:
+            ref = len(self._type_refs) + 1
+            self._type_refs[event.event_type] = ref
+            self._changes[1][ref] = event.event_type
+
+        self._events[event.event_type] = event
+        self._changes[0][ref] = event
+
         return True
 
     def query(self,
@@ -79,11 +140,20 @@ class LatestDb:
                     yield event
 
     def create_ext_flush(self) -> common.ExtFlushCb:
-        changes, self._changes = self._changes, {}
+        changes, self._changes = self._changes, ({}, {})
         return functools.partial(self._ext_flush, changes)
 
     def _ext_flush(self, changes, parent, now):
-        with self._env.begin(db=self._db, parent=parent, write=True) as txn:
-            for key, value in changes.items():
-                txn.put(encoder.encode_tuple_str(key),
-                        encoder.encode_event(value))
+        with self._env.begin(db=self._data_db,
+                             parent=parent,
+                             write=True) as txn:
+            for key, value in changes[0].items():
+                txn.put(encode_data_key(key),
+                        encode_data_value(value))
+
+        with self._env.begin(db=self._type_db,
+                             parent=parent,
+                             write=True) as txn:
+            for key, value in changes[1].items():
+                txn.put(encode_type_key(key),
+                        encode_type_value(value))
