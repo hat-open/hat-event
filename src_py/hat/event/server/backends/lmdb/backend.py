@@ -4,14 +4,13 @@ import collections
 import logging
 import typing
 
-import lmdb
-
 from hat import aio
 from hat import json
 from hat import util
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import latestdb
 from hat.event.server.backends.lmdb import ordereddb
+from hat.event.server.backends.lmdb import refdb
 from hat.event.server.backends.lmdb import systemdb
 from hat.event.server.backends.lmdb.conditions import Conditions
 
@@ -19,24 +18,19 @@ from hat.event.server.backends.lmdb.conditions import Conditions
 mlog = logging.getLogger(__name__)
 
 
-db_count = (latestdb.db_count +
-            ordereddb.db_count +
-            systemdb.db_count)
-
-
 async def create(conf: json.Data
                  ) -> 'LmdbBackend':
     backend = LmdbBackend()
     backend._sync_period = conf['sync_period']
+    backend._flushed_events_cbs = util.CallbackRegistry()
     backend._executor = aio.create_executor(1)
 
     backend._conditions = Conditions(conf['conditions'])
 
     backend._env = await backend._executor(
-        _ext_create_env, Path(conf['db_path']), conf['max_db_size'], db_count)
+        common.ext_create_env, Path(conf['db_path']), conf['max_db_size'])
 
-    backend._sys_db = await systemdb.create(
-        backend._executor, backend._env, conf['server_id'])
+    backend._sys_db = await systemdb.create(backend._executor, backend._env)
 
     subscription = common.Subscription(
         tuple(i) for i in conf['latest']['subscriptions'])
@@ -58,6 +52,8 @@ async def create(conf: json.Data
     # ordereddb.cleanup(
     #     {ordered_db.partition_id for ordered_db in backend._ordered_dbs})
 
+    backend._ref_db = await refdb.create(backend._executor, backend._env)
+
     backend._async_group = aio.Group()
     backend._async_group.spawn(backend._write_loop)
 
@@ -70,41 +66,30 @@ class LmdbBackend(common.Backend):
     def async_group(self) -> aio.Group:
         return self._async_group
 
-    def register_events_cb(self,
-                           cb: typing.Callable[[typing.List[common.Event]],
-                                               None]
-                           ) -> util.RegisterCallbackHandle:
-        pass
+    def register_flushed_events_cb(self,
+                                   cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                                       None]
+                                   ) -> util.RegisterCallbackHandle:
+        return self._flushed_events_cbs.register(cb)
 
     async def get_last_event_id(self,
                                 server_id: int
                                 ) -> common.EventId:
-        if server_id != self._sys_db.server_id:
-            return common.EventId(server=server_id,
-                                  instance=0)
-
-        instance_id = self._sys_db.last_instance_id or 0
-        return common.EventId(server=server_id,
-                              instance=instance_id)
+        event_id, _ = self._sys_db.get_last_event_id_timestamp(server_id)
+        return event_id
 
     async def register(self,
                        events: typing.List[common.Event]
                        ) -> typing.List[common.Event]:
         for event in events:
-            server_id = self._sys_db.server_id
-            if server_id != event.event_id.server:
-                mlog.warning("event registration skipped: invalid server id")
+            last_event_id, last_timestamp = \
+                self._sys_db.get_last_event_id_timestamp(event.event_id.server)
+
+            if last_event_id >= event.event_id:
+                mlog.warning("event registration skipped: invalid event id")
                 continue
 
-            last_instance_id = self._sys_db.last_instance_id
-            if (last_instance_id is not None and
-                    last_instance_id >= event.event_id.instance):
-                mlog.warning("event registration skipped: invalid instance id")
-                continue
-
-            last_timestamp = self._sys_db.last_timestamp
-            if (last_timestamp is not None and
-                    last_timestamp > event.timestamp):
+            if last_timestamp > event.timestamp:
                 mlog.warning("event registration skipped: invalid timestamp")
                 continue
 
@@ -121,8 +106,11 @@ class LmdbBackend(common.Backend):
                 if db.add(event):
                     registered = True
 
-            if registered:
-                self._sys_db.change(event.event_id.instance, event.timestamp)
+            if not registered:
+                continue
+
+            self._sys_db.set_last_event_id_timestamp(event.event_id,
+                                                     event.timestamp)
 
         return events
 
@@ -175,42 +163,42 @@ class LmdbBackend(common.Backend):
 
         return []
 
-    async def query_from_event_id(self,
-                                  event_id: common.EventId
-                                  ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
-        pass
+    async def query_flushed(self,
+                            event_id: common.EventId
+                            ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
+        return await self._ref_db.query(event_id)
 
     async def _write_loop(self):
         try:
             while True:
                 await asyncio.sleep(self._sync_period)
-                await aio.uncancellable(self._flush_env())
+                await aio.uncancellable(self._flush())
 
         except Exception as e:
             mlog.error('backend write error: %s', e, exc_info=e)
 
         finally:
             self.close()
-            await aio.uncancellable(self._close_env())
+            await aio.uncancellable(self._close())
 
-    async def _flush_env(self):
-        dbs = [self._sys_db, self._latest_db, *self._ordered_dbs]
-        ext_db_flush_fns = [db.create_ext_flush() for db in dbs]
-        await self._executor(_ext_flush, self._env, ext_db_flush_fns)
-        # TODO: notify for eaach session
+    async def _flush(self):
+        dbs = [self._sys_db,
+               self._latest_db,
+               *self._ordered_dbs,
+               self._ref_db]
+        ext_flush_fns = [db.create_ext_flush() for db in dbs]
+        events = await self._executor(_ext_flush, self._env, ext_flush_fns)
+        for session in events:
+            self._flushed_events_cbs.notify(session)
 
-    async def _close_env(self):
-        await self._flush_env()
+    async def _close(self):
+        await self._flush()
         await self._executor(self._env.close)
 
 
-def _ext_create_env(path, max_size, max_dbs):
-    return lmdb.Environment(str(path), map_size=max_size, subdir=False,
-                            max_dbs=max_dbs)
-
-
-def _ext_flush(env, db_flush_fns):
-    now = common.now()
+def _ext_flush(env, flush_fns):
     with env.begin(write=True) as txn:
-        for db_flush_fn in db_flush_fns:
-            db_flush_fn(txn, now)
+        ctx = common.FlushContext(txn)
+        for flush_fn in flush_fns:
+            flush_fn(ctx)
+        return ctx.get_events()

@@ -1,63 +1,18 @@
 import functools
-import struct
 import typing
 
 import lmdb
 
 from hat import aio
-from hat import json
 from hat.event.server.backends.lmdb import common
+from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
-db_count = 2
-data_db_name = b'latest_data'
-type_db_name = b'latest_type'
-
-EventTypeRef = int
-
-DataKey = EventTypeRef
-DataValue = common.Event
-
-TypeKey = EventTypeRef
-TypeValue = common.EventType
-
-Changes = typing.Tuple[typing.Dict[DataKey, DataValue],
-                       typing.Dict[TypeKey, TypeValue]]
-
-
-def encode_data_key(key: DataKey) -> bytes:
-    return struct.pack(">Q", key)
-
-
-def decode_data_key(key_bytes: bytes) -> DataKey:
-    return struct.unpack(">Q", key_bytes)[0]
-
-
-def encode_data_value(value: DataValue) -> bytes:
-    event_sbs = common.event_to_sbs(value)
-    return common.sbs_repo.encode('HatEvent', 'Event', event_sbs)
-
-
-def decode_data_value(value_bytes: bytes) -> DataValue:
-    event_sbs = common.sbs_repo.decode('HatEvent', 'Event', value_bytes)
-    return common.event_from_sbs(event_sbs)
-
-
-def encode_type_key(key: TypeKey) -> bytes:
-    return struct.pack(">Q", key)
-
-
-def decode_type_key(key_bytes: bytes) -> TypeKey:
-    return struct.unpack(">Q", key_bytes)[0]
-
-
-def encode_type_value(value: TypeValue) -> bytes:
-    return json.encode(list(value)).encode('utf-8')
-
-
-def decode_type_value(value_bytes: bytes) -> TypeValue:
-    return tuple(json.decode(str(value_bytes, encoding='utf-8')))
+Changes = typing.Tuple[typing.Dict[common.LatestDataDbKey,
+                                   common.LatestDataDbValue],
+                       typing.Dict[common.LatestTypeDbKey,
+                                   common.LatestTypeDbValue]]
 
 
 async def create(executor: aio.Executor,
@@ -73,15 +28,15 @@ def _ext_create(env, subscription, conditions):
     db._env = env
     db._subscription = subscription
     db._conditions = conditions
-    db._changes = ({}, {})
+    db._changes = {}, {}
 
-    db._data_db = env.open_db(data_db_name)
-    db._type_db = env.open_db(type_db_name)
+    db._data_db = common.ext_open_db(env, common.DbType.LATEST_DATA)
+    db._type_db = common.ext_open_db(env, common.DbType.LATEST_TYPE)
 
     db._events = {}
     with env.begin(db=db._data_db, buffers=True) as txn:
-        for _, value in txn.cursor():
-            event = decode_data_value(value)
+        for _, encoded_value in txn.cursor():
+            event = encoder.decode_latest_data_db_value(encoded_value)
             if not subscription.matches(event.event_type):
                 continue
             if not conditions.matches(event):
@@ -90,15 +45,15 @@ def _ext_create(env, subscription, conditions):
 
     db._type_refs = {}
     with env.begin(db=db._type_db, buffers=True) as txn:
-        for key, value in txn.cursor():
-            ref = decode_type_key(key)
-            event_type = decode_type_value(value)
+        for encoded_key, encoded_value in txn.cursor():
+            ref = encoder.decode_latest_type_db_key(encoded_key)
+            event_type = encoder.decode_latest_type_db_value(encoded_value)
             db._type_refs[event_type] = ref
 
     return db
 
 
-class LatestDb:
+class LatestDb(common.Flushable):
 
     @property
     def subscription(self) -> common.Subscription:
@@ -143,17 +98,29 @@ class LatestDb:
         changes, self._changes = self._changes, ({}, {})
         return functools.partial(self._ext_flush, changes)
 
-    def _ext_flush(self, changes, parent, now):
+    def _ext_flush(self, changes, ctx):
         with self._env.begin(db=self._data_db,
-                             parent=parent,
+                             parent=ctx.transaction,
                              write=True) as txn:
             for key, value in changes[0].items():
-                txn.put(encode_data_key(key),
-                        encode_data_value(value))
+                event_ref = common.LatestEventRef(key)
+                encoded_key = encoder.encode_latest_data_db_key(key)
+                encoded_value = encoder.encode_latest_data_db_value(value)
+
+                previous_encoded_value = txn.get(encoded_key)
+                if previous_encoded_value:
+                    previous_value = encoder.decode_latest_data_db_value(
+                        previous_encoded_value)
+                    ctx.remove_event_ref(previous_value.event_id, event_ref)
+
+                txn.put(encoded_key, encoded_value)
+                ctx.add_event_ref(value, event_ref)
 
         with self._env.begin(db=self._type_db,
-                             parent=parent,
+                             parent=ctx.transaction,
                              write=True) as txn:
             for key, value in changes[1].items():
-                txn.put(encode_type_key(key),
-                        encode_type_value(value))
+                encoded_key = encoder.encode_latest_type_db_key(key)
+                encoded_value = encoder.encode_latest_type_db_value(value)
+
+                txn.put(encoded_key, encoded_value)

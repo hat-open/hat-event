@@ -58,11 +58,11 @@ class Backend(aio.Resource):
     """
 
     @abc.abstractmethod
-    def register_events_cb(self,
-                           cb: typing.Callable[[typing.List[Event]],
-                                               None]
-                           ) -> util.RegisterCallbackHandle:
-        """Register events callback"""
+    def register_flushed_events_cb(self,
+                                   cb: typing.Callable[[typing.List[Event]],
+                                                       None]
+                                   ) -> util.RegisterCallbackHandle:
+        """Register flushed events callback"""
 
     @abc.abstractmethod
     async def get_last_event_id(self,
@@ -83,13 +83,13 @@ class Backend(aio.Resource):
         """Query events"""
 
     @abc.abstractmethod
-    async def query_from_event_id(self,
-                                  event_id: EventId
-                                  ) -> typing.AsyncIterable[
-                                        typing.List[Event]]:
+    async def query_flushed(self,
+                            event_id: EventId
+                            ) -> typing.AsyncIterable[typing.List[Event]]:
         """Get events with the same event_id.server, and event_id.instance
         greater than provided. Iterates over lists of Events from the
-        same session."""
+        same session. Only permanently persisted events (flushed) are
+        returned."""
 
 
 ModuleConf = json.Data

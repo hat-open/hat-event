@@ -1,105 +1,70 @@
 import functools
-import struct
 import typing
 
 import lmdb
 
 from hat import aio
-from hat import json
 from hat.event.server.backends.lmdb import common
+from hat.event.server.backends.lmdb import encoder
 
 
-db_count = 1
-db_name = b'system'
-
-ServerId = int
-
-Key = ServerId
-Value = json.Data
-
-
-def encode_key(key: Key) -> bytes:
-    return struct.pack(">Q", key)
-
-
-def decode_key(key_bytes: bytes) -> Key:
-    return struct.unpack(">Q", key_bytes)[0]
-
-
-def encode_value(value: Value) -> bytes:
-    return json.encode(value).encode('utf-8')
-
-
-def decode_value(value_bytes: bytes) -> Value:
-    return json.decode(str(value_bytes, encoding='utf-8'))
+Changes = typing.Dict[common.SystemDbKey, common.SystemDbValue]
 
 
 async def create(executor: aio.Executor,
                  env: lmdb.Environment,
-                 server_id: int
                  ) -> 'SystemDb':
-    return await executor(_ext_create, env, server_id)
+    return await executor(_ext_create, env)
 
 
-def _ext_create(env, server_id):
+def _ext_create(env):
     db = SystemDb()
     db._env = env
-    db._server_id = server_id
+    db._cache = {}
+    db._changes = {}
 
-    db._db = env.open_db(db_name)
+    db._db = common.ext_open_db(env, common.DbType.SYSTEM)
 
     with env.begin(db=db._db, buffers=True) as txn:
-        encoded_server_id = txn.get(b'server_id')
-        encoded_last_instance_id = txn.get(b'last_instance_id')
-        encoded_last_timestamp = txn.get(b'last_timestamp')
-
-    if encoded_server_id:
-        if encoder.decode_uint(encoded_server_id) != server_id:
-            raise Exception('server id not matching')
-
-    else:
-        with env.begin(db=db._db, write=True) as txn:
-            txn.put(b'server_id', encoder.encode_uint(server_id))
-
-    db._last_instance_id = (encoder.decode_uint(encoded_last_instance_id)
-                            if encoded_last_instance_id else None)
-
-    db._last_timestamp = (encoder.decode_timestamp(encoded_last_timestamp)
-                          if encoded_last_timestamp else None)
+        for encoded_key, encoded_value in txn.cursor():
+            key = encoder.decode_system_db_key(encoded_key)
+            value = encoder.decode_system_db_value(encoded_value)
+            db._cache[key] = value
 
     return db
 
 
-class SystemDb:
+class SystemDb(common.Flushable):
 
-    @property
-    def server_id(self) -> int:
-        return self._server_id
+    def get_last_event_id_timestamp(self,
+                                    server_id: common.ServerId
+                                    ) -> typing.Tuple[common.EventId,
+                                                      common.Timestamp]:
+        value = self._cache.get(server_id)
+        if value:
+            return value
 
-    @property
-    def last_instance_id(self) -> typing.Optional[int]:
-        return self._last_instance_id
+        event_id = common.EventId(server=server_id,
+                                  session=0,
+                                  instance=0)
+        timestamp = common.Timestamp(-(1 << 63), 0)
+        return event_id, timestamp
 
-    @property
-    def last_timestamp(self) -> typing.Optional[common.Timestamp]:
-        return self._last_timestamp
-
-    def change(self,
-               last_instance_id: int,
-               last_timestamp: common.Timestamp):
-        self._last_instance_id = last_instance_id
-        self._last_timestamp = last_timestamp
+    def set_last_event_id_timestamp(self,
+                                    event_id: common.EventId,
+                                    timestamp: common.Timestamp):
+        self._cache[event_id.server] = event_id, timestamp
+        self._changes[event_id.server] = event_id, timestamp
 
     def create_ext_flush(self) -> common.ExtFlushCb:
-        return functools.partial(self._ext_flush, self._last_instance_id,
-                                 self._last_timestamp)
+        changes, self._changes = self._changes, {}
+        return functools.partial(self._ext_flush, changes)
 
-    def _ext_flush(self, last_instance_id, last_timestamp, parent, now):
-        with self._env.begin(db=self._db, parent=parent, write=True) as txn:
-            if last_instance_id is not None:
-                txn.put(b'last_instance_id',
-                        encoder.encode_uint(last_instance_id))
-
-            if last_timestamp is not None:
-                txn.put(b'last_timestamp',
-                        encoder.encode_timestamp(last_timestamp))
+    def _ext_flush(self, changes, ctx):
+        with self._env.begin(db=self._db,
+                             parent=ctx.transaction,
+                             write=True) as txn:
+            for key, value in changes.items():
+                encoded_key = encoder.encode_system_db_key(key)
+                encoded_value = encoder.encode_system_db_value(value)
+                txn.put(encoded_key, encoded_value)
