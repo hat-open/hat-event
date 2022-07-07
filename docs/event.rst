@@ -529,7 +529,7 @@ status of the specific Syncer Client. Events are defined with unique event type:
 
 More precisely, this event is not registered by the Syncer Server itself, but
 Event Server registers it on behalf of Syncer Server, with `Source.type` set to
-``SYNCER``(for the sake of simplicity hereafter we consider as Syncer Server
+``SYNCER`` (for the sake of simplicity hereafter we consider as Syncer Server
 registers this event). Each connection between client and server is uniquely
 identified by `source id` (unique identification is guarantied for duration of
 single Event Server process execution).
