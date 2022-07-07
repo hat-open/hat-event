@@ -1,3 +1,5 @@
+import asyncio
+import collections
 import typing
 
 import lmdb
@@ -5,6 +7,9 @@ import lmdb
 from hat import aio
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import encoder
+
+
+query_queue_size = 100
 
 
 async def create(executor: aio.Executor,
@@ -30,10 +35,67 @@ class RefDb(common.Flushable):
     async def query(self,
                     event_id: common.EventId
                     ) -> typing.AsyncIterable[typing.List[common.Event]]:
-        pass
+
+        # TODO use other executor to prevent blocking of other query and flush
+        #      operations
+
+        queue = aio.Queue(query_queue_size)
+        loop = asyncio.get_running_loop()
+        self._executor(self._ext_query, event_id, queue, loop)
+
+        try:
+            async for events in queue.queue:
+                yield events
+
+        finally:
+            queue.close()
 
     def create_ext_flush(self) -> common.ExtFlushCb:
         return self._ext_flush
+
+    def _ext_query(self, event_id, queue, loop):
+        try:
+            start_key = event_id
+            stop_key = common.EventId(server=event_id.server + 1,
+                                      session=0,
+                                      instance=0)
+
+            encoded_start_key = encoder.encode_ref_db_key(start_key)
+            encoded_stop_key = encoder.encode_ref_db_key(stop_key)
+
+            with self._env.begin(db=self._ref_db, buffers=True) as txn:
+                cursor = txn.cursor()
+
+                available = cursor.set_range(encoded_start_key)
+                if available and bytes(cursor.key()) == encoded_start_key:
+                    available = cursor.next()
+
+                events = collections.deque()
+
+                while available and bytes(cursor.key()) < encoded_stop_key:
+                    value = encoder.decode_ref_db_value(cursor.value())
+                    event = self._ext_get_event(value)
+                    session = event.event_id.session
+
+                    if events and events[0].event_id.session != session:
+                        future = asyncio.run_coroutine_threadsafe(
+                            queue.put(list(events)), loop)
+                        future.result()
+                        events = collections.deque()
+
+                    events.append(event)
+                    available = cursor.next()
+
+                if events:
+                    future = asyncio.run_coroutine_threadsafe(
+                        queue.put(list(events)), loop)
+                    future.result()
+
+        except aio.QueueClosedError:
+            pass
+
+        finally:
+            loop.call_soon_threadsafe(queue.close)
 
     def _ext_flush(self, ctx):
         with self._env.begin(db=self._ref_db,
@@ -53,3 +115,21 @@ class RefDb(common.Flushable):
                 encoded_value = encoder.encode_ref_db_value(value)
 
                 txn.put(encoded_key, encoded_value)
+
+    def _ext_get_event(self, ref):
+        if isinstance(ref, common.LatestEventRef):
+            db = self._latest_db
+            encoded_key = encoder.encode_latest_data_db_key(ref.key)
+            decode_value_fn = encoder.decode_latest_data_db_value
+
+        elif isinstance(ref, common.OrderedEventRef):
+            db = self._ordered_db
+            encoded_key = encoder.encode_ordered_data_db_key(ref.key)
+            decode_value_fn = encoder.decode_ordered_data_db_value
+
+        else:
+            raise ValueError('unssuported event reference type')
+
+        with self._env.begin(db=db, buffers=True) as txn:
+            encoded_value = txn.get(encoded_key)
+            return decode_value_fn(encoded_value)
