@@ -125,13 +125,13 @@ class FlushContext:
     def get_events(self) -> typing.Iterable[typing.List[Event]]:
         event_ids = sorted(change.event_id
                            for change in self._changes.values()
-                           if change.add - change.removed)
+                           if change.added - change.removed)
 
         events = collections.deque()
         session = collections.deque()
 
         for event_id in event_ids:
-            if session or event_id.session != session[0].event_id.session:
+            if session and session[0].event_id.session != event_id.session:
                 events.append(list(session))
                 session = collections.deque()
             session.append(self._events[event_id])

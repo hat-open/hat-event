@@ -58,7 +58,7 @@ In addition to key-value and time series event storage, additional event
 references are stored in dedicated `event id` based reference storage.
 These references are kept only for events available in key-value or time
 series storage. Once event is removed (e.g. due to configured limits) and
-not accessible in other storages, it's reference is also removed from
+not accessible in other storages, its reference is also removed from
 reference storage. This storage enables quick and sequential access to
 events based on their `event id`.
 
@@ -117,7 +117,7 @@ configuration defined limit which specifies event persistent period based on
 event timestamp or event source timestamp, number of events in partition or
 partitions approximated disk usage. `event id` based reference storage
 is updated only during this periodic write transaction. Because of this,
-queries utilizing event reference storage will return only events that are
+queries utilizing `event id` reference storage will return only events that are
 persisted on disk.
 
 

@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 
 import pytest
 
@@ -13,12 +14,15 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def create_event():
-    counter = 0
+    session = 1
+    next_session = itertools.count(1)
+    next_instance = itertools.count(1)
 
-    def create_event(event_type):
-        nonlocal counter
-        counter += 1
-        event_id = common.EventId(1, counter)
+    def create_event(event_type, server_id=1):
+        nonlocal session
+        instance = next(next_instance)
+        session = next(next_session) if instance % 10 == 1 else session
+        event_id = common.EventId(server_id, session, instance)
         t = common.now()
         event = common.Event(event_id=event_id,
                              event_type=event_type,
@@ -61,10 +65,10 @@ async def test_get_last_event_id(db_path, create_event):
     backend = await hat.event.server.backends.lmdb.backend.create(conf)
 
     event_id = await backend.get_last_event_id(server_id)
-    assert event_id == common.EventId(server_id, 0)
+    assert event_id == common.EventId(server_id, 0, 0)
 
     event_id = await backend.get_last_event_id(server_id + 1)
-    assert event_id == common.EventId(server_id + 1, 0)
+    assert event_id == common.EventId(server_id + 1, 0, 0)
 
     event = create_event(('a',))
     await backend.register([event])
@@ -73,7 +77,7 @@ async def test_get_last_event_id(db_path, create_event):
     assert event_id == event.event_id
 
     event_id = await backend.get_last_event_id(server_id + 1)
-    assert event_id == common.EventId(server_id + 1, 0)
+    assert event_id == common.EventId(server_id + 1, 0, 0)
 
     await backend.async_close()
 
@@ -103,14 +107,17 @@ async def test_register(db_path, create_event):
 
     event1 = create_event(('a',))
     await asyncio.sleep(0.001)
-    event2 = create_event(('b',))._replace(event_id=common.EventId(2, 1))
+    event2 = create_event(('b',), server_id=2)
     await asyncio.sleep(0.001)
+    # not registered: invalid id
     event3 = create_event(('c',))._replace(event_id=event1.event_id)
     await asyncio.sleep(0.001)
     event4 = create_event(('d',))
     await asyncio.sleep(0.001)
+    # not registered: invalid timestamp
     event5 = create_event(('e',))._replace(timestamp=event1.timestamp)
     await asyncio.sleep(0.001)
+    # not registered: invalid conditions
     event6 = create_event(('f',))
     await asyncio.sleep(0.001)
     event7 = create_event(('g',))
@@ -120,15 +127,16 @@ async def test_register(db_path, create_event):
     result = await backend.register(events)
     assert result == events
 
+    exp_registered_events = [event7, event4, event2, event1]
     result = await backend.query(common.QueryData())
-    assert result == [event7, event4, event1]
+    assert result == exp_registered_events
 
     await backend.async_close()
 
     backend = await hat.event.server.backends.lmdb.backend.create(conf)
 
     result = await backend.query(common.QueryData())
-    assert result == [event7, event4, event1]
+    assert result == exp_registered_events
 
     await backend.async_close()
 
@@ -204,3 +212,7 @@ async def test_query_partitioning(db_path, create_event):
     assert result == [event1]
 
     await backend.async_close()
+
+
+# TODO: register_flushed_events_cb
+# TODO: query_flushed

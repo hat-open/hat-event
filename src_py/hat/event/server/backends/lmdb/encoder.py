@@ -205,11 +205,11 @@ def _decode_event_ref(ref_bytes):
 
 def _encode_event(event):
     event_sbs = common.event_to_sbs(event)
-    return common.sbs_repo.encode('HatEvent', 'Event', event_sbs)
+    return common.sbs_repo.encode('HatEventer', 'Event', event_sbs)
 
 
 def _decode_event(event_bytes):
-    event_sbs = common.sbs_repo.decode('HatEvent', 'Event', event_bytes)
+    event_sbs = common.sbs_repo.decode('HatEventer', 'Event', event_bytes)
     return common.event_from_sbs(event_sbs)
 
 

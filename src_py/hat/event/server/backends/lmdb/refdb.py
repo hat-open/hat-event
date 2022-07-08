@@ -44,7 +44,7 @@ class RefDb(common.Flushable):
         self._executor(self._ext_query, event_id, queue, loop)
 
         try:
-            async for events in queue.queue:
+            async for events in queue:
                 yield events
 
         finally:
@@ -109,7 +109,7 @@ class RefDb(common.Flushable):
                 value = (encoder.decode_ref_db_value(encoded_value)
                          if encoded_value else set())
 
-                value = value + change.added - change.removed
+                value = (value | change.added) - change.removed
                 if not value:
                     continue
                 encoded_value = encoder.encode_ref_db_value(value)
