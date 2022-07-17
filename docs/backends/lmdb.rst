@@ -109,14 +109,14 @@ Disk persisting
 Registration of new events doesn't initiate immediate disk writes. All changes
 are cached in memory and periodically written to disk as part of single
 transaction which includes all storages. This period is defined by
-configuration. Writing of memory cache is also part of backend's standard
-closing procedure. Single transaction responsible for writing all memory caches
-to disk also include cleanup operation which enabled deletion of oldest entries
-in time series storages. Each time series storage can have its own
-configuration defined limit which specifies event persistent period based on
-event timestamp or event source timestamp, number of events in partition or
-partitions approximated disk usage. `event id` based reference storage
-is updated only during this periodic write transaction. Because of this,
+configuration (``flush_period``). Writing of memory cache is also part of
+backend's standard closing procedure. Single transaction responsible for
+writing all memory caches to disk also include cleanup operation which enables
+deletion of oldest entries in time series storages. Each time series storage
+can have its own configuration defined limit which specifies event persistent
+period based on event timestamp or event source timestamp, number of events in
+partition or partitions approximated disk usage. `event id` based reference
+storage is updated only during this periodic write transaction. Because of this,
 queries utilizing `event id` reference storage will return only events that are
 persisted on disk.
 
@@ -152,3 +152,10 @@ of same database transaction. Supported limits include:
         exceeds this storage size, some of the oldest entries are removed.
         Number of removed entries is calculated based on average entry size
         and limiting storage size.
+
+
+Configuration
+-------------
+
+.. literalinclude:: ../../schemas_json/backends/lmdb.yaml
+    :language: yaml

@@ -21,7 +21,7 @@ mlog = logging.getLogger(__name__)
 async def create(conf: json.Data
                  ) -> 'LmdbBackend':
     backend = LmdbBackend()
-    backend._sync_period = conf['sync_period']
+    backend._flush_period = conf['flush_period']
     backend._flushed_events_cbs = util.CallbackRegistry()
     backend._executor = aio.create_executor(1)
 
@@ -171,7 +171,7 @@ class LmdbBackend(common.Backend):
     async def _write_loop(self):
         try:
             while True:
-                await asyncio.sleep(self._sync_period)
+                await asyncio.sleep(self._flush_period)
                 await aio.uncancellable(self._flush())
 
         except Exception as e:

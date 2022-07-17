@@ -6,7 +6,7 @@ type: object
 required:
     - db_path
     - max_db_size
-    - sync_period
+    - flush_period
     - server_id
     - conditions
     - latest
@@ -16,7 +16,7 @@ properties:
         type: string
     max_db_size:
         type: number
-    sync_period:
+    flush_period:
         type: number
     server_id:
         type: integer
