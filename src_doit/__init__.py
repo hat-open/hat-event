@@ -92,11 +92,18 @@ def task_test():
 
 def task_docs():
     """Docs"""
-    return {'actions': [(build_sphinx, [SphinxOutputType.HTML,
-                                        docs_dir,
-                                        build_docs_dir]),
-                        (build_pdoc, ['hat.event',
-                                      build_docs_dir / 'py_api'])],
+
+    def build():
+        build_sphinx(src_dir=docs_dir,
+                     dst_dir=build_docs_dir,
+                     project='hat-event',
+                     extensions=['sphinx.ext.graphviz',
+                                 'sphinxcontrib.plantuml',
+                                 'sphinxcontrib.programoutput'])
+        build_pdoc(module='hat.event',
+                   dst_dir=build_docs_dir / 'py_api')
+
+    return {'actions': [build],
             'task_dep': ['json_schema_repo',
                          'sbs_repo',
                          'csubscription']}
