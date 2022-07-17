@@ -6,11 +6,13 @@ from hat import sbs
 from hat.doit import common
 from hat.doit.py import (build_wheel,
                          run_pytest,
-                         run_flake8)
+                         run_flake8,
+                         get_py_versions)
 from hat.doit.docs import (SphinxOutputType,
                            build_sphinx,
                            build_pdoc)
 
+from .csubscription import py_limited_api
 from .csubscription import *  # NOQA
 from . import csubscription
 
@@ -61,10 +63,11 @@ def task_build():
             description='Hat event',
             url='https://github.com/hat-open/hat-event',
             license=common.License.APACHE2,
-            packages=['hat'],
             console_scripts=['hat-event = hat.event.server.main:main'],
-            py_versions=[common.target_py_version],
-            platform=common.target_platform)
+            py_versions=get_py_versions(py_limited_api),
+            py_limited_api=py_limited_api,
+            platform=common.target_platform,
+            has_ext_modules=True)
 
     return {'actions': [build],
             'task_dep': ['json_schema_repo',

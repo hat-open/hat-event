@@ -1,5 +1,5 @@
-from pathlib import Path
 import enum
+import importlib.resources
 import typing
 
 from hat import chatter
@@ -11,18 +11,17 @@ from hat.event.common.timestamp import (Timestamp,
 import hat.monitor.common
 
 
-_package_path = Path(__file__).parent
+with importlib.resources.path(__package__, 'json_schema_repo.json') as _path:
+    json_schema_repo: json.SchemaRepository = json.SchemaRepository(
+        json.json_schema_repo,
+        hat.monitor.common.json_schema_repo,
+        json.SchemaRepository.from_json(_path))
+    """JSON schema repository"""
 
-json_schema_repo: json.SchemaRepository = json.SchemaRepository(
-    json.json_schema_repo,
-    hat.monitor.common.json_schema_repo,
-    json.SchemaRepository.from_json(_package_path / 'json_schema_repo.json'))
-"""JSON schema repository"""
-
-sbs_repo = sbs.Repository(
-    chatter.sbs_repo,
-    sbs.Repository.from_json(_package_path / 'sbs_repo.json'))
-"""SBS schema repository"""
+with importlib.resources.path(__package__, 'sbs_repo.json') as _path:
+    sbs_repo: sbs.Repository = sbs.Repository(chatter.sbs_repo,
+                                              sbs.Repository.from_json(_path))
+    """SBS schema repository"""
 
 EventType: typing.Type = typing.Tuple[str, ...]
 """Event type"""
