@@ -166,7 +166,8 @@ class LmdbBackend(common.Backend):
     async def query_flushed(self,
                             event_id: common.EventId
                             ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
-        return await self._ref_db.query(event_id)
+        async for events in self._ref_db.query(event_id):
+            yield events
 
     async def _write_loop(self):
         try:

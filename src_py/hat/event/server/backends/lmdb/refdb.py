@@ -5,6 +5,7 @@ import typing
 import lmdb
 
 from hat import aio
+from hat import util
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import encoder
 
@@ -41,11 +42,14 @@ class RefDb(common.Flushable):
 
         queue = aio.Queue(query_queue_size)
         loop = asyncio.get_running_loop()
-        self._executor(self._ext_query, event_id, queue, loop)
 
         try:
-            async for events in queue:
-                yield events
+            async with aio.Group() as async_group:
+                async_group.spawn(self._executor, self._ext_query, event_id,
+                                  queue, loop)
+
+                async for events in queue:
+                    yield events
 
         finally:
             queue.close()
@@ -74,7 +78,11 @@ class RefDb(common.Flushable):
 
                 while available and bytes(cursor.key()) < encoded_stop_key:
                     value = encoder.decode_ref_db_value(cursor.value())
-                    event = self._ext_get_event(value)
+                    ref = util.first(value)
+                    if not ref:
+                        continue
+
+                    event = self._ext_get_event(ref)
                     session = event.event_id.session
 
                     if events and events[0].event_id.session != session:

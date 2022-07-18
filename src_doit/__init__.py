@@ -8,8 +8,7 @@ from hat.doit.py import (build_wheel,
                          run_pytest,
                          run_flake8,
                          get_py_versions)
-from hat.doit.docs import (SphinxOutputType,
-                           build_sphinx,
+from hat.doit.docs import (build_sphinx,
                            build_pdoc)
 
 from .csubscription import py_limited_api
