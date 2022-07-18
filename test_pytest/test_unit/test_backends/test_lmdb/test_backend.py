@@ -1,10 +1,10 @@
 import asyncio
 import itertools
-
 import pytest
 
+from hat import aio
 from hat.event.server.backends.lmdb import common
-import hat.event.server.backends.lmdb.backend
+from hat.event.server.backends.lmdb.backend import create, LmdbBackend
 
 
 @pytest.fixture
@@ -37,32 +37,38 @@ def create_event():
 async def test_create_empty(db_path):
     conf = {'db_path': str(db_path),
             'max_db_size': 1024 * 1024 * 1024,
-            'sync_period': 30,
+            'flush_period': 30,
             'server_id': 1,
             'conditions': [],
             'latest': {'subscriptions': [['*']]},
             'ordered': [{'order_by': 'TIMESTAMP',
                          'subscriptions': [['*']]}]}
 
-    backend = await hat.event.server.backends.lmdb.backend.create(conf)
+    backend = await create(conf)
 
+    assert isinstance(backend, LmdbBackend)
     assert backend.is_open
 
-    await backend.async_close()
+    backend.close()
+    await backend.wait_closing()
+    assert not backend.is_open
+    assert backend.is_closing
+    await backend.wait_closed()
+    assert backend.is_closed
 
 
 async def test_get_last_event_id(db_path, create_event):
     server_id = 1
     conf = {'db_path': str(db_path),
             'max_db_size': 1024 * 1024 * 1024,
-            'sync_period': 30,
+            'flush_period': 30,
             'server_id': server_id,
             'conditions': [],
             'latest': {'subscriptions': [['*']]},
             'ordered': [{'order_by': 'TIMESTAMP',
                          'subscriptions': [['*']]}]}
 
-    backend = await hat.event.server.backends.lmdb.backend.create(conf)
+    backend = await create(conf)
 
     event_id = await backend.get_last_event_id(server_id)
     assert event_id == common.EventId(server_id, 0, 0)
@@ -81,7 +87,7 @@ async def test_get_last_event_id(db_path, create_event):
 
     await backend.async_close()
 
-    backend = await hat.event.server.backends.lmdb.backend.create(conf)
+    backend = await create(conf)
 
     event_id = await backend.get_last_event_id(server_id)
     assert event_id == event.event_id
@@ -92,7 +98,7 @@ async def test_get_last_event_id(db_path, create_event):
 async def test_register(db_path, create_event):
     conf = {'db_path': str(db_path),
             'max_db_size': 1024 * 1024 * 1024,
-            'sync_period': 30,
+            'flush_period': 30,
             'server_id': 1,
             'conditions': [{'subscriptions': [('f',)],
                             'condition': {'type': 'json'}}],
@@ -100,7 +106,7 @@ async def test_register(db_path, create_event):
             'ordered': [{'order_by': 'TIMESTAMP',
                          'subscriptions': [['*']]}]}
 
-    backend = await hat.event.server.backends.lmdb.backend.create(conf)
+    backend = await create(conf)
 
     result = await backend.query(common.QueryData())
     assert result == []
@@ -133,7 +139,7 @@ async def test_register(db_path, create_event):
 
     await backend.async_close()
 
-    backend = await hat.event.server.backends.lmdb.backend.create(conf)
+    backend = await create(conf)
 
     result = await backend.query(common.QueryData())
     assert result == exp_registered_events
@@ -144,7 +150,7 @@ async def test_register(db_path, create_event):
 async def test_query(db_path, create_event):
     conf = {'db_path': str(db_path),
             'max_db_size': 1024 * 1024 * 1024,
-            'sync_period': 30,
+            'flush_period': 30,
             'server_id': 1,
             'conditions': [],
             'latest': {'subscriptions': [['*']]},
@@ -153,7 +159,7 @@ async def test_query(db_path, create_event):
                         {'order_by': 'SOURCE_TIMESTAMP',
                          'subscriptions': [['*']]}]}
 
-    backend = await hat.event.server.backends.lmdb.backend.create(conf)
+    backend = await create(conf)
 
     event1 = create_event(('a',))
     event2 = create_event(('a',))
@@ -184,7 +190,7 @@ async def test_query(db_path, create_event):
 async def test_query_partitioning(db_path, create_event):
     conf = {'db_path': str(db_path),
             'max_db_size': 1024 * 1024 * 1024,
-            'sync_period': 30,
+            'flush_period': 30,
             'server_id': 1,
             'conditions': [],
             'latest': {'subscriptions': [['*']]},
@@ -193,7 +199,7 @@ async def test_query_partitioning(db_path, create_event):
                         {'order_by': 'TIMESTAMP',
                          'subscriptions': [['b']]}]}
 
-    backend = await hat.event.server.backends.lmdb.backend.create(conf)
+    backend = await create(conf)
 
     event1 = create_event(('a',))
     event2 = create_event(('b',))
@@ -214,5 +220,37 @@ async def test_query_partitioning(db_path, create_event):
     await backend.async_close()
 
 
-# TODO: register_flushed_events_cb
-# TODO: query_flushed
+async def test_flushed_events(db_path, create_event):
+    server_id = 1
+    conf = {'db_path': str(db_path),
+            'max_db_size': 1024 * 1024 * 1024,
+            'flush_period': 0.05,
+            'server_id': server_id,
+            'conditions': [],
+            'latest': {'subscriptions': [['*']]},
+            'ordered': [{'order_by': 'TIMESTAMP',
+                         'subscriptions': [['*']]}]}
+    backend = await create(conf)
+    flushed_events_queue = aio.Queue()
+    backend.register_flushed_events_cb(
+        lambda i: flushed_events_queue.put_nowait(i))
+
+    events = [create_event(('a', str(i)), server_id) for i in range(10)]
+
+    await backend.register(events)
+
+    assert flushed_events_queue.empty()
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 0, 0))]
+    assert len(query_flushed_events) == 0
+
+    flushed_events = await flushed_events_queue.get()
+    assert flushed_events == events
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 0, 0))]
+    assert len(query_flushed_events) == 1
+    assert query_flushed_events[0] == events
+
+    await backend.async_close()
