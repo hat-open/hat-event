@@ -4,12 +4,13 @@ import sys
 from hat import json
 from hat import sbs
 from hat.doit import common
+from hat.doit.c import get_task_clang_format
+from hat.doit.docs import (build_sphinx,
+                           build_pdoc)
 from hat.doit.py import (build_wheel,
                          run_pytest,
                          run_flake8,
                          get_py_versions)
-from hat.doit.docs import (build_sphinx,
-                           build_pdoc)
 
 from .csubscription import py_limited_api
 from .csubscription import *  # NOQA
@@ -143,9 +144,5 @@ def task_deps():
 
 def task_format():
     """Format"""
-    files = [*Path('src_c').rglob('*.c'),
-             *Path('src_c').rglob('*.h')]
-    for f in files:
-        yield {'name': str(f),
-               'actions': [f'clang-format -style=file -i {f}'],
-               'file_dep': [f]}
+    yield from get_task_clang_format([*Path('src_c').rglob('*.c'),
+                                      *Path('src_c').rglob('*.h')])
