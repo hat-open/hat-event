@@ -1,8 +1,8 @@
 appdirs ~= 1.4.4
-hat-aio ~= 0.6.0
-hat-chatter ~= 0.5.1
-hat-json ~= 0.5.3
-hat-monitor ~= 0.6.0
-hat-sbs ~= 0.5.3
-hat-util ~= 0.5.5
+hat-aio ~= 0.6.3
+hat-chatter ~= 0.5.3
+hat-json ~= 0.5.8
+hat-monitor ~= 0.6.1
+hat-sbs ~= 0.5.6
+hat-util ~= 0.5.8
 lmdb ~= 1.2.1
