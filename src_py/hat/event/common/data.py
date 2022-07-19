@@ -217,7 +217,7 @@ def event_payload_from_sbs(data: sbs.Data) -> EventPayload:
 
 def syncer_req_to_sbs(syncer_req: SyncerReq) -> sbs.Data:
     """Convert SyncerReq to SBS data"""
-    return {'lastEventId': _event_id_to_sbs(syncer_req.event_id),
+    return {'lastEventId': _event_id_to_sbs(syncer_req.last_event_id),
             'clientName': syncer_req.client_name}
 
 

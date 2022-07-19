@@ -9,6 +9,7 @@ from hat.event.syncer_client import create_syncer_client, SyncerClient
 import hat.monitor.common
 
 
+@pytest.fixture
 def server_address_factory():
 
     def f():
@@ -41,7 +42,7 @@ class Backend(aio.Resource):
 
     def __init__(self, last_session_id=0, last_instance_id=0):
         self._async_group = aio.Group()
-        self._register_cbs = util.CallbackRegistry()
+        self._flushed_events_cbs = util.CallbackRegistry()
         self._last_session_id = last_session_id
         self._last_instance_id = last_instance_id
         self._from_event_id = None
@@ -51,11 +52,11 @@ class Backend(aio.Resource):
         return self._async_group
 
     async def register(self, events):
-        self._register_cbs.notify(events)
+        self._flushed_events_cbs.notify(events)
         return events
 
-    def register_events_cb(self, cb):
-        return self._register_cbs.register(cb)
+    def register_flushed_events_cb(self, cb):
+        return self._flushed_events_cbs.register(cb)
 
     async def get_last_event_id(self, server_id):
         return common.EventId(server=server_id,
@@ -77,6 +78,10 @@ class MonitorClient(aio.Resource):
     @property
     def components(self):
         return self._components
+
+    @property
+    def info(self):
+        return None
 
     def register_change_cb(self, cb):
         return self._change_cbs.register(cb)
@@ -113,7 +118,8 @@ async def test_connect(server_address_factory, syncer_token):
     client_name = 'c1'
     events_queue = aio.Queue()
     backend = Backend(last_session_id, last_instance_id)
-    backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
+    backend.register_flushed_events_cb(
+        lambda evts: events_queue.put_nowait(evts))
     monitor_client = MonitorClient()
 
     if syncer_token is not None:
@@ -147,7 +153,7 @@ async def test_connect(server_address_factory, syncer_token):
     assert msg.data.data['lastEventId']['server'] == server_id
     assert msg.data.data['lastEventId']['session'] == last_session_id
     assert msg.data.data['lastEventId']['instance'] == last_instance_id
-    assert msg.data.data['lastEventId']['clientName'] == client_name
+    assert msg.data.data['clientName'] == client_name
 
     events = [common.Event(
         event_id=common.EventId(server=server_id,
@@ -177,7 +183,8 @@ async def test_token_not_valid(server_address_factory):
     client_name = 'c1'
     events_queue = aio.Queue()
     backend = Backend()
-    backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
+    backend.register_flushed_events_cb(
+        lambda evts: events_queue.put_nowait(evts))
     monitor_client = MonitorClient()
     syncer_client = await create_syncer_client(backend, monitor_client, group,
                                                client_name, syncer_token)
@@ -214,7 +221,8 @@ async def test_connect_multiple(server_address_factory):
     client_name = 'c1'
     events_queue = aio.Queue()
     backend = Backend()
-    backend.register_events_cb(lambda evts: events_queue.put_nowait(evts))
+    backend.register_flushed_events_cb(
+        lambda evts: events_queue.put_nowait(evts))
     monitor_client = MonitorClient()
     syncer_client = await create_syncer_client(backend, monitor_client, group,
                                                client_name, syncer_token)

@@ -9,6 +9,7 @@ from hat import chatter
 from hat import json
 from hat import util
 from hat.event.server import common
+import hat.event.common.data
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
@@ -84,15 +85,15 @@ async def _run_connection_loop(conn, notify_client_state, backend, source_id):
         mlog.debug("received request")
         conn.async_group.spawn(_receive, conn)
 
-        msg_req = common.syncer_req_from_sbs(msg.data.data)
+        msg_req = hat.event.common.data.syncer_req_from_sbs(msg.data.data)
         name = msg_req.client_name
         notify_client_state(source, name, common.SyncerClientState.CONNECTED)
 
         events_queue = aio.Queue()
-        with backend.register_events_cb(events_queue.put_nowait):
+        with backend.register_flushed_events_cb(events_queue.put_nowait):
             last_synced_session = 0
             mlog.debug("query backend")
-            async for events in backend.query_from_event_id(
+            async for events in backend.query_flushed(
                     msg_req.last_event_id):
                 data = chatter.Data(module='HatSyncer',
                                     type='MsgEvents',

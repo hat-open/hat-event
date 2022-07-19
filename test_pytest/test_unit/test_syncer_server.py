@@ -26,7 +26,7 @@ def conf(server_address):
 def create_backend(query_from_event_id_events=[]):
     backend = Backend()
     backend._async_group = aio.Group()
-    backend._register_cbs = util.CallbackRegistry()
+    backend._flushed_events_cbs = util.CallbackRegistry()
     backend._query_from_event_id_events = query_from_event_id_events
     backend._from_event_id = None
     return backend
@@ -38,14 +38,14 @@ class Backend(aio.Resource):
     def async_group(self):
         return self._async_group
 
-    def register_events_cb(self, cb):
-        return self._register_cbs.register(cb)
+    def register_flushed_events_cb(self, cb):
+        return self._flushed_events_cbs.register(cb)
 
     async def register(self, events):
-        self._register_cbs.notify(events)
+        self._flushed_events_cbs.notify(events)
         return events
 
-    async def query_from_event_id(self, event_id):
+    async def query_flushed(self, event_id):
         self._from_event_id = event_id
         if len(self._query_from_event_id_events) != 0:
             yield self._query_from_event_id_events
