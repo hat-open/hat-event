@@ -14,14 +14,13 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def create_event():
-    session = 1
-    next_session = itertools.count(1)
-    next_instance = itertools.count(1)
+    instance_cntrs = {}
 
-    def create_event(event_type, server_id=1):
-        nonlocal session
-        instance = next(next_instance)
-        session = next(next_session) if instance % 10 == 1 else session
+    def create_event(event_type, server_id=1, session=1):
+        nonlocal instance_cntrs
+        if session not in instance_cntrs:
+            instance_cntrs[session] = itertools.count(1)
+        instance = next(instance_cntrs[session])
         event_id = common.EventId(server_id, session, instance)
         t = common.now()
         event = common.Event(event_id=event_id,
@@ -34,7 +33,7 @@ def create_event():
     return create_event
 
 
-async def test_create_empty(db_path):
+async def test_create(db_path):
     conf = {'db_path': str(db_path),
             'max_db_size': 1024 * 1024 * 1024,
             'flush_period': 30,
@@ -76,7 +75,7 @@ async def test_get_last_event_id(db_path, create_event):
     event_id = await backend.get_last_event_id(server_id + 1)
     assert event_id == common.EventId(server_id + 1, 0, 0)
 
-    event = create_event(('a',))
+    event = create_event(('a',), server_id=server_id, session=1)
     await backend.register([event])
 
     event_id = await backend.get_last_event_id(server_id)
@@ -85,12 +84,26 @@ async def test_get_last_event_id(db_path, create_event):
     event_id = await backend.get_last_event_id(server_id + 1)
     assert event_id == common.EventId(server_id + 1, 0, 0)
 
+    event2 = create_event(('a',), server_id=server_id + 1, session=1)
+    await backend.register([event2])
+
+    event_id = await backend.get_last_event_id(server_id)
+    assert event_id == event.event_id
+
+    event_id = await backend.get_last_event_id(server_id + 1)
+    assert event_id == event2.event_id
+
+    events = [create_event(('a',), server_id=server_id, session=2)]
+    await backend.register(events)
+    event_id = await backend.get_last_event_id(server_id)
+    assert event_id == events[-1].event_id
+
     await backend.async_close()
 
     backend = await create(conf)
 
     event_id = await backend.get_last_event_id(server_id)
-    assert event_id == event.event_id
+    assert event_id == events[-1].event_id
 
     await backend.async_close()
 
@@ -220,7 +233,7 @@ async def test_query_partitioning(db_path, create_event):
     await backend.async_close()
 
 
-async def test_flushed_events(db_path, create_event):
+async def test_register_flushed_cb(db_path, create_event):
     server_id = 1
     conf = {'db_path': str(db_path),
             'max_db_size': 1024 * 1024 * 1024,
@@ -235,22 +248,119 @@ async def test_flushed_events(db_path, create_event):
     backend.register_flushed_events_cb(
         lambda i: flushed_events_queue.put_nowait(i))
 
-    events = [create_event(('a', str(i)), server_id) for i in range(10)]
+    events1 = [create_event(('a', str(i)), server_id, session=1)
+               for i in range(10)]
 
-    await backend.register(events)
+    await backend.register(events1)
+
+    assert flushed_events_queue.empty()
+
+    flushed_events = await flushed_events_queue.get()
+    assert flushed_events == events1
+
+    events2 = [create_event(('a', str(i)), server_id, session=2)
+               for i in range(10)]
+    events3 = [create_event(('a', str(i)), server_id, session=3 + i)
+               for i in range(10)]
+    await backend.register(events2 + events3)
+
+    assert flushed_events_queue.empty()
+    flushed_events = await flushed_events_queue.get()
+    assert flushed_events == events2
+    for i in range(10):
+        flushed_events = await flushed_events_queue.get()
+        assert flushed_events == [events3[i]]
+
+    assert flushed_events_queue.empty()
+
+    await backend.async_close()
+
+
+async def test_query_flushed(db_path, create_event):
+    server_id = 1
+    conf = {'db_path': str(db_path),
+            'max_db_size': 1024 * 1024 * 1024,
+            'flush_period': 0.05,
+            'server_id': server_id,
+            'conditions': [],
+            'latest': {'subscriptions': [['*']]},
+            'ordered': [{'order_by': 'TIMESTAMP',
+                         'subscriptions': [['*']]}]}
+    backend = await create(conf)
+    flushed_events_queue = aio.Queue()
+    backend.register_flushed_events_cb(
+        lambda i: flushed_events_queue.put_nowait(i))
+
+    events1 = [create_event(('a', str(i)), server_id, session=1)
+               for i in range(10)]
+    await backend.register(events1)
 
     assert flushed_events_queue.empty()
 
     query_flushed_events = [i async for i in backend.query_flushed(
                             common.EventId(server_id, 0, 0))]
-    assert len(query_flushed_events) == 0
+    assert not query_flushed_events
 
-    flushed_events = await flushed_events_queue.get()
-    assert flushed_events == events
+    await flushed_events_queue.get()
 
     query_flushed_events = [i async for i in backend.query_flushed(
                             common.EventId(server_id, 0, 0))]
-    assert len(query_flushed_events) == 1
-    assert query_flushed_events[0] == events
+    assert query_flushed_events == [events1]
+
+    events2 = [create_event(('a', str(i)), server_id, session=2)
+               for i in range(10)]
+    await backend.register(events2)
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 0, 0))]
+    assert query_flushed_events == [events1]
+
+    await flushed_events_queue.get()
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 0, 0))]
+    assert query_flushed_events == [events1, events2]
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 1, 5))]
+    assert query_flushed_events == [events1[5:], events2]
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 2, 3))]
+    assert query_flushed_events == [events2[3:]]
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 2, 10))]
+    assert query_flushed_events == []
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 3, 0))]
+    assert query_flushed_events == []
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(2, 3, 0))]
+    assert query_flushed_events == []
+
+    events3 = [create_event(('a', str(i)), server_id, session=2)
+               for i in range(10)]
+    events4 = [create_event(('a', str(i)), server_id, session=3)
+               for i in range(10)]
+    await backend.register(events3 + events4)
+    await flushed_events_queue.get()
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 0, 0))]
+    assert query_flushed_events == [events1, events2 + events3, events4]
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 2, 7))]
+    assert query_flushed_events == [events2[7:] + events3, events4]
+
+    await backend.async_close()
+    backend = await create(conf)
+
+    query_flushed_events = [i async for i in backend.query_flushed(
+                            common.EventId(server_id, 0, 0))]
+    assert query_flushed_events == [events1, events2 + events3, events4]
 
     await backend.async_close()

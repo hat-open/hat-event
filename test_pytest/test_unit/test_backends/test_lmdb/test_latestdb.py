@@ -1,5 +1,4 @@
-import datetime
-
+import itertools
 import lmdb
 import pytest
 
@@ -39,9 +38,9 @@ def flush(executor, env):
 
     async def flush(db):
         txn = await executor(env.begin, write=True)
-        now = datetime.datetime.now(datetime.timezone.utc)
+        ctx = common.FlushContext(txn)
         try:
-            await executor(db.create_ext_flush(), txn, now)
+            await executor(db.create_ext_flush(), ctx)
         finally:
             await executor(txn.commit)
 
@@ -50,12 +49,11 @@ def flush(executor, env):
 
 @pytest.fixture
 def create_event():
-    counter = 0
+    session_count = itertools.count(1)
+    instance_count = itertools.count(1)
 
     def create_event(event_type, payload):
-        nonlocal counter
-        counter += 1
-        event_id = common.EventId(1, counter)
+        event_id = common.EventId(1, next(session_count), next(instance_count))
         event = common.Event(event_id=event_id,
                              event_type=event_type,
                              timestamp=common.now(),
@@ -66,7 +64,7 @@ def create_event():
     return create_event
 
 
-async def test_create_empty(executor, env):
+async def test_create(executor, env):
     subscription = common.Subscription([])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     db = await hat.event.server.backends.lmdb.latestdb.create(

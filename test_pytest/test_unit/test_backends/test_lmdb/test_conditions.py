@@ -5,7 +5,7 @@ import hat.event.server.backends.lmdb.conditions
 
 
 def create_event(event_type, payload):
-    return common.Event(event_id=common.EventId(1, 2),
+    return common.Event(event_id=common.EventId(1, 2, 3),
                         event_type=event_type,
                         timestamp=common.now(),
                         source_timestamp=None,

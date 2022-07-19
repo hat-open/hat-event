@@ -94,7 +94,7 @@ class FlushContext:
 
     @property
     def timestamp(self) -> Timestamp:
-        self._timestamp
+        return self._timestamp
 
     def add_event_ref(self,
                       event: Event,
