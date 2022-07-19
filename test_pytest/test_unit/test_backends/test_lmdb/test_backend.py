@@ -17,7 +17,6 @@ def create_event():
     instance_cntrs = {}
 
     def create_event(event_type, server_id=1, session=1):
-        nonlocal instance_cntrs
         if session not in instance_cntrs:
             instance_cntrs[session] = itertools.count(1)
         instance = next(instance_cntrs[session])

@@ -1,7 +1,7 @@
 import pytest
 
-from hat.event.server.registry import (EventTypeRegistryStorage,
-                                       create_event_type_registry)
+from hat.event.server.backends.sqlite.registry import (EventTypeRegistryStorage,  # NOQA
+                                                       create_event_type_registry)  # NOQA
 
 
 class MockEventTypeRegistryStorage(EventTypeRegistryStorage):
