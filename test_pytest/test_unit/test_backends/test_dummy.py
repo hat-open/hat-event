@@ -21,7 +21,7 @@ async def test_get_last_event_id(server_id):
     backend = await hat.event.server.backends.dummy.create(conf)
 
     event_id = await backend.get_last_event_id(server_id)
-    assert event_id == common.EventId(server_id, 0)
+    assert event_id == common.EventId(server_id, 0, 0)
 
     await backend.async_close()
 
@@ -30,7 +30,7 @@ async def test_get_last_event_id(server_id):
 async def test_register(event_count):
     events = [
         hat.event.common.Event(
-            event_id=hat.event.common.EventId(server=0, instance=i),
+            event_id=hat.event.common.EventId(server=0, session=1, instance=i),
             event_type=(),
             timestamp=common.now(),
             source_timestamp=None,
@@ -54,6 +54,20 @@ async def test_query(query_data):
     backend = await hat.event.server.backends.dummy.create(conf)
 
     result = await backend.query(query_data)
+    assert result == []
+
+    await backend.async_close()
+
+
+@pytest.mark.parametrize("server_id", [0, 1, 5, 10])
+async def test_query_flushed(server_id):
+    conf = {'module': 'hat.event.server.backends.dummy'}
+    backend = await hat.event.server.backends.dummy.create(conf)
+
+    last_event_id = common.EventId(server_id, 0, 0)
+    result = []
+    async for events in backend.query_flushed(last_event_id):
+        result.append(events)
     assert result == []
 
     await backend.async_close()

@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+
 import pytest
 
 from hat import aio

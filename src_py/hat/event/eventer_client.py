@@ -42,19 +42,19 @@ communication with currenty active Event Server based on information obtained
 from Monitor Server.
 This function repeatedly tries to create active connection with
 Event Server. When this connection is created, users code is notified by
-calling `async_run_cb` callback. Once connection is closed, execution of
-`async_run_cb` is cancelled and :func:`run_eventer_client` repeats connection
+calling `run_cb` callback. Once connection is closed, execution of
+`run_cb` is cancelled and :func:`run_eventer_client` repeats connection
 estabishment process.
 
 Example of high-level interface usage::
 
-    async def monitor_async_run(component):
+    async def monitor_run(component):
         await hat.event.eventer_client.run_eventer_client(
             monitor_client=monitor,
             server_group='event servers',
-            async_run_cb=event_async_run])
+            run_cb=event_run])
 
-    async def event_async_run(client):
+    async def event_run(client):
         while True:
             assert not client.is_closed
             await asyncio.sleep(10)
@@ -63,7 +63,7 @@ Example of high-level interface usage::
         'name': 'client',
         'group': 'test clients',
         'monitor_address': 'tcp+sbs://127.0.0.1:23010'})
-    component = hat.monitor.client.Component(monitor, monitor_async_run)
+    component = hat.monitor.client.Component(monitor, monitor_run)
     component.set_enabled(True)
     await monitor.async_close()
 
@@ -87,6 +87,9 @@ mlog: logging.Logger = logging.getLogger(__name__)
 reconnect_delay: float = 0.5
 """Delay in seconds before trying to reconnect to event server
 (used in high-level interface)"""
+
+RunCb = typing.Callable[['EventerClient'], typing.Awaitable]
+"""Event client run callback coroutine"""
 
 
 async def connect(address: str,
@@ -270,25 +273,23 @@ class EventerClient(aio.Resource):
 
 async def run_eventer_client(monitor_client: hat.monitor.client.Client,
                              server_group: str,
-                             async_run_cb: typing.Callable[
-                                [EventerClient],
-                                typing.Awaitable[None]],
+                             run_cb: RunCb,
                              subscriptions: typing.List[common.EventType] = []
                              ) -> typing.Any:
     """Continuously communicate with currently active Event Server
 
     This function tries to establish active connection with Event Server
     within monitor component group `server_group`. Once this connection is
-    established, `async_run_cb` is called with currently active `EventerClient`
+    established, `run_cb` is called with currently active `EventerClient`
     instance. Once connection to Event Server is closed or new active Event
-    Server is detected, execution of `async_run_cb` is canceled. If new
+    Server is detected, execution of `run_cb` is canceled. If new
     connection to Event Server is successfully established,
-    `async_run_cb` is called with new instance of `EventerClient`.
+    `run_cb` is called with new instance of `EventerClient`.
 
-    `async_run_cb` is called when:
+    `run_cb` is called when:
         * new active `EventerClient` is created
 
-    `async_run_cb` execution is cancelled when:
+    `run_cb` execution is cancelled when:
         * `run_eventer_client` finishes execution
         * connection to Event Server is closed
         * different active Event Server is detected from Monitor Server's list
@@ -296,15 +297,15 @@ async def run_eventer_client(monitor_client: hat.monitor.client.Client,
 
     `run_eventer_client` finishes execution when:
         * connection to Monitor Server is closed
-        * `async_run_cb` finishes execution (by returning value or raising
+        * `run_cb` finishes execution (by returning value or raising
           exception, other than `asyncio.CancelledError`)
 
     Return value of this function is the same as return value of
-    `async_run_cb`. If `async_run_cb` finishes by raising exception or if
+    `run_cb`. If `run_cb` finishes by raising exception or if
     connection to Monitor Server is closed, ConnectionError is raised.
 
-    If execution of `run_eventer_client` is canceled while `async_run_cb` is
-    running, connection to Event Server is closed after `async_run_cb`
+    If execution of `run_eventer_client` is canceled while `run_cb` is
+    running, connection to Event Server is closed after `run_cb`
     cancellation finishes.
 
     """
@@ -324,7 +325,7 @@ async def run_eventer_client(monitor_client: hat.monitor.client.Client,
             async with async_group.create_subgroup() as subgroup:
                 address_future = subgroup.spawn(address_queue.get_until_empty)
                 client_future = subgroup.spawn(_client_loop, address,
-                                               subscriptions, async_run_cb)
+                                               subscriptions, run_cb)
 
                 await asyncio.wait([address_future, client_future],
                                    return_when=asyncio.FIRST_COMPLETED)
@@ -361,7 +362,7 @@ async def _address_loop(monitor_client, server_group, address_queue):
             await changes.get()
 
 
-async def _client_loop(address, subscriptions, async_run_cb):
+async def _client_loop(address, subscriptions, run_cb):
     while True:
         client = None
         try:
@@ -373,13 +374,18 @@ async def _client_loop(address, subscriptions, async_run_cb):
                 await asyncio.sleep(reconnect_delay)
                 continue
 
-            mlog.debug("connected to server - running async_run_cb")
+            mlog.debug("connected to server - running run_cb")
 
-            run_future = client.async_group.spawn(async_run_cb, client)
-            await asyncio.wait([run_future])
+            subgroup = client.async_group.create_subgroup()
+            try:
+                run_future = subgroup.spawn(run_cb, client)
+                await asyncio.wait([run_future])
 
-            with contextlib.suppress(asyncio.CancelledError):
-                return run_future.result()
+                with contextlib.suppress(asyncio.CancelledError):
+                    return run_future.result()
+
+            finally:
+                await aio.uncancellable(subgroup.async_close())
 
         finally:
             if client:

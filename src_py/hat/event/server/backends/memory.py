@@ -2,6 +2,9 @@
 
 All registered events are stored in single unsorted continuous event list.
 
+`query_flushed` returns empty iterable and registered flushed events callback
+is never notified.
+
 """
 
 import collections
@@ -9,6 +12,7 @@ import typing
 
 from hat import aio
 from hat import json
+from hat import util
 from hat.event.server import common
 
 
@@ -29,13 +33,19 @@ class MemoryBackend(common.Backend):
     def async_group(self) -> aio.Group:
         return self._async_group
 
+    def register_flushed_events_cb(self,
+                                   cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                                       None]
+                                   ) -> util.RegisterCallbackHandle:
+        return util.RegisterCallbackHandle(cancel=lambda: None)
+
     async def get_last_event_id(self,
                                 server_id: int
                                 ) -> common.EventId:
         event_ids = (e.event_id for e in self._events
                      if e.server == server_id)
         key = lambda event_id: event_id.instance  # NOQA
-        default = common.EventId(server=server_id, instance=0)
+        default = common.EventId(server=server_id, session=0, instance=0)
         return max(event_ids, key=key, default=default)
 
     async def register(self,
@@ -93,6 +103,12 @@ class MemoryBackend(common.Backend):
             events = _filter_max_results(events, data.max_results)
 
         return list(events)
+
+    async def query_flushed(self,
+                            data: common.QueryData
+                            ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
+        for events in []:
+            yield events
 
 
 def _filter_events_ids(events, event_ids):

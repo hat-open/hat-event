@@ -13,7 +13,8 @@ mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
-reconnect_delay = 10
+reconnect_delay: float = 10
+"""Reconnect delay"""
 
 
 async def create_syncer_client(backend: common.Backend,
@@ -98,10 +99,12 @@ async def _syncer_loop(backend, server_id, syncer_server_address, client_name,
             mlog.debug("connecting to syncer server")
             conn = await chatter.connect(common.sbs_repo,
                                          syncer_server_address, **kwargs)
+
         except Exception:
-            mlog.debug("can not connect to syncer server")
+            mlog.info("can not connect to syncer server")
             await asyncio.sleep(reconnect_delay)
             continue
+
         try:
             last_event_id = await backend.get_last_event_id(server_id)
             msg_data = chatter.Data(
@@ -130,6 +133,9 @@ async def _syncer_loop(backend, server_id, syncer_server_address, client_name,
 
         except ConnectionError:
             pass
+
+        except Exception as e:
+            mlog.error("syncer loop error: %s", e, exc_info=e)
 
         finally:
             await aio.uncancellable(conn.async_close())

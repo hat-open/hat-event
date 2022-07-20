@@ -345,7 +345,7 @@ async def test_run_client(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_client(
+        hat.event.eventer_client.run_eventer_client(
             monitor_client, component_info.group, run_cb))
 
     with pytest.raises(asyncio.TimeoutError):
@@ -391,7 +391,7 @@ async def test_run_client_return(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_client(
+        hat.event.eventer_client.run_eventer_client(
             monitor_client, component_info.group, run_cb))
 
     monitor_client.change([component_info._replace(
@@ -420,7 +420,7 @@ async def test_run_client_exception(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_client(
+        hat.event.eventer_client.run_eventer_client(
             monitor_client, component_info.group, run_cb))
 
     monitor_client.change([component_info._replace(
@@ -454,7 +454,7 @@ async def test_run_client_reconnect(patch_reconnect_delay, server_address,
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_client(
+        hat.event.eventer_client.run_eventer_client(
             monitor_client, component_info.group, run_cb))
 
     monitor_client.change([component_info._replace(
@@ -526,7 +526,7 @@ async def test_run_client_cancellation(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_client(
+        hat.event.eventer_client.run_eventer_client(
             monitor_client, component_info.group, run_cb))
 
     monitor_client.change([component_info._replace(

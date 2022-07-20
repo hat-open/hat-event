@@ -1,7 +1,7 @@
 import asyncio
 import itertools
+
 import lmdb
-import os
 import pytest
 
 from hat import aio
