@@ -95,7 +95,7 @@ class Backend(aio.Resource):
 ModuleConf = json.Data
 
 CreateModule = aio.AsyncCallable[
-    [ModuleConf, 'hat.event.module_engine.ModuleEngine', Source],  # NOQA
+    [ModuleConf, 'hat.event.engine.Engine', Source],
     'Module']
 
 
