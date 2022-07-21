@@ -7,7 +7,6 @@ required:
     - db_path
     - max_db_size
     - flush_period
-    - server_id
     - conditions
     - latest
     - ordered
@@ -18,8 +17,6 @@ properties:
         type: number
     flush_period:
         type: number
-    server_id:
-        type: integer
     conditions:
         type: array
         items:
