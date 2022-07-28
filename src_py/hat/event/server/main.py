@@ -96,7 +96,7 @@ async def async_main(conf: json.Data):
 
             if 'monitor' in conf:
                 data = {
-                    'server_id': conf['server_id'],
+                    'server_id': conf['engine']['server_id'],
                     'eventer_server_address': conf['eventer_server']['address'],  # NOQA
                     'syncer_server_address': conf['syncer_server']['address']}
                 if 'syncer_token' in conf:
@@ -105,8 +105,10 @@ async def async_main(conf: json.Data):
                                                            data)
                 _bind_resource(async_subgroup, monitor)
 
+                client_name = str(conf['engine']['server_id'])
                 syncer_client = await create_syncer_client(
-                    backend, monitor, conf['monitor']['group'])
+                    backend, monitor, conf['monitor']['group'], client_name,
+                    conf.get('syncer_token'))
                 _bind_resource(async_subgroup, syncer_client)
 
                 component = hat.monitor.client.Component(

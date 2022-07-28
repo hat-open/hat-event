@@ -28,15 +28,15 @@ monitor:
     name: event
     group: event
     monitor_address: "tcp+sbs://127.0.0.1:23010"
-    component_address: "tcp+sbs://127.0.0.1:23012"
-backend_engine:
+backend:
+    module: hat.event.server.backends.dummy
+engine:
     server_id: 1
-    backend:
-        module: hat.event.server.backends.dummy
-module_engine:
     modules: []
-communication:
+eventer_server:
     address: "tcp+sbs://localhost:23012"
+syncer_server:
+    address: "tcp+sbs://localhost:23013"
 EOF
 
 exec $PYTHON -m hat.event.server \
