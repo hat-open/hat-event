@@ -18,7 +18,7 @@ def main():
         src_system_db = src_env.open_db(b'system')
         server_id = _get_server_id(src_env, src_system_db)
 
-        with v06.create_env(dst_path) as dst_env:
+        with v07.create_env(dst_path) as dst_env:
             dst_system_db = v07.open_db(dst_env, v07.DbType.SYSTEM)
             dst_ref_db = v07.open_db(dst_env, v07.DbType.REF)
 
@@ -41,7 +41,7 @@ def _convert_latest(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
     dst_latest_data_db = v07.open_db(dst_env, v07.DbType.LATEST_DATA)
     dst_latest_type_db = v07.open_db(dst_env, v07.DbType.LATEST_TYPE)
 
-    latest_event_id = v07.EventId(server_id, 0, 0)
+    latest_event = None
     next_event_type_ref = itertools.chain(1)
 
     with src_env.begin(db=src_latest_db, buffers=True) as src_txn:
@@ -49,8 +49,8 @@ def _convert_latest(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
             src_event = v06.decode_event(src_encoded_value)
             dst_event = _convert_event(src_event)
 
-            if latest_event_id < dst_event.event_id:
-                latest_event_id = dst_event.event_id
+            if not latest_event or latest_event.event_id < dst_event.event_id:
+                latest_event = dst_event
 
             event_type_ref = next(next_event_type_ref)
 
@@ -73,10 +73,11 @@ def _convert_latest(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
                            dst_event=dst_event,
                            event_ref=v07.LatestEventRef(event_type_ref))
 
-    _update_system_db(dst_env=dst_env,
-                      dst_system_db=dst_system_db,
-                      server_id=server_id,
-                      latest_event_id=latest_event_id)
+    if latest_event:
+        _update_system_db(dst_env=dst_env,
+                          dst_system_db=dst_system_db,
+                          server_id=server_id,
+                          latest_event=latest_event)
 
 
 def _convert_ordered(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
@@ -89,7 +90,8 @@ def _convert_ordered(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
         dst_env, v07.DbType.ORDERED_PARTITION)
     dst_ordered_count_db = v07.open_db(dst_env, v07.DbType.ORDERED_COUNT)
 
-    latest_event_id = v07.EventId(server_id, 0, 0)
+    latest_event = None
+    latest_timestamp = None
 
     with src_env.begin(db=src_ordered_data_db, buffers=True) as src_txn:
         for src_encoded_key, src_encoded_value in src_txn.cursor():
@@ -99,8 +101,8 @@ def _convert_ordered(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
             dst_timestamp = _convert_timestamp(src_timestamp)
             dst_event = _convert_event(src_event)
 
-            if latest_event_id < dst_event.event_id:
-                latest_event_id = dst_event.event_id
+            if not latest_event or latest_event.event_id < dst_event.event_id:
+                latest_event = dst_event
 
             dst_key = partition_id, dst_timestamp, dst_event.event_id
 
@@ -116,10 +118,11 @@ def _convert_ordered(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
                            dst_event=dst_event,
                            event_ref=v07.OrderedEventRef(dst_key))
 
-    _update_system_db(dst_env=dst_env,
-                      dst_system_db=dst_system_db,
-                      server_id=server_id,
-                      latest_event_id=latest_event_id)
+    if latest_event:
+        _update_system_db(dst_env=dst_env,
+                          dst_system_db=dst_system_db,
+                          server_id=server_id,
+                          latest_event=latest_event)
 
     with src_env.begin(db=src_ordered_partition_db, buffers=True) as src_txn:
         for src_encoded_key, src_encoded_value in src_txn.cursor():
@@ -163,20 +166,21 @@ def _update_ref_db(dst_env, dst_ref_db, dst_event, event_ref):
         dst_txn.put(dst_encoded_key, dst_encoded_value)
 
 
-def _update_system_db(dst_env, dst_system_db, server_id, latest_event_id):
+def _update_system_db(dst_env, dst_system_db, server_id, latest_event):
     with dst_env.begin(db=dst_system_db,
                        write=True,
                        buffers=True) as dst_txn:
         dst_encoded_key = v07.encode_system_db_key(server_id)
         dst_encoded_value = dst_txn.get(dst_encoded_key)
 
-        event_id = (v07.decode_system_db_value(dst_encoded_value)
-                    if dst_encoded_value
-                    else v07.EventId(server_id, 0, 0))
+        event_id, _ = (v07.decode_system_db_value(dst_encoded_value)
+                       if dst_encoded_value
+                       else (v07.EventId(server_id, 0, 0), None))
 
-        if latest_event_id > event_id:
+        if latest_event.event_id > event_id:
             dst_txn.put(dst_encoded_key,
-                        v07.encode_system_db_value(latest_event_id))
+                        v07.encode_system_db_value(latest_event.event_id,
+                                                   latest_event.timestamp))
 
 
 def _get_server_id(src_env, src_system_db):
