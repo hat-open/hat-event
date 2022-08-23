@@ -42,7 +42,7 @@ def _convert_latest(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
     dst_latest_type_db = v07.open_db(dst_env, v07.DbType.LATEST_TYPE)
 
     latest_event = None
-    next_event_type_ref = itertools.chain(1)
+    next_event_type_ref = itertools.count(1)
 
     with src_env.begin(db=src_latest_db, buffers=True) as src_txn:
         for _, src_encoded_value in src_txn.cursor():
@@ -179,8 +179,8 @@ def _update_system_db(dst_env, dst_system_db, server_id, latest_event):
 
         if latest_event.event_id > event_id:
             dst_txn.put(dst_encoded_key,
-                        v07.encode_system_db_value(latest_event.event_id,
-                                                   latest_event.timestamp))
+                        v07.encode_system_db_value((latest_event.event_id,
+                                                    latest_event.timestamp)))
 
 
 def _get_server_id(src_env, src_system_db):
