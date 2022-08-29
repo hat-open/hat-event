@@ -64,7 +64,7 @@ async def test_register_with_response(create_event_server):
 
         resp = await client.register_with_response(register_events)
 
-        assert(len(resp) == 10)
+        assert len(resp) == 10
         for reg_event, event in zip(register_events, resp):
             assert reg_event.event_type == event.event_type
             assert reg_event.source_timestamp == event.source_timestamp
