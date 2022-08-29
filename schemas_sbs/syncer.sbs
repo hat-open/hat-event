@@ -1,6 +1,6 @@
 module HatSyncer
 
-MsgReq = Tuple {
+MsgReq = Record {
     lastEventId:  HatEventer.EventId
     clientName:   String
 }

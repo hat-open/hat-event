@@ -6,7 +6,7 @@ MsgNotify = Array(Event)
 
 MsgRegisterReq = Array(RegisterEvent)
 
-MsgRegisterRes = Array(Union {
+MsgRegisterRes = Array(Choice {
     event:    Event
     failure:  None
 })
@@ -15,59 +15,59 @@ MsgQueryReq = QueryData
 
 MsgQueryRes = Array(Event)
 
-Timestamp = Tuple {
+Timestamp = Record {
     s:   Integer
     us:  Integer
 }
 
-EventId = Tuple {
+EventId = Record {
     server:    Integer
     session:   Integer
     instance:  Integer
 }
 
-Order = Union {
+Order = Choice {
     descending:  None
     ascending:   None
 }
 
-OrderBy = Union {
+OrderBy = Choice {
     timestamp:        None
     sourceTimestamp:  None
 }
 
 EventType = Array(String)
 
-EventPayload = Union {
+EventPayload = Choice {
     binary:  Bytes
     json:    String
     sbs:     Hat.Data
 }
 
-Event = Tuple {
+Event = Record {
     id:               EventId
     type:             EventType
     timestamp:        Timestamp
-    sourceTimestamp:  Maybe(Timestamp)
-    payload:          Maybe(EventPayload)
+    sourceTimestamp:  Optional(Timestamp)
+    payload:          Optional(EventPayload)
 }
 
-RegisterEvent = Tuple {
+RegisterEvent = Record {
     type:             EventType
-    sourceTimestamp:  Maybe(Timestamp)
-    payload:          Maybe(EventPayload)
+    sourceTimestamp:  Optional(Timestamp)
+    payload:          Optional(EventPayload)
 }
 
-QueryData = Tuple {
-    ids:                Maybe(Array(EventId))
-    types:              Maybe(Array(EventType))
-    tFrom:              Maybe(Timestamp)
-    tTo:                Maybe(Timestamp)
-    sourceTFrom:        Maybe(Timestamp)
-    sourceTTo:          Maybe(Timestamp)
-    payload:            Maybe(EventPayload)
+QueryData = Record {
+    ids:                Optional(Array(EventId))
+    types:              Optional(Array(EventType))
+    tFrom:              Optional(Timestamp)
+    tTo:                Optional(Timestamp)
+    sourceTFrom:        Optional(Timestamp)
+    sourceTTo:          Optional(Timestamp)
+    payload:            Optional(EventPayload)
     order:              Order
     orderBy:            OrderBy
     uniqueType:         Boolean
-    maxResults:         Maybe(Integer)
+    maxResults:         Optional(Integer)
 }

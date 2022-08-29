@@ -252,8 +252,8 @@ def _sbs_data_from_sbs(data):
 
 
 def _optional_to_sbs(value, fn=lambda i: i):
-    return ('Just', fn(value)) if value is not None else ('Nothing', None)
+    return ('value', fn(value)) if value is not None else ('none', None)
 
 
 def _optional_from_sbs(data, fn=lambda i: i):
-    return fn(data[1]) if data[0] == 'Just' else None
+    return fn(data[1]) if data[0] == 'value' else None
