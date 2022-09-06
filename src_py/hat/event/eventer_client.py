@@ -354,7 +354,8 @@ async def _address_loop(monitor_client, server_group, address_queue):
                 c.blessing_req.token == c.blessing_res.token))
             address = info.data['eventer_server_address'] if info else None
 
-            if address != last_address and not address_queue.is_closed:
+            if (address and address != last_address and
+                    not address_queue.is_closed):
                 mlog.debug("new server address: %s", address)
                 last_address = address
                 address_queue.put_nowait(address)

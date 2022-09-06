@@ -355,18 +355,53 @@ async def test_run_client(server_address, component_info):
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(client_queue.get(), 0.01)
 
-    monitor_client.change([component_info._replace(
+    component1 = component_info._replace(
         blessing_req=hat.monitor.common.BlessingReq(token=123,
                                                     timestamp=321),
         blessing_res=hat.monitor.common.BlessingRes(token=123,
-                                                    ready=True))])
+                                                    ready=True))
+    monitor_client.change([component1])
     client = await client_queue.get()
     conn = await server.get_connection()
 
     assert client.is_open
     assert conn.is_open
 
+    # client remains connected when address is None
     monitor_client.change([component_info])
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(client_queue.get(), 0.01)
+
+    monitor_client.change([])
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(client_queue.get(), 0.01)
+
+    assert client.is_open
+    assert conn.is_open
+
+    new_port = util.get_unused_tcp_port()
+    new_address = f'tcp+sbs://127.0.0.1:{new_port}'
+    # component not active is ignored
+    component2 = component_info._replace(
+        data={'eventer_server_address': new_address},
+        blessing_req=hat.monitor.common.BlessingReq(token=123,
+                                                    timestamp=321),
+        blessing_res=hat.monitor.common.BlessingRes(token=None,
+                                                    ready=True))
+    monitor_client.change([component2, component1])
+
+    monitor_client.change([component_info])
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(client_queue.get(), 0.01)
+
+    # switchover to another
+    component2 = component2._replace(
+        blessing_req=hat.monitor.common.BlessingReq(token=123,
+                                                    timestamp=321),
+        blessing_res=hat.monitor.common.BlessingRes(token=123,
+                                                    ready=True))
+    monitor_client.change([component2, component1])
+
     await client.wait_closed()
     await conn.wait_closed()
     client = await client_queue.get()
@@ -451,53 +486,58 @@ async def test_run_client_reconnect(patch_reconnect_delay, server_address,
             client_queue.put_nowait(None)
 
     monitor_client = MonitorClient()
-    server = await create_server(server_address)
+    server1 = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
         hat.event.eventer_client.run_eventer_client(
             monitor_client, component_info.group, run_cb))
 
-    monitor_client.change([component_info._replace(
+    component1 = component_info._replace(
         blessing_req=hat.monitor.common.BlessingReq(token=123,
                                                     timestamp=321),
         blessing_res=hat.monitor.common.BlessingRes(token=123,
-                                                    ready=True))])
-    client = await client_queue.get()
-    conn = await server.get_connection()
+                                                    ready=True))
+    monitor_client.change([component1])
+    client1 = await client_queue.get()
+    conn1 = await server1.get_connection()
 
-    monitor_client.change([component_info])
-    await client.wait_closed()
-    await conn.wait_closed()
+    await server1.async_close()
+    await conn1.wait_closed()
+    await client1.wait_closed()
+
     client = await client_queue.get()
     assert client is None
+    assert not run_future.done()
 
-    monitor_client.change([component_info._replace(
+    port2 = util.get_unused_tcp_port()
+    server_address2 = f'tcp+sbs://127.0.0.1:{port2}'
+    component2 = component_info._replace(
+        data={'eventer_server_address': server_address2},
         blessing_req=hat.monitor.common.BlessingReq(token=123,
                                                     timestamp=321),
         blessing_res=hat.monitor.common.BlessingRes(token=123,
-                                                    ready=True))])
-    client = await client_queue.get()
-    conn = await server.get_connection()
+                                                    ready=True))
+    monitor_client.change([component2])
 
-    await server.async_close()
-    await conn.wait_closed()
-    await client.wait_closed()
-    client = await client_queue.get()
-    assert client is None
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(client_queue.get(), 0.01)
 
-    server = await create_server(server_address)
-    client = await client_queue.get()
-    conn = await server.get_connection()
+    server2 = await create_server(server_address2)
 
+    client2 = await client_queue.get()
+    conn2 = await server2.get_connection()
+
+    assert client2.is_open
+    assert conn2.is_open
     assert not run_future.done()
 
     await monitor_client.async_close()
     with pytest.raises(ConnectionError):
         await run_future
-    await client.wait_closed()
-    await conn.wait_closed()
+    await client2.wait_closed()
+    await conn2.wait_closed()
 
-    await server.async_close()
+    await server2.async_close()
 
 
 async def test_run_client_cancellation(server_address, component_info):
