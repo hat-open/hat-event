@@ -371,7 +371,7 @@ async def _client_loop(address, subscriptions, run_cb):
             try:
                 client = await connect(address, subscriptions)
             except Exception as e:
-                mlog.warning("error connecting to server: %s", e, exc_info=e)
+                mlog.debug("error connecting to server: %s", e, exc_info=e)
                 await asyncio.sleep(reconnect_delay)
                 continue
 
