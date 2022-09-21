@@ -135,13 +135,17 @@ async def run(component: typing.Optional[hat.monitor.client.Component],
               syncer_server: SyncerServer):
     """Run monitor component"""
 
-    def on_syncer_client_state(source, client_name, state):
+    def on_syncer_state(client_infos):
+        source = common.Source(type=common.SourceType.SYNCER,
+                               id=0)
         event = common.RegisterEvent(
-            event_type=('event', 'syncer', client_name),
+            event_type=('event', 'syncer'),
             source_timestamp=None,
             payload=common.EventPayload(
                 type=common.EventPayloadType.JSON,
-                data=state.name))
+                data=[{'client_name': client_info.name,
+                       'synced': client_info.synced}
+                      for client_info in client_infos]))
         async_group.spawn(engine.register, source, [event])
 
     async_group = aio.Group()
@@ -152,7 +156,9 @@ async def run(component: typing.Optional[hat.monitor.client.Component],
         engine = await create_engine(conf['engine'], backend)
         _bind_resource(async_group, engine)
 
-        with syncer_server.register_client_state_cb(on_syncer_client_state):
+        with syncer_server.register_state_cb(on_syncer_state):
+            on_syncer_state(list(syncer_server.state))
+
             eventer_server = await create_eventer_server(
                 conf['eventer_server'], engine)
             _bind_resource(async_group, eventer_server)

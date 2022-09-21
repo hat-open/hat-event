@@ -513,14 +513,12 @@ of newly stored events. Server also retrieves events from backend, needed for a
 client synchronization, by its query method `query_from_event_id`, specialized
 for Syncer Server usage.
 
-Syncer Server is responsible for registering events in regard to connection
-status of the specific Syncer Client. Events are defined with unique event type:
+Syncer Server is responsible for registering event in regard to connection
+status of all active Syncer Client. This event represents current Syncer Server
+state and should be registered immediately after Engine initialization and each
+time this state changes. Event is defined with unique event type:
 
-    * 'event', 'syncer', <client_name>
-
-       where `<client_name>` is name of the
-       Syncer Client defined as `clientName` in `MsgReq` message (see `Syncer
-       communication`_).
+    * 'event', 'syncer'
 
         * `source_timestamp` is ``None``
 
@@ -530,18 +528,24 @@ status of the specific Syncer Client. Events are defined with unique event type:
 More precisely, this event is not registered by the Syncer Server itself, but
 Event Server registers it on behalf of Syncer Server, with `Source.type` set to
 ``SYNCER`` (for the sake of simplicity hereafter we consider as Syncer Server
-registers this event). Each connection between client and server is uniquely
-identified by `source id` (unique identification is guarantied for duration of
-single Event Server process execution).
+registers this event).
 
-Payload of this event defines three states of a client connection:
-``CONNECTED``, ``DISCONNECTED`` and ``SYNCED``. Once server receives `MsgReq`
-from client, only then, server registers event with payload ``CONNECTED``. Once
-server has sent all the events that client requested to get "synchronized", it
-sends `MsgSynced` message and also registers event with payload `SYNCED`. Once
-connection to a client is lost, event with payload ``DISCONNECTED`` is
-registered by the server (see `Syncer communication`_ for more details about
-messages exchanged with client).
+Payload of this event contains list of all currently active client connections.
+Once connection between server and client is broken, it will no longer be
+part of future event's payloads. New entry to list of active connections is
+added once server receives `MsgReq` from client. Each client connection is
+represented with:
+
+    * `client_name`
+
+        Name of the Syncer Client defined as `clientName` in `MsgReq` message
+        (see `Syncer communication`_)
+
+    * `synced`
+
+        Status flag which is initially set to ``False``. Once server has sent
+        all the events that client requested to get "synchronized", it changes
+        connection's `synced` status to ``True``.
 
 Multiple clients can be connected to a server, where each connection is handled
 independently, as described.

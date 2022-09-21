@@ -34,12 +34,6 @@ CreateBackend = aio.AsyncCallable[[BackendConf], 'Backend']
 """Create backend callable"""
 
 
-SyncerClientState = enum.Enum('SyncerClientState', [
-    'CONNECTED',
-    'SYNCED',
-    'DISCONNECTED'])
-
-
 class Backend(aio.Resource):
     """Backend ABC
 

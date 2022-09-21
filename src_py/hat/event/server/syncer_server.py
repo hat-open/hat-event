@@ -16,6 +16,16 @@ mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
+class ClientInfo(typing.NamedTuple):
+    """Client connection information"""
+    name: str
+    synced: bool
+
+
+StateCb = typing.Callable[[typing.List[ClientInfo]], None]
+"""Syncer state change callback"""
+
+
 async def create_syncer_server(conf: json.Data,
                                backend: common.Backend
                                ) -> 'SyncerServer':
@@ -29,23 +39,15 @@ async def create_syncer_server(conf: json.Data,
     """
     srv = SyncerServer()
     srv._backend = backend
-    srv._next_source_id = itertools.count(1)
-    srv._client_state_cbs = util.CallbackRegistry()
+    srv._state = {}
+    srv._next_client_ids = itertools.count(1)
+    srv._state_cbs = util.CallbackRegistry()
 
     srv._server = await chatter.listen(sbs_repo=common.sbs_repo,
                                        address=conf['address'],
                                        connection_cb=srv._on_connection)
     mlog.debug("listening on %s", conf['address'])
     return srv
-
-
-StateCb = typing.Callable[[common.Source, str, common.SyncerClientState], None]
-"""Syncer client state callback
-
-Callback is called with source identifier, syncer client name and current
-syncer state
-
-"""
 
 
 class SyncerServer(aio.Resource):
@@ -55,93 +57,99 @@ class SyncerServer(aio.Resource):
         """Async group"""
         return self._server.async_group
 
-    def register_client_state_cb(self,
-                                 cb: StateCb
-                                 ) -> util.RegisterCallbackHandle:
-        """Register client state callback"""
-        return self._client_state_cbs.register(cb)
+    @property
+    def state(self) -> typing.Iterable[ClientInfo]:
+        """State of all active connections"""
+        return self._state.values()
+
+    def register_state_cb(self,
+                          cb: StateCb
+                          ) -> util.RegisterCallbackHandle:
+        """Register state change callback"""
+        return self._state_cbs.register(cb)
 
     def _on_connection(self, conn):
-        source_id = next(self._next_source_id)
-        conn.async_group.spawn(_run_connection_loop, conn,
-                               self._client_state_cbs.notify, self._backend,
-                               source_id)
+        conn.async_group.spawn(self._connection_loop, conn)
 
+    def _update_client_info(self, client_id, name, synced):
+        self._state[client_id] = ClientInfo(name, synced)
+        self._state_cbs.notify(list(self._state.values()))
 
-async def _run_connection_loop(conn, notify_client_state, backend, source_id):
-    mlog.debug("starting new client connection loop")
+    def _remove_client_info(self, client_id):
+        if self._state.pop(client_id, None):
+            self._state_cbs.notify(list(self._state.values()))
 
-    name = None
-    source = common.Source(type=common.SourceType.SYNCER,
-                           id=source_id)
+    async def _connection_loop(self, conn):
+        mlog.debug("starting new client connection loop")
 
-    try:
-        mlog.debug("waiting for incomming message")
-        msg = await conn.receive()
-        msg_type = msg.data.module, msg.data.type
+        client_id = None
+        try:
+            mlog.debug("waiting for incomming message")
+            msg = await conn.receive()
+            msg_type = msg.data.module, msg.data.type
 
-        if msg_type != ('HatSyncer', 'MsgReq'):
-            raise Exception('unsupported message type')
+            if msg_type != ('HatSyncer', 'MsgReq'):
+                raise Exception('unsupported message type')
 
-        mlog.debug("received request")
-        conn.async_group.spawn(_receive_loop, conn)
+            mlog.debug("received request")
+            conn.async_group.spawn(_receive_loop, conn)
 
-        msg_req = hat.event.common.data.syncer_req_from_sbs(msg.data.data)
-        last_event_id = msg_req.last_event_id
-        name = msg_req.client_name
-        notify_client_state(source, name, common.SyncerClientState.CONNECTED)
+            msg_req = hat.event.common.data.syncer_req_from_sbs(msg.data.data)
+            last_event_id = msg_req.last_event_id
+            name = msg_req.client_name
+            client_id = next(self._next_client_ids)
+            self._update_client_info(client_id, name, False)
 
-        events_queue = aio.Queue()
-        with backend.register_flushed_events_cb(events_queue.put_nowait):
-            mlog.debug("query backend")
-            async for events in backend.query_flushed(
-                    msg_req.last_event_id):
-                last_event_id = events[-1].event_id
-                data = chatter.Data(module='HatSyncer',
-                                    type='MsgEvents',
-                                    data=[common.event_to_sbs(e)
-                                          for e in events])
-                conn.send(data)
+            events_queue = aio.Queue()
+            with self._backend.register_flushed_events_cb(
+                    events_queue.put_nowait):
+                mlog.debug("query backend")
+                async for events in self._backend.query_flushed(
+                        msg_req.last_event_id):
+                    last_event_id = events[-1].event_id
+                    data = chatter.Data(module='HatSyncer',
+                                        type='MsgEvents',
+                                        data=[common.event_to_sbs(e)
+                                              for e in events])
+                    conn.send(data)
 
-            notify_client_state(source, name, common.SyncerClientState.SYNCED)
-            conn.send(chatter.Data(module='HatSyncer',
-                                   type='MsgSynced',
-                                   data=None))
+                self._update_client_info(client_id, name, True)
+                conn.send(chatter.Data(module='HatSyncer',
+                                       type='MsgSynced',
+                                       data=None))
 
-            while True:
-                events = await events_queue.get()
+                while True:
+                    events = await events_queue.get()
 
-                if not events:
-                    continue
+                    if not events:
+                        continue
 
-                if events[0].event_id.server != last_event_id.server:
-                    continue
+                    if events[0].event_id.server != last_event_id.server:
+                        continue
 
-                if events[0].event_id.session < last_event_id.session:
-                    continue
+                    if events[0].event_id.session < last_event_id.session:
+                        continue
 
-                if events[0].event_id.session == last_event_id.session:
-                    events = [event for event in events
-                              if event.event_id > last_event_id]
+                    if events[0].event_id.session == last_event_id.session:
+                        events = [event for event in events
+                                  if event.event_id > last_event_id]
 
-                data = chatter.Data(module='HatSyncer',
-                                    type='MsgEvents',
-                                    data=[common.event_to_sbs(e)
-                                          for e in events])
-                conn.send(data)
+                    data = chatter.Data(module='HatSyncer',
+                                        type='MsgEvents',
+                                        data=[common.event_to_sbs(e)
+                                              for e in events])
+                    conn.send(data)
 
-    except ConnectionError:
-        pass
+        except ConnectionError:
+            pass
 
-    except Exception as e:
-        mlog.error("connection loop error: %s", e, exec_info=e)
+        except Exception as e:
+            mlog.error("connection loop error: %s", e, exec_info=e)
 
-    finally:
-        mlog.debug("closing client connection loop")
-        conn.close()
-        if name:
-            notify_client_state(source, name,
-                                common.SyncerClientState.DISCONNECTED)
+        finally:
+            mlog.debug("closing client connection loop")
+            conn.close()
+            self._remove_client_info(client_id)
 
 
 async def _receive_loop(conn):
