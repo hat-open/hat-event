@@ -161,7 +161,7 @@ class SyncerClient(aio.Resource):
                             self._events_cbs.notify(server_id, events)
 
                         elif msg_type == ('HatSyncer', 'MsgSynced'):
-                            mlog.info("received synced")
+                            mlog.debug("received synced")
                             self._state_cbs.notify(server_id, State.SYNCED)
 
                         else:
