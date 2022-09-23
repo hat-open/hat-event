@@ -4,6 +4,7 @@ import typing
 
 from hat import aio
 from hat import chatter
+from hat import util
 from hat.event.server import common
 import hat.event.common.data
 import hat.monitor.client
@@ -15,6 +16,23 @@ mlog: logging.Logger = logging.getLogger(__name__)
 
 reconnect_delay: float = 10
 """Reconnect delay"""
+
+
+class State(typing.Enum):
+    """Connection state"""
+    CONNECTED = 0
+    SYNCED = 1
+    DISCONNECTED = 2
+
+
+ServerId = int
+"""Server identifier"""
+
+StateCb = typing.Callable[[ServerId, State], None]
+"""Connection state callback"""
+
+EventsCb = typing.Callable[[ServerId, typing.List[common.Event]], None]
+"""Events callback"""
 
 
 async def create_syncer_client(backend: common.Backend,
@@ -42,6 +60,8 @@ async def create_syncer_client(backend: common.Backend,
     cli._name = name
     cli._syncer_token = syncer_token
     cli._kwargs = kwargs
+    cli._state_cbs = util.CallbackRegistry()
+    cli._events_cbs = util.CallbackRegistry()
     cli._syncers = {}
     cli._servers_info_queue = aio.Queue()
     cli._monitor_change_handler = monitor_client.register_change_cb(
@@ -57,6 +77,18 @@ class SyncerClient(aio.Resource):
     def async_group(self) -> aio.Group:
         """Async group"""
         return self._async_group
+
+    def register_state_cb(self,
+                          cb: StateCb
+                          ) -> util.RegisterCallbackHandle:
+        """Register client state callback"""
+        return self._state_cbs.register(cb)
+
+    def register_events_cb(self,
+                           cb: EventsCb
+                           ) -> util.RegisterCallbackHandle:
+        """Register events callback"""
+        return self._events_cbs.register(cb)
 
     def _close(self):
         for syncer in self._syncers.values():
@@ -87,55 +119,62 @@ class SyncerClient(aio.Resource):
             mlog.debug("starting synchronization with event server id=%s",
                        server_info[0])
             syncer_group = self.async_group.create_subgroup()
-            syncer_group.spawn(_syncer_loop, self._backend, server_info[0],
-                               server_info[1], self._name, self._kwargs)
+            syncer_group.spawn(self._syncer_loop, server_info[0],
+                               server_info[1])
             self._syncers[server_info] = syncer_group
 
+    async def _syncer_loop(self, server_id, server_address):
+        while True:
+            try:
+                mlog.debug("connecting to syncer server")
+                conn = await chatter.connect(common.sbs_repo, server_address,
+                                             **self._kwargs)
 
-async def _syncer_loop(backend, server_id, syncer_server_address, client_name,
-                       kwargs):
-    while True:
-        try:
-            mlog.debug("connecting to syncer server")
-            conn = await chatter.connect(common.sbs_repo,
-                                         syncer_server_address, **kwargs)
+            except Exception:
+                mlog.info("can not connect to syncer server")
+                await asyncio.sleep(reconnect_delay)
+                continue
 
-        except Exception:
-            mlog.info("can not connect to syncer server")
-            await asyncio.sleep(reconnect_delay)
-            continue
+            try:
+                last_event_id = await self._backend.get_last_event_id(
+                    server_id)
+                msg_data = chatter.Data(
+                    module='HatSyncer',
+                    type='MsgReq',
+                    data=hat.event.common.data.syncer_req_to_sbs(
+                         hat.event.common.data.SyncerReq(last_event_id,
+                                                         self._name)))
+                conn.send(msg_data)
 
-        try:
-            last_event_id = await backend.get_last_event_id(server_id)
-            msg_data = chatter.Data(
-                module='HatSyncer',
-                type='MsgReq',
-                data=hat.event.common.data.syncer_req_to_sbs(
-                     hat.event.common.data.SyncerReq(last_event_id,
-                                                     client_name)))
-            conn.send(msg_data)
+                self._state_cbs.notify(server_id, State.CONNECTED)
+                try:
+                    while True:
+                        mlog.debug("waiting for incoming message")
+                        msg = await conn.receive()
+                        msg_type = msg.data.module, msg.data.type
 
-            while True:
-                mlog.debug("waiting for incoming message")
-                msg = await conn.receive()
-                msg_type = msg.data.module, msg.data.type
+                        if msg_type == ('HatSyncer', 'MsgEvents'):
+                            mlog.debug("received events")
+                            events = [common.event_from_sbs(i)
+                                      for i in msg.data.data]
+                            await self._backend.register(events)
+                            self._events_cbs.notify(server_id, events)
 
-                if msg_type == ('HatSyncer', 'MsgEvents'):
-                    mlog.debug("received events")
-                    events = [common.event_from_sbs(i) for i in msg.data.data]
-                    await backend.register(events)
+                        elif msg_type == ('HatSyncer', 'MsgSynced'):
+                            mlog.info("received synced")
+                            self._state_cbs.notify(server_id, State.SYNCED)
 
-                elif msg_type == ('HatSyncer', 'MsgSynced'):
-                    mlog.info("received synced")
+                        else:
+                            raise Exception("unsupported message type")
 
-                else:
-                    raise Exception("unsupported message type")
+                finally:
+                    self._state_cbs.notify(server_id, State.DISCONNECTED)
 
-        except ConnectionError:
-            pass
+            except ConnectionError:
+                pass
 
-        except Exception as e:
-            mlog.error("syncer loop error: %s", e, exc_info=e)
+            except Exception as e:
+                mlog.error("syncer loop error: %s", e, exc_info=e)
 
-        finally:
-            await aio.uncancellable(conn.async_close())
+            finally:
+                await aio.uncancellable(conn.async_close())
