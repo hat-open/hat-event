@@ -198,6 +198,8 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
                                   id=0)
     engine = None
     eventer_server = None
+    restart_future = None
+    synced = True
 
     async def cleanup():
         if eventer_server:
@@ -226,15 +228,25 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
         if state != SyncerClientState.SYNCED:
             return
 
+        async def register_with_restart(events):
+            await engine.register(syncer_source, events)
+            if restart_future and not restart_future.done():
+                restart_future.set_result(None)
+
         event = common.RegisterEvent(
             event_type=('event', 'syncer', 'client', str(server_id), 'synced'),
             source_timestamp=None,
             payload=common.EventPayload(
                 type=common.EventPayloadType.JSON,
                 data=True))
-        async_group.spawn(engine.register, syncer_source, [event])
+        if synced:
+            async_group.spawn(engine.register, syncer_source, [event])
+        else:
+            async_group.spawn(register_with_restart, [event])
 
     def on_syncer_client_events(server_id, events):
+        nonlocal synced
+
         state = syncer_client_states.pop(server_id, None)
         if state != SyncerClientState.CONNECTED:
             return
@@ -246,31 +258,47 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
                 type=common.EventPayloadType.JSON,
                 data=False))
         async_group.spawn(engine.register, syncer_source, [event])
+        synced = False
 
     # TODO wait depending on ???
 
     try:
-        engine = await create_engine(conf['engine'], backend)
-        async_group.spawn(aio.call_on_done, engine.wait_closing(),
-                          async_group.close)
+        while True:
+            subgroup = async_group.create_subgroup()
 
-        with contextlib.ExitStack() as exit_stack:
-            exit_stack.enter_context(
-                syncer_server.register_state_cb(on_syncer_server_state))
-            on_syncer_server_state(list(syncer_server.state))
+            try:
+                engine = await create_engine(conf['engine'], backend)
+                subgroup.spawn(aio.call_on_done, engine.wait_closing(),
+                               subgroup.close)
 
-            if syncer_client:
-                exit_stack.enter_context(
-                    syncer_client.register_state_cb(on_syncer_client_state))
-                exit_stack.enter_context(
-                    syncer_client.register_events_cb(on_syncer_client_events))
+                with contextlib.ExitStack() as exit_stack:
+                    exit_stack.enter_context(
+                        syncer_server.register_state_cb(
+                            on_syncer_server_state))
+                    on_syncer_server_state(list(syncer_server.state))
 
-            eventer_server = await create_eventer_server(
-                conf['eventer_server'], engine)
-            async_group.spawn(aio.call_on_done, eventer_server.wait_closing(),
-                              async_group.close)
+                    restart_future = asyncio.Future()
+                    synced = True
+                    if syncer_client:
+                        exit_stack.enter_context(
+                            syncer_client.register_state_cb(
+                                on_syncer_client_state))
+                        exit_stack.enter_context(
+                            syncer_client.register_events_cb(
+                                on_syncer_client_events))
 
-            await async_group.wait_closing()
+                    eventer_server = await create_eventer_server(
+                        conf['eventer_server'], engine)
+                    subgroup.spawn(aio.call_on_done,
+                                   eventer_server.wait_closing(),
+                                   subgroup.close)
+
+                    await subgroup.wrap(restart_future)
+
+            finally:
+                await eventer_server.async_close()
+                await engine.async_close()
+                await subgroup.async_close()
 
     finally:
         await aio.uncancellable(cleanup())
