@@ -1,4 +1,5 @@
 import asyncio
+import enum
 import logging
 import typing
 
@@ -18,7 +19,7 @@ reconnect_delay: float = 10
 """Reconnect delay"""
 
 
-class State(typing.Enum):
+class SyncerClientState(enum.Enum):
     """Connection state"""
     CONNECTED = 0
     SYNCED = 1
@@ -28,7 +29,7 @@ class State(typing.Enum):
 ServerId = int
 """Server identifier"""
 
-StateCb = typing.Callable[[ServerId, State], None]
+StateCb = typing.Callable[[ServerId, SyncerClientState], None]
 """Connection state callback"""
 
 EventsCb = typing.Callable[[ServerId, typing.List[common.Event]], None]
@@ -146,7 +147,7 @@ class SyncerClient(aio.Resource):
                                                          self._name)))
                 conn.send(msg_data)
 
-                self._state_cbs.notify(server_id, State.CONNECTED)
+                self._state_cbs.notify(server_id, SyncerClientState.CONNECTED)
                 try:
                     while True:
                         mlog.debug("waiting for incoming message")
@@ -162,13 +163,15 @@ class SyncerClient(aio.Resource):
 
                         elif msg_type == ('HatSyncer', 'MsgSynced'):
                             mlog.debug("received synced")
-                            self._state_cbs.notify(server_id, State.SYNCED)
+                            self._state_cbs.notify(server_id,
+                                                   SyncerClientState.SYNCED)
 
                         else:
                             raise Exception("unsupported message type")
 
                 finally:
-                    self._state_cbs.notify(server_id, State.DISCONNECTED)
+                    self._state_cbs.notify(server_id,
+                                           SyncerClientState.DISCONNECTED)
 
             except ConnectionError:
                 pass

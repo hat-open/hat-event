@@ -500,6 +500,30 @@ In case client discovered (through Monitor Client) multiple Syncer Servers, it
 will connect to all of them and try to synchronize with all of them
 independently.
 
+Syncer Client is responsible for registering events in regard to
+synchronization status of all active Syncer Server connections. This event is
+defined with unique event type:
+
+    * 'event', 'syncer', 'client', <server_id>, 'synced'
+
+        * `source_timestamp` is ``None``
+
+        * `payload` is specified by
+          ``hat-event://main.yaml#/definitions/events/syncer/client``.
+
+More precisely, this event is not registered by the Syncer Client itself, but
+Event Server registers it on behalf of Syncer Client, with `Source.type` set to
+``SYNCER`` (for the sake of simplicity hereafter we consider as Syncer Client
+registers this event).
+
+Payload of this event is boolean flag that represents current synchronization
+state. When client receives remote events prior to receiving `MsgSynced`
+message (see `Syncer communication`_), it will register new `synced` event
+with payload ``False``. When client receives `MsgSynced`, it will register
+new `synced` event with payload ``True``. If no new events are received prior
+to receiving `MsgSynced`, `synced` ``True`` event is registered without
+prior registration of associated `synced` ``False`` event.
+
 
 Syncer Server
 '''''''''''''
@@ -518,12 +542,12 @@ status of all active Syncer Client. This event represents current Syncer Server
 state and should be registered immediately after Engine initialization and each
 time this state changes. Event is defined with unique event type:
 
-    * 'event', 'syncer'
+    * 'event', 'syncer', 'server'
 
         * `source_timestamp` is ``None``
 
         * `payload` is specified by
-          ``hat-event://main.yaml#/definitions/events/syncer``.
+          ``hat-event://main.yaml#/definitions/events/syncer/server``.
 
 More precisely, this event is not registered by the Syncer Server itself, but
 Event Server registers it on behalf of Syncer Server, with `Source.type` set to

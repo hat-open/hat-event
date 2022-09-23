@@ -92,17 +92,20 @@ definitions:
                 - CONNECTED
                 - DISCONNECTED
         syncer:
-            type: array
-            items:
-                type: object
-                required:
-                    - client_name
-                    - synced
-                properties:
-                    client_name:
-                        type: string
-                    synced:
-                        type: boolean
+            server:
+                type: array
+                items:
+                    type: object
+                    required:
+                        - client_name
+                        - synced
+                    properties:
+                        client_name:
+                            type: string
+                        synced:
+                            type: boolean
+            client:
+                type: boolean
         engine:
             enum:
                 - STARTED

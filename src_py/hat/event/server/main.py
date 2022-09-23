@@ -16,8 +16,11 @@ from hat import json
 from hat.event.server import common
 from hat.event.server.engine import create_engine
 from hat.event.server.eventer_server import create_eventer_server
-from hat.event.server.syncer_server import create_syncer_server, SyncerServer
-from hat.event.syncer_client import create_syncer_client
+from hat.event.server.syncer_server import (create_syncer_server,
+                                            SyncerServer)
+from hat.event.syncer_client import (create_syncer_client,
+                                     SyncerClientState,
+                                     SyncerClient)
 import hat.monitor.client
 import hat.monitor.common
 
@@ -112,7 +115,7 @@ async def async_main(conf: json.Data):
                 _bind_resource(async_subgroup, syncer_client)
 
                 component = hat.monitor.client.Component(
-                    monitor, run, conf, backend, syncer_server)
+                    monitor, run, conf, backend, syncer_server, syncer_client)
                 component.set_ready(True)
                 _bind_resource(async_subgroup, component)
 
@@ -120,7 +123,7 @@ async def async_main(conf: json.Data):
 
             else:
                 await async_subgroup.spawn(run, None, conf, backend,
-                                           syncer_server)
+                                           syncer_server, None)
 
         finally:
             await aio.uncancellable(async_subgroup.async_close())
@@ -132,23 +135,51 @@ async def async_main(conf: json.Data):
 async def run(component: typing.Optional[hat.monitor.client.Component],
               conf: json.Data,
               backend: common.Backend,
-              syncer_server: SyncerServer):
+              syncer_server: SyncerServer,
+              syncer_client: SyncerClient):
     """Run monitor component"""
 
-    def on_syncer_state(client_infos):
-        source = common.Source(type=common.SourceType.SYNCER,
-                               id=0)
+    async_group = aio.Group()
+    syncer_client_states = {}
+    syncer_source = common.Source(type=common.SourceType.SYNCER,
+                                  id=0)
+
+    def on_syncer_server_state(client_infos):
         event = common.RegisterEvent(
-            event_type=('event', 'syncer'),
+            event_type=('event', 'syncer', 'server'),
             source_timestamp=None,
             payload=common.EventPayload(
                 type=common.EventPayloadType.JSON,
                 data=[{'client_name': client_info.name,
                        'synced': client_info.synced}
                       for client_info in client_infos]))
-        async_group.spawn(engine.register, source, [event])
+        async_group.spawn(engine.register, syncer_source, [event])
 
-    async_group = aio.Group()
+    def on_syncer_client_state(server_id, state):
+        syncer_client_states[server_id] = state
+        if state != SyncerClientState.SYNCED:
+            return
+
+        event = common.RegisterEvent(
+            event_type=('event', 'syncer', 'client', str(server_id), 'synced'),
+            source_timestamp=None,
+            payload=common.EventPayload(
+                type=common.EventPayloadType.JSON,
+                data=True))
+        async_group.spawn(engine.register, syncer_source, [event])
+
+    def on_syncer_client_events(server_id, events):
+        state = syncer_client_states.pop(server_id, None)
+        if state != SyncerClientState.CONNECTED:
+            return
+
+        event = common.RegisterEvent(
+            event_type=('event', 'syncer', 'client', str(server_id), 'synced'),
+            source_timestamp=None,
+            payload=common.EventPayload(
+                type=common.EventPayloadType.JSON,
+                data=False))
+        async_group.spawn(engine.register, syncer_source, [event])
 
     # TODO wait depending on ???
 
@@ -156,8 +187,16 @@ async def run(component: typing.Optional[hat.monitor.client.Component],
         engine = await create_engine(conf['engine'], backend)
         _bind_resource(async_group, engine)
 
-        with syncer_server.register_state_cb(on_syncer_state):
-            on_syncer_state(list(syncer_server.state))
+        with contextlib.ExitStack() as exit_stack:
+            exit_stack.enter_context(
+                syncer_server.register_state_cb(on_syncer_server_state))
+            on_syncer_server_state(list(syncer_server.state))
+
+            if syncer_client:
+                exit_stack.enter_context(
+                    syncer_client.register_state_cb(on_syncer_client_state))
+                exit_stack.enter_context(
+                    syncer_client.register_events_cb(on_syncer_client_events))
 
             eventer_server = await create_eventer_server(
                 conf['eventer_server'], engine)
