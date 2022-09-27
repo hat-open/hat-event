@@ -61,3 +61,6 @@ class DummyBackend(common.Backend):
                             ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
         for events in []:
             yield events
+
+    async def flush(self):
+        pass

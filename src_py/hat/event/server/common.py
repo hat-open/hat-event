@@ -85,6 +85,10 @@ class Backend(aio.Resource):
         same session. Only permanently persisted events (flushed) are
         returned."""
 
+    @abc.abstractmethod
+    async def flush(self):
+        """Flush internal buffers and permanently persist events"""
+
 
 ModuleConf = json.Data
 

@@ -59,6 +59,9 @@ class Backend(aio.Resource):
     def register_flushed_events_cb(self, cb):
         return self._flushed_events_cbs.register(cb)
 
+    async def flush(self):
+        pass
+
     async def get_last_event_id(self, server_id):
         return common.EventId(server=server_id,
                               session=self._last_session_id,

@@ -21,6 +21,8 @@ mlog = logging.getLogger(__name__)
 async def create(conf: json.Data
                  ) -> 'LmdbBackend':
     backend = LmdbBackend()
+    backend._env_closed = False
+    backend._flush_lock = asyncio.Lock()
     backend._flush_period = conf['flush_period']
     backend._flushed_events_cbs = util.CallbackRegistry()
     backend._executor = aio.create_executor(1)
@@ -169,11 +171,25 @@ class LmdbBackend(common.Backend):
         async for events in self._ref_db.query(event_id):
             yield events
 
+    async def flush(self):
+        async with self._flush_lock:
+            if self._env_closed:
+                return
+
+            dbs = [self._sys_db,
+                   self._latest_db,
+                   *self._ordered_dbs,
+                   self._ref_db]
+            ext_flush_fns = [db.create_ext_flush() for db in dbs]
+            events = await self._executor(_ext_flush, self._env, ext_flush_fns)
+            for session in events:
+                self._flushed_events_cbs.notify(session)
+
     async def _write_loop(self):
         try:
             while True:
                 await asyncio.sleep(self._flush_period)
-                await aio.uncancellable(self._flush())
+                await aio.uncancellable(self.flush())
 
         except Exception as e:
             mlog.error('backend write error: %s', e, exc_info=e)
@@ -182,19 +198,11 @@ class LmdbBackend(common.Backend):
             self.close()
             await aio.uncancellable(self._close())
 
-    async def _flush(self):
-        dbs = [self._sys_db,
-               self._latest_db,
-               *self._ordered_dbs,
-               self._ref_db]
-        ext_flush_fns = [db.create_ext_flush() for db in dbs]
-        events = await self._executor(_ext_flush, self._env, ext_flush_fns)
-        for session in events:
-            self._flushed_events_cbs.notify(session)
-
     async def _close(self):
-        await self._flush()
-        await self._executor(self._env.close)
+        await self.flush()
+        async with self._flush_lock:
+            self._env_closed = True
+            await self._executor(self._env.close)
 
 
 def _ext_flush(env, flush_fns):

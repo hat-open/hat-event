@@ -110,6 +110,9 @@ class MemoryBackend(common.Backend):
         for events in []:
             yield events
 
+    async def flush(self):
+        pass
+
 
 def _filter_events_ids(events, event_ids):
     for event in event_ids:

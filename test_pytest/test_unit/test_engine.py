@@ -92,6 +92,9 @@ class Backend(aio.Resource):
             return []
         return self._query_cb(data)
 
+    async def flush(self):
+        pass
+
 
 async def test_create():
     events_q = aio.Queue()

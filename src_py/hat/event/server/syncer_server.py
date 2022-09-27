@@ -1,5 +1,7 @@
 """Syncer server"""
 
+import contextlib
+import functools
 import itertools
 import logging
 import typing
@@ -95,50 +97,20 @@ class SyncerServer(aio.Resource):
             conn.async_group.spawn(_receive_loop, conn)
 
             msg_req = hat.event.common.data.syncer_req_from_sbs(msg.data.data)
-            last_event_id = msg_req.last_event_id
-            name = msg_req.client_name
             client_id = next(self._next_client_ids)
+            name = msg_req.client_name
+            last_event_id = msg_req.last_event_id
             self._update_client_info(client_id, name, False)
 
-            events_queue = aio.Queue()
-            with self._backend.register_flushed_events_cb(
-                    events_queue.put_nowait):
-                mlog.debug("query backend")
-                async for events in self._backend.query_flushed(
-                        msg_req.last_event_id):
-                    last_event_id = events[-1].event_id
-                    data = chatter.Data(module='HatSyncer',
-                                        type='MsgEvents',
-                                        data=[common.event_to_sbs(e)
-                                              for e in events])
-                    conn.send(data)
-
-                self._update_client_info(client_id, name, True)
-                conn.send(chatter.Data(module='HatSyncer',
-                                       type='MsgSynced',
-                                       data=None))
-
-                while True:
-                    events = await events_queue.get()
-
-                    if not events:
-                        continue
-
-                    if events[0].event_id.server != last_event_id.server:
-                        continue
-
-                    if events[0].event_id.session < last_event_id.session:
-                        continue
-
-                    if events[0].event_id.session == last_event_id.session:
-                        events = [event for event in events
-                                  if event.event_id > last_event_id]
-
-                    data = chatter.Data(module='HatSyncer',
-                                        type='MsgEvents',
-                                        data=[common.event_to_sbs(e)
-                                              for e in events])
-                    conn.send(data)
+            synced_cb = functools.partial(self._update_client_info, client_id,
+                                          name, True)
+            client = _Client(backend=self._backend,
+                             conn=conn,
+                             client_id=client_id,
+                             name=name,
+                             last_event_id=last_event_id,
+                             synced_cb=synced_cb)
+            await client.run()
 
         except ConnectionError:
             pass
@@ -150,6 +122,74 @@ class SyncerServer(aio.Resource):
             mlog.debug("closing client connection loop")
             conn.close()
             self._remove_client_info(client_id)
+
+
+class _Client:
+
+    def __init__(self, backend, conn, client_id, name, last_event_id,
+                 synced_cb):
+        self._backend = backend
+        self._conn = conn
+        self._client_id = client_id
+        self._name = name
+        self._last_event_id = last_event_id
+        self._synced_cb = synced_cb
+        self._synced = False
+        self._events_queue = aio.Queue()
+
+    async def run(self):
+        try:
+            with self._backend.register_flushed_events_cb(
+                    self._events_queue.put_nowait):
+                mlog.debug("query backend")
+                async for events in self._backend.query_flushed(
+                        self._last_event_id):
+                    self._send_events(events)
+
+                self._conn.send(chatter.Data(module='HatSyncer',
+                                             type='MsgSynced',
+                                             data=None))
+                self._set_synced()
+
+                while True:
+                    events = await self._events_queue.get()
+                    self._send_events(events)
+
+        finally:
+            await aio.uncancellable(self._close())
+
+    async def _close(self):
+        if not self._synced:
+            return
+        with contextlib.suppress(Exception):
+            await self._conn.drain()
+
+    def _set_synced(self):
+        self._synced = True
+        self._synced_cb()
+
+    def _send_events(self, events):
+        if not events:
+            return
+
+        if events[0].event_id.server != self._last_event_id.server:
+            return
+
+        if events[0].event_id.session < self._last_event_id.session:
+            return
+
+        if events[0].event_id.session == self._last_event_id.session:
+            events = [event for event in events
+                      if event.event_id > self._last_event_id]
+            if not events:
+                return
+
+        data = chatter.Data(module='HatSyncer',
+                            type='MsgEvents',
+                            data=[common.event_to_sbs(e)
+                                  for e in events])
+        self._conn.send(data)
+        self._last_event_id = events[-1].event_id
 
 
 async def _receive_loop(conn):

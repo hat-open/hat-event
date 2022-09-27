@@ -82,63 +82,112 @@ def sync_main(conf: json.Data):
 
 async def async_main(conf: json.Data):
     """Async main entry point"""
-    async_group = aio.Group()
-    async_group.spawn(aio.call_on_cancel, asyncio.sleep, 0.1)
-
     try:
-        py_module = importlib.import_module(conf['backend']['module'])
-        backend = await aio.call(py_module.create, conf['backend'])
-        _bind_resource(async_group, backend)
-
-        async_subgroup = async_group.create_subgroup()
-
-        try:
-            syncer_server = await create_syncer_server(conf['syncer_server'],
-                                                       backend)
-            _bind_resource(async_subgroup, syncer_server)
-
-            if 'monitor' in conf:
-                data = {
-                    'server_id': conf['engine']['server_id'],
-                    'eventer_server_address': conf['eventer_server']['address'],  # NOQA
-                    'syncer_server_address': conf['syncer_server']['address']}
-                if 'syncer_token' in conf:
-                    data['syncer_token'] = conf['syncer_token']
-                monitor = await hat.monitor.client.connect(conf['monitor'],
-                                                           data)
-                _bind_resource(async_subgroup, monitor)
-
-                client_name = str(conf['engine']['server_id'])
-                syncer_client = await create_syncer_client(
-                    backend, monitor, conf['monitor']['group'], client_name,
-                    conf.get('syncer_token'))
-                _bind_resource(async_subgroup, syncer_client)
-
-                component = hat.monitor.client.Component(
-                    monitor, run, conf, backend, syncer_server, syncer_client)
-                component.set_ready(True)
-                _bind_resource(async_subgroup, component)
-
-                await async_subgroup.wait_closing()
-
-            else:
-                await async_subgroup.spawn(run, None, conf, backend,
-                                           syncer_server, None)
-
-        finally:
-            await aio.uncancellable(async_subgroup.async_close())
+        await run_backend(conf)
 
     finally:
-        await aio.uncancellable(async_group.async_close())
+        await asyncio.sleep(0.1)
 
 
-async def run(component: typing.Optional[hat.monitor.client.Component],
-              conf: json.Data,
-              backend: common.Backend,
-              syncer_server: SyncerServer,
-              syncer_client: SyncerClient):
-    """Run monitor component"""
+async def run_backend(conf: json.Data):
+    py_module = importlib.import_module(conf['backend']['module'])
+    backend = await aio.call(py_module.create, conf['backend'])
 
+    async_group = aio.Group(log_exceptions=False)
+    async_group.spawn(aio.call_on_done, backend.wait_closing(),
+                      async_group.close)
+
+    async def cleanup():
+        await async_group.async_close()
+        await backend.async_close()
+
+    try:
+        await async_group.spawn(run_syncer_server, conf, backend)
+
+    finally:
+        await aio.uncancellable(cleanup())
+
+
+async def run_syncer_server(conf: json.Data,
+                            backend: common.Backend):
+    syncer_server = await create_syncer_server(conf['syncer_server'],
+                                               backend)
+
+    async_group = aio.Group(log_exceptions=False)
+    async_group.spawn(aio.call_on_done, syncer_server.wait_closing(),
+                      async_group.close)
+
+    async def cleanup():
+        with contextlib.suppress(Exception):
+            await backend.flush()
+        await async_group.async_close()
+        await syncer_server.async_close()
+
+    try:
+        if 'monitor' in conf:
+            await async_group.spawn(run_monitor_client, conf, backend,
+                                    syncer_server)
+        else:
+            await async_group.spawn(run_engine, None, conf, backend,
+                                    syncer_server, None)
+
+    finally:
+        await aio.uncancellable(cleanup())
+
+
+async def run_monitor_client(conf: json.Data,
+                             backend: common.Backend,
+                             syncer_server: SyncerServer):
+    data = {'server_id': conf['engine']['server_id'],
+            'eventer_server_address': conf['eventer_server']['address'],
+            'syncer_server_address': conf['syncer_server']['address']}
+    if 'syncer_token' in conf:
+        data['syncer_token'] = conf['syncer_token']
+    monitor = await hat.monitor.client.connect(conf['monitor'], data)
+
+    async_group = aio.Group(log_exceptions=False)
+    async_group.spawn(aio.call_on_done, syncer_server.wait_closing(),
+                      async_group.close)
+
+    async def cleanup():
+        await async_group.async_close()
+        await monitor.async_close()
+
+    try:
+        await async_group.spawn(run_syncer_client, conf, backend,
+                                syncer_server, monitor)
+
+    finally:
+        await aio.uncancellable(cleanup())
+
+
+async def run_syncer_client(conf: json.Data,
+                            backend: common.Backend,
+                            syncer_server: SyncerServer,
+                            monitor: hat.monitor.client.Client):
+    syncer_client = await create_syncer_client(
+        backend=backend,
+        monitor_client=monitor,
+        monitor_group=conf['monitor']['group'],
+        name=str(conf['engine']['server_id']),
+        syncer_token=conf.get('syncer_token'))
+
+    try:
+        component = hat.monitor.client.Component(
+            monitor, run_engine, conf, backend, syncer_server, syncer_client)
+        component.set_ready(True)
+
+        await syncer_client.wait_closing()
+
+    finally:
+        await aio.uncancellable(syncer_client.async_close())
+
+
+async def run_engine(component: typing.Optional[hat.monitor.client.Component],
+                     conf: json.Data,
+                     backend: common.Backend,
+                     syncer_server: SyncerServer,
+                     syncer_client: typing.Optional[SyncerClient]):
     async_group = aio.Group()
     syncer_client_states = {}
     syncer_source = common.Source(type=common.SourceType.SYNCER,

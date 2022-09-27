@@ -39,6 +39,10 @@ class Backend(aio.Resource):
     def async_group(self):
         return self._async_group
 
+    @property
+    def from_event_id(self):
+        return self._from_event_id
+
     def register_flushed_events_cb(self, cb):
         return self._flushed_events_cbs.register(cb)
 
@@ -51,9 +55,8 @@ class Backend(aio.Resource):
         if len(self._query_from_event_id_events) != 0:
             yield self._query_from_event_id_events
 
-    @property
-    def from_event_id(self):
-        return self._from_event_id
+    async def flush(self):
+        pass
 
 
 async def test_create(conf):
@@ -130,7 +133,7 @@ async def test_sync(conf):
     assert conn.is_open
     assert state_queue.empty()
 
-    last_event_id = common.EventId(server=321, session=123, instance=456)
+    last_event_id = common.EventId(server=1, session=1, instance=456)
     conn.send(chatter.Data(module='HatSyncer',
                            type='MsgReq',
                            data={'lastEventId': last_event_id._asdict(),
@@ -182,10 +185,10 @@ async def test_register(conf):
     assert len(state) == 1
     assert not state[0].synced
 
-    for events_length in [2, 4, 13]:
+    for session, events_length in enumerate([2, 4, 13]):
         events = [common.Event(
             event_id=common.EventId(server=1,
-                                    session=2,
+                                    session=session + 1,
                                     instance=i),
             event_type=('a', 'b', 'c'),
             timestamp=common.now(),
@@ -281,7 +284,7 @@ async def test_multi_clients(conf):
     for i in range(clients_count):
         conn = await chatter.connect(common.sbs_repo, conf['address'])
         last_event_id = common.EventId(
-            server=321, session=123 + i, instance=456 + i)
+            server=1, session=0, instance=0)
         conn.client_name = f"cli{i}"
         conn.source = common.Source(type=common.SourceType.SYNCER,
                                     id=i + 1)
