@@ -162,6 +162,9 @@ class _Client:
         if not self._synced:
             return
         with contextlib.suppress(Exception):
+            while not self._events_queue.empty():
+                self._send_events(self._events_queue.get_nowait())
+        with contextlib.suppress(Exception):
             await self._conn.drain()
 
     def _set_synced(self):
