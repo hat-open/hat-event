@@ -117,13 +117,13 @@ class SyncerServer(aio.Resource):
                 await client.wait_closing()
 
             finally:
-                await aio.uncancellable(client.close())
+                await aio.uncancellable(client.async_close())
 
         except ConnectionError:
             pass
 
         except Exception as e:
-            mlog.error("connection loop error: %s", e, exec_info=e)
+            mlog.error("connection loop error: %s", e, exc_info=e)
 
         finally:
             mlog.debug("closing client connection loop")
@@ -179,7 +179,7 @@ class _Client(aio.Resource):
             pass
 
         except Exception as e:
-            mlog.error("client loop error: %s", e, exec_info=e)
+            mlog.error("client loop error: %s", e, exc_info=e)
 
         finally:
             self.close()
@@ -232,7 +232,7 @@ async def _receive_loop(conn):
         pass
 
     except Exception as e:
-        mlog.error("receive loop error: %s", e, exec_info=e)
+        mlog.error("receive loop error: %s", e, exc_info=e)
 
     finally:
         conn.close()
