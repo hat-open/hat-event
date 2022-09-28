@@ -176,7 +176,7 @@ class _Connection(aio.Resource):
                                              **self._kwargs)
 
             except Exception:
-                mlog.info("can not connect to syncer server")
+                mlog.debug("can not connect to syncer server")
                 await asyncio.sleep(reconnect_delay)
                 continue
 
