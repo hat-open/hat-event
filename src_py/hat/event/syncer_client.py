@@ -1,5 +1,6 @@
 import asyncio
 import enum
+import functools
 import logging
 import typing
 
@@ -63,12 +64,10 @@ async def create_syncer_client(backend: common.Backend,
     cli._kwargs = kwargs
     cli._state_cbs = util.CallbackRegistry()
     cli._events_cbs = util.CallbackRegistry()
-    cli._syncers = {}
-    cli._servers_info_queue = aio.Queue()
-    cli._monitor_change_handler = monitor_client.register_change_cb(
-        cli._on_monitor_change)
-    cli._async_group = monitor_client.async_group.create_subgroup()
-    cli._async_group.spawn(aio.call_on_cancel, cli._close)
+    cli._async_group = aio.Group()
+
+    cli.async_group.spawn(cli._monitor_client_loop)
+
     return cli
 
 
@@ -91,44 +90,89 @@ class SyncerClient(aio.Resource):
         """Register events callback"""
         return self._events_cbs.register(cb)
 
-    def _close(self):
-        for syncer in self._syncers.values():
-            syncer.close()
-        self._monitor_change_handler.cancel()
+    async def _monitor_client_loop(self):
+        try:
+            changes = aio.Queue()
+            change_cb = functools.partial(changes.put_nowait, None)
+            with self._monitor_client.register_change_cb(change_cb):
+                conns = {}
 
-    def _on_monitor_change(self):
-        mlog.debug("received monitor change")
-        servers_info = [
-            (info.data['server_id'], info.data['syncer_server_address'])
-            for info in self._monitor_client.components
-            if (info.group == self._monitor_group
-                and info != self._monitor_client.info
-                and (self._syncer_token is None
-                     or self._syncer_token == info.data['syncer_token']))]
+                while True:
+                    mlog.debug("filtering syncer server addresses")
+                    server_id_addresses = {
+                        info.data['server_id']: info.data['syncer_server_address']  # NOQA
+                        for info in self._monitor_client.components
+                        if (info.group == self._monitor_group and
+                            info != self._monitor_client.info and
+                            info.data and
+                            'server_id' in info.data and
+                            'syncer_server_address' in info.data and
+                            (self._syncer_token is None or
+                             self._syncer_token == info.data.get('syncer_token')))}  # NOQA
 
-        syncers_to_close = [server_info for server_info in self._syncers.keys()
-                            if server_info not in servers_info]
-        for server_info in syncers_to_close:
-            mlog.debug("stopping synchronization with event server id=%s",
-                       server_info[0])
-            syncer = self._syncers.pop(server_info)
-            syncer.close()
+                    for server_id, address in server_id_addresses.items():
+                        conn = conns.get(server_id)
+                        if conn:
+                            if conn.is_open and conn.address == address:
+                                continue
 
-        for server_info in servers_info:
-            if server_info in self._syncers:
-                continue
-            mlog.debug("starting synchronization with event server id=%s",
-                       server_info[0])
-            syncer_group = self.async_group.create_subgroup()
-            syncer_group.spawn(self._syncer_loop, server_info[0],
-                               server_info[1])
-            self._syncers[server_info] = syncer_group
+                            mlog.debug("closing existing connection")
+                            await conn.async_close()
 
-    async def _syncer_loop(self, server_id, server_address):
+                        mlog.debug("creating new connection")
+                        state_cb = functools.partial(self._state_cbs.notify,
+                                                     server_id)
+                        events_cb = functools.partial(self._events_cbs.notify,
+                                                      server_id)
+                        conn = _Connection(
+                            async_group=self.async_group.create_subgroup(),
+                            backend=self._backend,
+                            server_id=server_id,
+                            address=address,
+                            client_name=self._name,
+                            kwargs=self._kwargs,
+                            state_cb=state_cb,
+                            events_cb=events_cb)
+
+                        conns[server_id] = conn
+
+                    await changes.get_until_empty()
+
+        except Exception as e:
+            mlog.error("monitor client loop error: %s", e, exc_info=e)
+
+        finally:
+            self.close()
+
+
+class _Connection(aio.Resource):
+
+    def __init__(self, async_group, backend, server_id, address, client_name,
+                 kwargs, state_cb, events_cb):
+        self._async_group = async_group
+        self._backend = backend
+        self._server_id = server_id
+        self._address = address
+        self._client_name = client_name
+        self._kwargs = kwargs
+        self._state_cb = state_cb
+        self._events_cb = events_cb
+
+        self.async_group.spawn(self._connection_loop)
+
+    @property
+    def async_group(self):
+        return self._async_group
+
+    @property
+    def address(self):
+        return self._address
+
+    async def _connection_loop(self):
         while True:
             try:
                 mlog.debug("connecting to syncer server")
-                conn = await chatter.connect(common.sbs_repo, server_address,
+                conn = await chatter.connect(common.sbs_repo, self._address,
                                              **self._kwargs)
 
             except Exception:
@@ -138,16 +182,16 @@ class SyncerClient(aio.Resource):
 
             try:
                 last_event_id = await self._backend.get_last_event_id(
-                    server_id)
+                    self._server_id)
                 msg_data = chatter.Data(
                     module='HatSyncer',
                     type='MsgReq',
                     data=hat.event.common.data.syncer_req_to_sbs(
                          hat.event.common.data.SyncerReq(last_event_id,
-                                                         self._name)))
+                                                         self._client_name)))
                 conn.send(msg_data)
 
-                self._state_cbs.notify(server_id, SyncerClientState.CONNECTED)
+                self._state_cb(SyncerClientState.CONNECTED)
                 try:
                     while True:
                         mlog.debug("waiting for incoming message")
@@ -159,25 +203,23 @@ class SyncerClient(aio.Resource):
                             events = [common.event_from_sbs(i)
                                       for i in msg.data.data]
                             await self._backend.register(events)
-                            self._events_cbs.notify(server_id, events)
+                            self._events_cb(events)
 
                         elif msg_type == ('HatSyncer', 'MsgSynced'):
                             mlog.debug("received synced")
-                            self._state_cbs.notify(server_id,
-                                                   SyncerClientState.SYNCED)
+                            self._state_cb(SyncerClientState.SYNCED)
 
                         else:
                             raise Exception("unsupported message type")
 
                 finally:
-                    self._state_cbs.notify(server_id,
-                                           SyncerClientState.DISCONNECTED)
+                    self._state_cb(SyncerClientState.DISCONNECTED)
 
             except ConnectionError:
                 pass
 
             except Exception as e:
-                mlog.error("syncer loop error: %s", e, exc_info=e)
+                mlog.error("connection loop error: %s", e, exc_info=e)
 
             finally:
                 await aio.uncancellable(conn.async_close())
