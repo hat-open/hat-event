@@ -118,9 +118,9 @@ async def run_syncer_server(conf: json.Data,
                       async_group.close)
 
     async def cleanup():
+        await async_group.async_close()
         with contextlib.suppress(Exception):
             await backend.flush()
-        await async_group.async_close()
         await syncer_server.async_close()
 
     try:

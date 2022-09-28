@@ -47,7 +47,8 @@ async def create_syncer_server(conf: json.Data,
 
     srv._server = await chatter.listen(sbs_repo=common.sbs_repo,
                                        address=conf['address'],
-                                       connection_cb=srv._on_connection)
+                                       connection_cb=srv._on_connection,
+                                       bind_connections=False)
     mlog.debug("listening on %s", conf['address'])
     return srv
 
@@ -71,7 +72,7 @@ class SyncerServer(aio.Resource):
         return self._state_cbs.register(cb)
 
     def _on_connection(self, conn):
-        conn.async_group.spawn(self._connection_loop, conn)
+        self.async_group.spawn(self._connection_loop, conn)
 
     def _update_client_info(self, client_id, name, synced):
         self._state[client_id] = ClientInfo(name, synced)
@@ -122,6 +123,7 @@ class SyncerServer(aio.Resource):
             mlog.debug("closing client connection loop")
             conn.close()
             self._remove_client_info(client_id)
+            await aio.uncancellable(conn.async_close())
 
 
 class _Client:
