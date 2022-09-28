@@ -28,7 +28,7 @@ def create_backend(query_from_event_id_events=[]):
     backend = Backend()
     backend._async_group = aio.Group()
     backend._flushed_events_cbs = util.CallbackRegistry()
-    backend._query_from_event_id_events = query_from_event_id_events
+    backend._events = list(query_from_event_id_events)
     backend._from_event_id = None
     return backend
 
@@ -47,13 +47,14 @@ class Backend(aio.Resource):
         return self._flushed_events_cbs.register(cb)
 
     async def register(self, events):
+        self._events.extend(events)
         self._flushed_events_cbs.notify(events)
         return events
 
     async def query_flushed(self, event_id):
         self._from_event_id = event_id
-        if len(self._query_from_event_id_events) != 0:
-            yield self._query_from_event_id_events
+        if len(self._events) != 0:
+            yield self._events
 
     async def flush(self):
         pass
@@ -206,6 +207,7 @@ async def test_register(conf):
     await syncer_server.async_close()
 
 
+# TODO rewrite
 async def test_register_while_sync(conf):
     events = [common.Event(
         event_id=common.EventId(server=1,
@@ -238,12 +240,12 @@ async def test_register_while_sync(conf):
     assert len(state) == 1
     assert not state[0].synced
 
-    for e in register_events:
-        await backend.register([e])
-
     msg = await conn.receive()
     assert msg.data.type == 'MsgEvents'
     assert [common.event_from_sbs(i) for i in msg.data.data] == sync_events
+
+    for e in register_events:
+        await backend.register([e])
 
     msg = await conn.receive()
     assert msg.data.type == 'MsgSynced'

@@ -83,7 +83,7 @@ class SyncerServer(aio.Resource):
             self._state_cbs.notify(list(self._state.values()))
 
     async def _connection_loop(self, conn):
-        mlog.debug("starting new client connection loop")
+        mlog.debug("starting new connection loop")
 
         client_id = None
         try:
@@ -103,6 +103,7 @@ class SyncerServer(aio.Resource):
             last_event_id = msg_req.last_event_id
             self._update_client_info(client_id, name, False)
 
+            mlog.debug("creating client")
             synced_cb = functools.partial(self._update_client_info, client_id,
                                           name, True)
             client = _Client(backend=self._backend,
@@ -111,7 +112,12 @@ class SyncerServer(aio.Resource):
                              name=name,
                              last_event_id=last_event_id,
                              synced_cb=synced_cb)
-            await client.run()
+
+            try:
+                await client.wait_closing()
+
+            finally:
+                await aio.uncancellable(client.close())
 
         except ConnectionError:
             pass
@@ -126,7 +132,7 @@ class SyncerServer(aio.Resource):
             await aio.uncancellable(conn.async_close())
 
 
-class _Client:
+class _Client(aio.Resource):
 
     def __init__(self, backend, conn, client_id, name, last_event_id,
                  synced_cb):
@@ -138,8 +144,19 @@ class _Client:
         self._synced_cb = synced_cb
         self._synced = False
         self._events_queue = aio.Queue()
+        self._async_group = aio.Group()
 
-    async def run(self):
+        self.async_group.spawn(self._client_loop)
+        self.async_group.spawn(aio.call_on_done, self._conn.wait_closing(),
+                               self.close)
+
+    @property
+    def async_group(self):
+        return self._async_group
+
+    async def _client_loop(self):
+        mlog.debug("starting new client loop")
+
         try:
             with self._backend.register_flushed_events_cb(
                     self._events_queue.put_nowait):
@@ -148,6 +165,7 @@ class _Client:
                         self._last_event_id):
                     self._send_events(events)
 
+                mlog.debug("sending synced")
                 self._conn.send(chatter.Data(module='HatSyncer',
                                              type='MsgSynced',
                                              data=None))
@@ -157,10 +175,17 @@ class _Client:
                     events = await self._events_queue.get()
                     self._send_events(events)
 
-        finally:
-            await aio.uncancellable(self._close())
+        except ConnectionError:
+            pass
 
-    async def _close(self):
+        except Exception as e:
+            mlog.error("client loop error: %s", e, exec_info=e)
+
+        finally:
+            self.close()
+            await aio.uncancellable(self._flush())
+
+    async def _flush(self):
         if not self._synced:
             return
         with contextlib.suppress(Exception):
@@ -189,6 +214,7 @@ class _Client:
             if not events:
                 return
 
+        mlog.debug("sending events")
         data = chatter.Data(module='HatSyncer',
                             type='MsgEvents',
                             data=[common.event_to_sbs(e)
