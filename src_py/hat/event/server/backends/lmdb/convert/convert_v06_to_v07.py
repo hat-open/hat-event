@@ -2,8 +2,8 @@ from pathlib import Path
 import itertools
 import sys
 
-from . import v06
-from . import v07
+from hat.event.server.backends.lmdb.convert import v06
+from hat.event.server.backends.lmdb.convert import v07
 
 
 def main():
@@ -14,6 +14,11 @@ def main():
     src_path = Path(sys.argv[1])
     dst_path = Path(sys.argv[2])
 
+    convert(src_path, dst_path)
+
+
+def convert(src_path: Path,
+            dst_path: Path):
     with v06.create_env(src_path) as src_env:
         src_system_db = src_env.open_db(b'system')
         server_id = _get_server_id(src_env, src_system_db)
@@ -91,7 +96,6 @@ def _convert_ordered(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
     dst_ordered_count_db = v07.open_db(dst_env, v07.DbType.ORDERED_COUNT)
 
     latest_event = None
-    latest_timestamp = None
 
     with src_env.begin(db=src_ordered_data_db, buffers=True) as src_txn:
         for src_encoded_key, src_encoded_value in src_txn.cursor():
