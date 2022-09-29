@@ -138,49 +138,34 @@ async def run_syncer_server(conf: json.Data,
 async def run_monitor_client(conf: json.Data,
                              backend: common.Backend,
                              syncer_server: SyncerServer):
-    data = {'server_id': conf['engine']['server_id'],
-            'eventer_server_address': conf['eventer_server']['address'],
-            'syncer_server_address': conf['syncer_server']['address']}
-    if 'syncer_token' in conf:
-        data['syncer_token'] = conf['syncer_token']
-    monitor = await hat.monitor.client.connect(conf['monitor'], data)
-
-    async_group = aio.Group(log_exceptions=False)
-    async_group.spawn(aio.call_on_done, syncer_server.wait_closing(),
-                      async_group.close)
-
-    async def cleanup():
-        await async_group.async_close()
-        await monitor.async_close()
+    async_group = aio.Group()
 
     try:
-        await async_group.spawn(run_syncer_client, conf, backend,
-                                syncer_server, monitor)
+        data = {'server_id': conf['engine']['server_id'],
+                'eventer_server_address': conf['eventer_server']['address'],
+                'syncer_server_address': conf['syncer_server']['address']}
+        if 'syncer_token' in conf:
+            data['syncer_token'] = conf['syncer_token']
+        monitor = await hat.monitor.client.connect(conf['monitor'], data)
+        _bind_resource(async_group, monitor)
 
-    finally:
-        await aio.uncancellable(cleanup())
+        syncer_client = await create_syncer_client(
+            backend=backend,
+            monitor_client=monitor,
+            monitor_group=conf['monitor']['group'],
+            name=str(conf['engine']['server_id']),
+            syncer_token=conf.get('syncer_token'))
+        _bind_resource(async_group, syncer_client)
 
-
-async def run_syncer_client(conf: json.Data,
-                            backend: common.Backend,
-                            syncer_server: SyncerServer,
-                            monitor: hat.monitor.client.Client):
-    syncer_client = await create_syncer_client(
-        backend=backend,
-        monitor_client=monitor,
-        monitor_group=conf['monitor']['group'],
-        name=str(conf['engine']['server_id']),
-        syncer_token=conf.get('syncer_token'))
-
-    try:
         component = hat.monitor.client.Component(
             monitor, run_engine, conf, backend, syncer_server, syncer_client)
         component.set_ready(True)
+        _bind_resource(async_group, component)
 
-        await syncer_client.wait_closing()
+        await async_group.wait_closing()
 
     finally:
-        await aio.uncancellable(syncer_client.async_close())
+        await aio.uncancellable(async_group.async_close())
 
 
 async def run_engine(component: typing.Optional[hat.monitor.client.Component],
