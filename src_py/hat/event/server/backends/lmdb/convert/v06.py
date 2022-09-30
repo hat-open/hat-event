@@ -244,4 +244,4 @@ def _sbs_data_from_sbs(data: sbs.Data) -> SbsData:
 def _optional_from_sbs(data: sbs.Data,
                        fn=lambda i: i
                        ) -> typing.Optional[typing.Any]:
-    return fn(data[1]) if data[0] == 'Just' else None
+    return fn(data[1]) if data[0] == 'value' else None
