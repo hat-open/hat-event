@@ -99,16 +99,22 @@ class SyncerClient(aio.Resource):
 
                 while True:
                     mlog.debug("filtering syncer server addresses")
-                    server_id_addresses = {
-                        info.data['server_id']: info.data['syncer_server_address']  # NOQA
-                        for info in self._monitor_client.components
-                        if (info.group == self._monitor_group and
-                            info != self._monitor_client.info and
-                            info.data and
-                            'server_id' in info.data and
-                            'syncer_server_address' in info.data and
-                            (self._syncer_token is None or
-                             self._syncer_token == info.data.get('syncer_token')))}  # NOQA
+                    server_id_addresses = {}
+                    for info in self._monitor_client.components:
+                        if not (info.group == self._monitor_group and
+                                info != self._monitor_client.info and
+                                info.data and
+                                'server_id' in info.data and
+                                'syncer_server_address' in info.data):
+                            continue
+                        if (self._syncer_token is not None and
+                                self._syncer_token != info.data.get('syncer_token')):  # NOQA
+                            mlog.warning("syncer tokens not equal, server %s "
+                                         "ignored for syncer connection to %s",
+                                         info.data['server_id'],
+                                         info.data['syncer_server_address'])
+                            continue
+                        server_id_addresses[info.data['server_id']] = info.data['syncer_server_address']  # NOQA
 
                     for server_id, address in server_id_addresses.items():
                         conn = conns.get(server_id)
