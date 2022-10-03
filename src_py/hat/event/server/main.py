@@ -177,6 +177,19 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
     syncer_client_states = {}
     syncer_source = common.Source(type=common.SourceType.SYNCER,
                                   id=0)
+    engine = None
+    eventer_server = None
+
+    async def cleanup():
+        if eventer_server:
+            await eventer_server.async_close()
+        if engine:
+            await engine.async_close()
+        with contextlib.suppress(Exception):
+            await backend.flush()
+        with contextlib.suppress(Exception):
+            await syncer_server.flush()
+        await async_group.async_close()
 
     def on_syncer_server_state(client_infos):
         event = common.RegisterEvent(
@@ -219,7 +232,8 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
 
     try:
         engine = await create_engine(conf['engine'], backend)
-        _bind_resource(async_group, engine)
+        async_group.spawn(aio.call_on_done, engine.wait_closing(),
+                          async_group.close)
 
         with contextlib.ExitStack() as exit_stack:
             exit_stack.enter_context(
@@ -234,12 +248,13 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
 
             eventer_server = await create_eventer_server(
                 conf['eventer_server'], engine)
-            _bind_resource(async_group, eventer_server)
+            async_group.spawn(aio.call_on_done, eventer_server.wait_closing(),
+                              async_group.close)
 
             await async_group.wait_closing()
 
     finally:
-        await aio.uncancellable(async_group.async_close())
+        await aio.uncancellable(cleanup())
 
 
 def _bind_resource(async_group, resource):

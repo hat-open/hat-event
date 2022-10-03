@@ -1,5 +1,7 @@
 """Syncer server"""
 
+import asyncio
+import collections
 import contextlib
 import functools
 import itertools
@@ -44,6 +46,7 @@ async def create_syncer_server(conf: json.Data,
     srv._state = {}
     srv._next_client_ids = itertools.count(1)
     srv._state_cbs = util.CallbackRegistry()
+    srv._clients = {}
 
     srv._server = await chatter.listen(sbs_repo=common.sbs_repo,
                                        address=conf['address'],
@@ -70,6 +73,14 @@ class SyncerServer(aio.Resource):
                           ) -> util.RegisterCallbackHandle:
         """Register state change callback"""
         return self._state_cbs.register(cb)
+
+    async def flush(self):
+        if not self.is_open:
+            await self.wait_closed()
+            return
+
+        await asyncio.wait([self.async_group.spawn(client.flush)
+                            for client in self._clients.values()])
 
     def _on_connection(self, conn):
         self.async_group.spawn(self._connection_loop, conn)
@@ -113,10 +124,12 @@ class SyncerServer(aio.Resource):
                              last_event_id=last_event_id,
                              synced_cb=synced_cb)
 
+            self._clients[client_id] = client
             try:
                 await client.wait_closing()
 
             finally:
+                self._clients.pop(client_id)
                 await aio.uncancellable(client.async_close())
 
         except ConnectionError:
@@ -154,12 +167,52 @@ class _Client(aio.Resource):
     def async_group(self):
         return self._async_group
 
+    async def flush(self):
+        with contextlib.suppress(aio.QueueClosedError):
+            future = asyncio.Future()
+            self._events_queue.put_nowait(([], future))
+            await future
+
     async def _client_loop(self):
         mlog.debug("starting new client loop")
+        future = None
+
+        async def cleanup():
+            nonlocal future
+
+            self.close()
+            self._events_queue.close()
+
+            futures = collections.deque()
+            if future:
+                futures.append(future)
+
+            send = self._synced
+            while not self._events_queue.empty():
+                events, future = self._events_queue.get_nowait()
+                if future:
+                    futures.append(future)
+                if not send:
+                    continue
+
+                try:
+                    self._send_events(events)
+
+                except Exception:
+                    send = False
+
+            with contextlib.suppress(Exception):
+                await self._conn.drain()
+
+            for future in futures:
+                if not future.done():
+                    future.set_result(None)
+
+        def on_events(events):
+            self._events_queue.put_nowait((events, None))
 
         try:
-            with self._backend.register_flushed_events_cb(
-                    self._events_queue.put_nowait):
+            with self._backend.register_flushed_events_cb(on_events):
                 mlog.debug("query backend")
                 async for events in self._backend.query_flushed(
                         self._last_event_id):
@@ -172,8 +225,14 @@ class _Client(aio.Resource):
                 self._set_synced()
 
                 while True:
-                    events = await self._events_queue.get()
+                    events, future = await self._events_queue.get()
                     self._send_events(events)
+                    if not future or future.done():
+                        continue
+
+                    await self._conn.drain()
+                    if not future.done():
+                        future.set_result(None)
 
         except ConnectionError:
             pass
@@ -182,17 +241,8 @@ class _Client(aio.Resource):
             mlog.error("client loop error: %s", e, exc_info=e)
 
         finally:
-            self.close()
-            await aio.uncancellable(self._flush())
-
-    async def _flush(self):
-        if not self._synced:
-            return
-        with contextlib.suppress(Exception):
-            while not self._events_queue.empty():
-                self._send_events(self._events_queue.get_nowait())
-        with contextlib.suppress(Exception):
-            await self._conn.drain()
+            mlog.debug("stopping client loop")
+            await aio.uncancellable(cleanup())
 
     def _set_synced(self):
         self._synced = True
