@@ -63,7 +63,9 @@ def task_build():
             description='Hat event',
             url='https://github.com/hat-open/hat-event',
             license=common.License.APACHE2,
-            console_scripts=['hat-event = hat.event.server.main:main'],
+            console_scripts=[
+                'hat-event = hat.event.server.main:main',
+                'hat-event-lmdb-manager = hat.event.server.backends.lmdb.manager.main:main'],  # NOQA
             py_versions=get_py_versions(py_limited_api),
             py_limited_api=py_limited_api,
             platform=common.target_platform,
