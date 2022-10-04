@@ -140,6 +140,12 @@ async def run_monitor_client(conf: json.Data,
                              syncer_server: SyncerServer):
     async_group = aio.Group()
 
+    async def cleanup():
+        await component.async_close()
+        await syncer_client.async_close()
+        await monitor.async_close()
+        await async_group.async_close()
+
     try:
         data = {'server_id': conf['engine']['server_id'],
                 'eventer_server_address': conf['eventer_server']['address'],
@@ -147,7 +153,8 @@ async def run_monitor_client(conf: json.Data,
         if 'syncer_token' in conf:
             data['syncer_token'] = conf['syncer_token']
         monitor = await hat.monitor.client.connect(conf['monitor'], data)
-        _bind_resource(async_group, monitor)
+        async_group.spawn(aio.call_on_done, monitor.wait_closing(),
+                          async_group.close)
 
         syncer_client = await create_syncer_client(
             backend=backend,
@@ -155,17 +162,19 @@ async def run_monitor_client(conf: json.Data,
             monitor_group=conf['monitor']['group'],
             name=str(conf['engine']['server_id']),
             syncer_token=conf.get('syncer_token'))
-        _bind_resource(async_group, syncer_client)
+        async_group.spawn(aio.call_on_done, syncer_client.wait_closing(),
+                          async_group.close)
 
         component = hat.monitor.client.Component(
             monitor, run_engine, conf, backend, syncer_server, syncer_client)
         component.set_ready(True)
-        _bind_resource(async_group, component)
+        async_group.spawn(aio.call_on_done, component.wait_closing(),
+                          async_group.close)
 
         await async_group.wait_closing()
 
     finally:
-        await aio.uncancellable(async_group.async_close())
+        await aio.uncancellable(cleanup())
 
 
 async def run_engine(component: typing.Optional[hat.monitor.client.Component],
