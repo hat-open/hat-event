@@ -59,6 +59,9 @@ class MemoryBackend(common.Backend):
                     ) -> typing.List[common.Event]:
         events = self._events
 
+        if data.server_id is not None:
+            events = _filter_server_id(events, data.server_id)
+
         if data.event_ids is not None:
             events = _filter_events_ids(events, data.event_ids)
 
@@ -114,8 +117,14 @@ class MemoryBackend(common.Backend):
         pass
 
 
+def _filter_server_id(events, server_id):
+    for event in events:
+        if event.event_id.server == server_id:
+            yield event
+
+
 def _filter_events_ids(events, event_ids):
-    for event in event_ids:
+    for event in events:
         if event.event_id in event_ids:
             yield event
 

@@ -62,6 +62,7 @@ async def create_syncer_client(backend: common.Backend,
     cli._name = name
     cli._syncer_token = syncer_token
     cli._kwargs = kwargs
+    cli._conns = {}
     cli._state_cbs = util.CallbackRegistry()
     cli._events_cbs = util.CallbackRegistry()
     cli._async_group = aio.Group()
@@ -77,6 +78,11 @@ class SyncerClient(aio.Resource):
     def async_group(self) -> aio.Group:
         """Async group"""
         return self._async_group
+
+    @property
+    def servers_synced(self) -> typing.List[int]:
+        """server_ids of all servers that client is synced with"""
+        return [srv_id for srv_id, conn in self._conns.items() if conn.synced]
 
     def register_state_cb(self,
                           cb: StateCb
@@ -95,7 +101,6 @@ class SyncerClient(aio.Resource):
             changes = aio.Queue()
             change_cb = functools.partial(changes.put_nowait, None)
             with self._monitor_client.register_change_cb(change_cb):
-                conns = {}
 
                 while True:
                     mlog.debug("filtering syncer server addresses")
@@ -117,13 +122,14 @@ class SyncerClient(aio.Resource):
                         server_id_addresses[info.data['server_id']] = info.data['syncer_server_address']  # NOQA
 
                     for server_id, address in server_id_addresses.items():
-                        conn = conns.get(server_id)
+                        conn = self._conns.get(server_id)
                         if conn:
                             if conn.is_open and conn.address == address:
                                 continue
 
                             mlog.debug("closing existing connection")
                             await conn.async_close()
+                            self._conns.pop(server_id)
 
                         mlog.debug("creating new connection")
                         state_cb = functools.partial(self._state_cbs.notify,
@@ -140,7 +146,7 @@ class SyncerClient(aio.Resource):
                             state_cb=state_cb,
                             events_cb=events_cb)
 
-                        conns[server_id] = conn
+                        self._conns[server_id] = conn
 
                     await changes.get_until_empty()
 
@@ -163,6 +169,7 @@ class _Connection(aio.Resource):
         self._kwargs = kwargs
         self._state_cb = state_cb
         self._events_cb = events_cb
+        self._synced = False
 
         self.async_group.spawn(self._connection_loop)
 
@@ -173,6 +180,10 @@ class _Connection(aio.Resource):
     @property
     def address(self):
         return self._address
+
+    @property
+    def synced(self):
+        return self._synced
 
     async def _connection_loop(self):
         while True:
@@ -198,6 +209,7 @@ class _Connection(aio.Resource):
                 conn.send(msg_data)
 
                 self._state_cb(SyncerClientState.CONNECTED)
+                self._synced = False
                 try:
                     while True:
                         mlog.debug("waiting for incoming message")
@@ -214,12 +226,13 @@ class _Connection(aio.Resource):
                         elif msg_type == ('HatSyncer', 'MsgSynced'):
                             mlog.debug("received synced")
                             self._state_cb(SyncerClientState.SYNCED)
-
+                            self._synced = True
                         else:
                             raise Exception("unsupported message type")
 
                 finally:
                     self._state_cb(SyncerClientState.DISCONNECTED)
+                    self._synced = False
 
             except ConnectionError:
                 pass

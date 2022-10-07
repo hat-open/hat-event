@@ -31,6 +31,10 @@ mlog: logging.Logger = logging.getLogger('hat.event.server.main')
 user_conf_dir: Path = Path(appdirs.user_config_dir('hat'))
 """User configuration directory path"""
 
+servers_engine_stopped_timeout: int = 3
+"""Timeout for waiting engine to be stopped on all servers syncer client is
+connected to"""
+
 
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create argument parser"""
@@ -237,6 +241,9 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
                 data=False))
         async_group.spawn(engine.register, syncer_source, [event])
 
+    if syncer_client and syncer_client.servers_synced:
+        await _wait_servers_engine_stopped(backend, syncer_client)
+
     # TODO wait depending on ???
 
     try:
@@ -264,6 +271,43 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
 
     finally:
         await aio.uncancellable(cleanup())
+
+
+async def _wait_servers_engine_stopped(backend, syncer_client):
+
+    events_queue = aio.Queue()
+    engines_running = set()
+
+    async def wait_engines_stopped():
+        while engines_running:
+            events = await events_queue.get()
+            for event in events:
+                if event.event_type != ('event', 'engine'):
+                    continue
+                if event.payload.data != 'STOPPED':
+                    continue
+                server_id = event.event_id.server
+                engines_running.remove(server_id)
+
+    with syncer_client.register_events_cb(
+            lambda events: events_queue.put_nowait(events)):
+        for server_id in syncer_client.servers_synced:
+            res = await backend.query(common.QueryData(
+                event_types=[('event', 'engine')],
+                server_id=server_id,
+                unique_type=True))
+            engine_event = res[0] if res else None
+            if engine_event and engine_event.payload.data == 'STOPPED':
+                continue
+            engines_running.add(server_id)
+
+        mlog.debug("waiting engines stopped on servers %s", engines_running)
+        try:
+            await asyncio.wait_for(wait_engines_stopped(),
+                                   timeout=servers_engine_stopped_timeout)
+        except asyncio.TimeoutError:
+            mlog.warning("timeout %s exceeded for stopping engines on %s",
+                         servers_engine_stopped_timeout, engines_running)
 
 
 def _bind_resource(async_group, resource):

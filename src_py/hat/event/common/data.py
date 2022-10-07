@@ -80,7 +80,7 @@ class RegisterEvent(typing.NamedTuple):
 
 
 class QueryData(typing.NamedTuple):
-    # TODO query by server_id?
+    server_id: typing.Optional[int] = None
     event_ids: typing.Optional[typing.List[EventId]] = None
     event_types: typing.Optional[typing.List[EventType]] = None
     t_from: typing.Optional['Timestamp'] = None
@@ -142,6 +142,7 @@ def register_event_from_sbs(data: sbs.Data) -> RegisterEvent:
 def query_to_sbs(query: QueryData) -> sbs.Data:
     """Convert QueryData to SBS data"""
     return {
+        'serverId': _optional_to_sbs(query.server_id),
         'ids': _optional_to_sbs(query.event_ids, lambda ids: [
             _event_id_to_sbs(i) for i in ids]),
         'types': _optional_to_sbs(query.event_types, lambda ets: [
@@ -163,6 +164,7 @@ def query_to_sbs(query: QueryData) -> sbs.Data:
 def query_from_sbs(data: sbs.Data) -> QueryData:
     """Create new QueryData based on SBS data"""
     return QueryData(
+        server_id=_optional_from_sbs(data['serverId']),
         event_ids=_optional_from_sbs(data['ids'], lambda ids: [
             _event_id_from_sbs(i) for i in ids]),
         event_types=_optional_from_sbs(data['types'], lambda ets: [

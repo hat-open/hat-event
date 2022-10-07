@@ -179,6 +179,11 @@ communication messages:
         filter conditions which ALL must be met for all events provided to
         client as query result. Query request contains:
 
+        * `server_id` - optional filter condition
+
+            If set, only events with `event_id.server` equal to `server_id`
+            are matched.
+
         * `event_ids` - optional filter condition
 
             If set, only events with ids which are defined as part of filter

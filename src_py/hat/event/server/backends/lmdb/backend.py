@@ -119,7 +119,8 @@ class LmdbBackend(common.Backend):
     async def query(self,
                     data: common.QueryData
                     ) -> typing.List[common.Event]:
-        if (data.event_ids is None and
+        if (data.server_id is None and
+                data.event_ids is None and
                 data.t_to is None and
                 data.source_t_from is None and
                 data.source_t_to is None and
@@ -152,6 +153,7 @@ class LmdbBackend(common.Backend):
                 continue
 
             events = await db.query(subscription=subscription,
+                                    server_id=data.server_id,
                                     event_ids=data.event_ids,
                                     t_from=data.t_from,
                                     t_to=data.t_to,

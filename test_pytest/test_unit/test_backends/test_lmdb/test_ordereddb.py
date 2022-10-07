@@ -54,11 +54,13 @@ def flush(executor, env):
 @pytest.fixture
 def query(executor, env):
 
-    async def query(db, subscription=None, event_ids=None, t_from=None,
-                    t_to=None, source_t_from=None, source_t_to=None,
-                    payload=None, order=common.Order.DESCENDING,
-                    unique_type=False, max_results=None):
+    async def query(db, subscription=None, server_id=None, event_ids=None,
+                    t_from=None, t_to=None, source_t_from=None,
+                    source_t_to=None, payload=None,
+                    order=common.Order.DESCENDING, unique_type=False,
+                    max_results=None):
         return list(await db.query(subscription=subscription,
+                                   server_id=server_id,
                                    event_ids=event_ids,
                                    t_from=t_from,
                                    t_to=t_to,
@@ -77,8 +79,9 @@ def create_event():
     session_count = itertools.count(1)
     instance_count = itertools.count(1)
 
-    def create_event(event_type, with_source_timestamp):
-        event_id = common.EventId(1, next(session_count), next(instance_count))
+    def create_event(event_type, with_source_timestamp, server_id=1):
+        event_id = common.EventId(
+            server_id, next(session_count), next(instance_count))
         t = common.now()
         event = common.Event(event_id=event_id,
                              event_type=event_type,
@@ -348,6 +351,42 @@ async def test_query_subscription(executor, env, flush, query, create_event,
     subscription = common.Subscription([('b',)])
     result = await query(db, subscription=subscription)
     assert result == [event2]
+
+
+@pytest.mark.parametrize('order_by', common.OrderBy)
+async def test_query_server_id(executor, env, flush, query, create_event,
+                               order_by):
+    subscription = common.Subscription([('*',)])
+    conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
+    db = await hat.event.server.backends.lmdb.ordereddb.create(
+        executor=executor,
+        env=env,
+        subscription=subscription,
+        conditions=conditions,
+        order_by=order_by,
+        limit=None)
+
+    event1 = create_event(('a',), True, server_id=123)
+    event2 = create_event(('a', 'b'), True, server_id=123)
+    event3 = create_event(('a',), True, server_id=456)
+    event4 = create_event(('a', 'b'), True, server_id=456)
+
+    db.add(event1)
+    db.add(event2)
+    db.add(event3)
+    db.add(event4)
+
+    result = await query(db)
+    assert result == [event4, event3, event2, event1]
+
+    result = await query(db, server_id=1)
+    assert result == []
+
+    result = await query(db, server_id=123)
+    assert result == [event2, event1]
+
+    result = await query(db, server_id=456)
+    assert result == [event4, event3]
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)

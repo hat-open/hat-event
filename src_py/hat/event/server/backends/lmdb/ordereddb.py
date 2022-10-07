@@ -107,6 +107,7 @@ class OrderedDb(common.Flushable):
 
     async def query(self,
                     subscription: typing.Optional[common.Subscription],
+                    server_id: typing.Optional[int],
                     event_ids: typing.Optional[typing.List[common.EventId]],
                     t_from: typing.Optional[common.Timestamp],
                     t_to: typing.Optional[common.Timestamp],
@@ -122,8 +123,9 @@ class OrderedDb(common.Flushable):
 
         if order == common.Order.DESCENDING:
             events.extend(self._query_changes(
-                subscription, event_ids, t_from, t_to, source_t_from,
-                source_t_to, payload, order, unique_types, max_results))
+                subscription, server_id, event_ids, t_from, t_to,
+                source_t_from, source_t_to, payload, order, unique_types,
+                max_results))
 
             if max_results is not None:
                 max_results -= len(events)
@@ -131,14 +133,14 @@ class OrderedDb(common.Flushable):
                     return events
 
             events.extend(await self._executor(
-                self._ext_query, subscription, event_ids, t_from, t_to,
-                source_t_from, source_t_to, payload, order, unique_types,
+                self._ext_query, subscription, server_id, event_ids, t_from,
+                t_to, source_t_from, source_t_to, payload, order, unique_types,
                 max_results))
 
         elif order == common.Order.ASCENDING:
             events.extend(await self._executor(
-                self._ext_query, subscription, event_ids, t_from, t_to,
-                source_t_from, source_t_to, payload, order, unique_types,
+                self._ext_query, subscription, server_id, event_ids, t_from,
+                t_to, source_t_from, source_t_to, payload, order, unique_types,
                 max_results))
 
             if max_results is not None:
@@ -147,8 +149,9 @@ class OrderedDb(common.Flushable):
                     return events
 
             events.extend(self._query_changes(
-                subscription, event_ids, t_from, t_to, source_t_from,
-                source_t_to, payload, order, unique_types, max_results))
+                subscription, server_id, event_ids, t_from, t_to,
+                source_t_from, source_t_to, payload, order, unique_types,
+                max_results))
 
         else:
             raise ValueError('unsupported order')
@@ -159,7 +162,7 @@ class OrderedDb(common.Flushable):
         changes, self._changes = self._changes, collections.deque()
         return functools.partial(self._ext_flush, changes)
 
-    def _query_changes(self, subscription, event_ids, t_from, t_to,
+    def _query_changes(self, subscription, server_id, event_ids, t_from, t_to,
                        source_t_from, source_t_to, payload, order,
                        unique_types, max_results):
         if order == common.Order.DESCENDING:
@@ -219,11 +222,11 @@ class OrderedDb(common.Flushable):
         else:
             raise ValueError('unsupported order')
 
-        yield from _filter_events(events, subscription, event_ids, t_from,
-                                  t_to, source_t_from, source_t_to, payload,
-                                  unique_types, max_results)
+        yield from _filter_events(events, subscription, server_id, event_ids,
+                                  t_from, t_to, source_t_from, source_t_to,
+                                  payload, unique_types, max_results)
 
-    def _ext_query(self, subscription, event_ids, t_from, t_to,
+    def _ext_query(self, subscription, server_id, event_ids, t_from, t_to,
                    source_t_from, source_t_to, payload, order,
                    unique_types, max_results):
         if self._order_by == common.OrderBy.TIMESTAMP:
@@ -237,9 +240,9 @@ class OrderedDb(common.Flushable):
 
         events = (event for event in events if self._conditions.matches(event))
 
-        events = _filter_events(events, subscription, event_ids, t_from,
-                                t_to, source_t_from, source_t_to, payload,
-                                unique_types, max_results)
+        events = _filter_events(events, subscription, server_id, event_ids,
+                                t_from, t_to, source_t_from, source_t_to,
+                                payload, unique_types, max_results)
         return list(events)
 
     def _ext_query_events(self, t_from, t_to, order):
@@ -412,7 +415,7 @@ class OrderedDb(common.Flushable):
             txn.put(encoded_key, encoded_value)
 
 
-def _filter_events(events, subscription, event_ids, t_from, t_to,
+def _filter_events(events, subscription, server_id, event_ids, t_from, t_to,
                    source_t_from, source_t_to, payload, unique_types,
                    max_results):
     for event in events:
@@ -420,6 +423,9 @@ def _filter_events(events, subscription, event_ids, t_from, t_to,
             return
 
         if subscription and not subscription.matches(event.event_type):
+            continue
+
+        if server_id is not None and event.event_id.server != server_id:
             continue
 
         if event_ids is not None and event.event_id not in event_ids:

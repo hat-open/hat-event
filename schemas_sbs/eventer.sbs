@@ -59,6 +59,7 @@ RegisterEvent = Record {
 }
 
 QueryData = Record {
+    serverId:           Optional(Integer)
     ids:                Optional(Array(EventId))
     types:              Optional(Array(EventType))
     tFrom:              Optional(Timestamp)
