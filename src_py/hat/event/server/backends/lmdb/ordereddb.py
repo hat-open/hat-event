@@ -418,14 +418,14 @@ class OrderedDb(common.Flushable):
 def _filter_events(events, subscription, server_id, event_ids, t_from, t_to,
                    source_t_from, source_t_to, payload, unique_types,
                    max_results):
-    for event in events:
-        if max_results is not None and max_results <= 0:
-            return
+    if max_results is not None and max_results <= 0:
+        return
 
-        if subscription and not subscription.matches(event.event_type):
+    for event in events:
+        if server_id is not None and event.event_id.server != server_id:
             continue
 
-        if server_id is not None and event.event_id.server != server_id:
+        if subscription and not subscription.matches(event.event_type):
             continue
 
         if event_ids is not None and event.event_id not in event_ids:
@@ -455,7 +455,9 @@ def _filter_events(events, subscription, server_id, event_ids, t_from, t_to,
                 continue
             unique_types.add(event.event_type)
 
+        yield event
+
         if max_results is not None:
             max_results -= 1
-
-        yield event
+            if max_results <= 0:
+                return

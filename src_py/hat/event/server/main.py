@@ -287,15 +287,15 @@ async def _wait_servers_engine_stopped(backend, syncer_client):
                 if event.payload.data != 'STOPPED':
                     continue
                 server_id = event.event_id.server
-                engines_running.remove(server_id)
+                engines_running.discard(server_id)
 
-    with syncer_client.register_events_cb(
-            lambda events: events_queue.put_nowait(events)):
+    with syncer_client.register_events_cb(events_queue.put_nowait):
         for server_id in syncer_client.servers_synced:
             res = await backend.query(common.QueryData(
                 event_types=[('event', 'engine')],
                 server_id=server_id,
-                unique_type=True))
+                unique_type=True,
+                max_results=1))
             engine_event = res[0] if res else None
             if engine_event and engine_event.payload.data == 'STOPPED':
                 continue
@@ -308,12 +308,6 @@ async def _wait_servers_engine_stopped(backend, syncer_client):
         except asyncio.TimeoutError:
             mlog.warning("timeout %s exceeded for stopping engines on %s",
                          servers_engine_stopped_timeout, engines_running)
-
-
-def _bind_resource(async_group, resource):
-    async_group.spawn(aio.call_on_cancel, resource.async_close)
-    async_group.spawn(aio.call_on_done, resource.wait_closing(),
-                      async_group.close)
 
 
 if __name__ == '__main__':

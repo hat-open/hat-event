@@ -227,6 +227,7 @@ class _Connection(aio.Resource):
                             mlog.debug("received synced")
                             self._state_cb(SyncerClientState.SYNCED)
                             self._synced = True
+
                         else:
                             raise Exception("unsupported message type")
 
