@@ -280,16 +280,16 @@ async def _wait_servers_engine_stopped(backend, syncer_client):
 
     async def wait_engines_stopped():
         while engines_running:
-            events = await events_queue.get()
+            server_id, events = await events_queue.get()
             for event in events:
                 if event.event_type != ('event', 'engine'):
                     continue
                 if event.payload.data != 'STOPPED':
                     continue
-                server_id = event.event_id.server
                 engines_running.discard(server_id)
 
-    with syncer_client.register_events_cb(events_queue.put_nowait):
+    with syncer_client.register_events_cb(
+            lambda srv_id, evts: events_queue.put_nowait((srv_id, evts))):
         for server_id in syncer_client.servers_synced:
             res = await backend.query(common.QueryData(
                 event_types=[('event', 'engine')],
