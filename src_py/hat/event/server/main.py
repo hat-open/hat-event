@@ -143,11 +143,17 @@ async def run_monitor_client(conf: json.Data,
                              backend: common.Backend,
                              syncer_server: SyncerServer):
     async_group = aio.Group()
+    monitor = None
+    syncer_client = None
+    component = None
 
     async def cleanup():
-        await component.async_close()
-        await syncer_client.async_close()
-        await monitor.async_close()
+        if component:
+            await component.async_close()
+        if syncer_client:
+            await syncer_client.async_close()
+        if monitor:
+            await monitor.async_close()
         await async_group.async_close()
 
     try:
