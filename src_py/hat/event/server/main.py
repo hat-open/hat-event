@@ -247,9 +247,6 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
                 data=False))
         async_group.spawn(engine.register, syncer_source, [event])
 
-    if syncer_client and syncer_client.servers_synced:
-        await _wait_servers_engine_stopped(backend, syncer_client)
-
     # TODO wait depending on ???
 
     try:
@@ -277,43 +274,6 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
 
     finally:
         await aio.uncancellable(cleanup())
-
-
-async def _wait_servers_engine_stopped(backend, syncer_client):
-
-    events_queue = aio.Queue()
-    engines_running = set()
-
-    async def wait_engines_stopped():
-        while engines_running:
-            server_id, events = await events_queue.get()
-            for event in events:
-                if event.event_type != ('event', 'engine'):
-                    continue
-                if event.payload.data != 'STOPPED':
-                    continue
-                engines_running.discard(server_id)
-
-    with syncer_client.register_events_cb(
-            lambda srv_id, evts: events_queue.put_nowait((srv_id, evts))):
-        for server_id in syncer_client.servers_synced:
-            res = await backend.query(common.QueryData(
-                event_types=[('event', 'engine')],
-                server_id=server_id,
-                unique_type=True,
-                max_results=1))
-            engine_event = res[0] if res else None
-            if engine_event and engine_event.payload.data == 'STOPPED':
-                continue
-            engines_running.add(server_id)
-
-        mlog.debug("waiting engines stopped on servers %s", engines_running)
-        try:
-            await asyncio.wait_for(wait_engines_stopped(),
-                                   timeout=servers_engine_stopped_timeout)
-        except asyncio.TimeoutError:
-            mlog.warning("timeout %s exceeded for stopping engines on %s",
-                         servers_engine_stopped_timeout, engines_running)
 
 
 if __name__ == '__main__':
