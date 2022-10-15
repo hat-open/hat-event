@@ -8,3 +8,7 @@ MsgReq = Record {
 MsgSynced = None
 
 MsgEvents = Array(HatEventer.Event)
+
+MsgFlushReq = None
+
+MsgFlushRes = None

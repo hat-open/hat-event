@@ -228,6 +228,13 @@ class _Connection(aio.Resource):
                             self._state_cb(SyncerClientState.SYNCED)
                             self._synced = True
 
+                        elif msg_type == ('HatSyncer', 'MsgFlushReq'):
+                            mlog.debug("received flush request")
+                            conn.send(chatter.Data(module='HatSyncer',
+                                                   type='MsgFlushRes',
+                                                   data=None),
+                                      conv=msg.conv)
+
                         else:
                             raise Exception("unsupported message type")
 
