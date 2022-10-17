@@ -262,7 +262,7 @@ class _Sender(aio.Resource):
             self._send_queue.close()
 
             while not self._send_queue.empty():
-                msg_type, msg_data = await self._send_queue.get()
+                msg_type, msg_data = self._send_queue.get_nowait()
 
                 with contextlib.suppress(Exception):
                     if msg_type == 'events' and is_synced:
