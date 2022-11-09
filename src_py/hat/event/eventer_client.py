@@ -238,7 +238,8 @@ class EventerClient(aio.Resource):
             self.close()
             self._event_queue.close()
             for f in self._conv_futures.values():
-                f.set_exception(ConnectionError())
+                if not f.done():
+                    f.set_exception(ConnectionError())
 
     async def _wait_conv_res(self, conv):
         if not self.is_open:
