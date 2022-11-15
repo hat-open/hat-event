@@ -1,6 +1,5 @@
 from pathlib import Path
 import asyncio
-import collections
 import logging
 import typing
 
@@ -8,6 +7,7 @@ from hat import aio
 from hat import json
 from hat import util
 from hat.event.server.backends.lmdb import common
+from hat.event.server.backends.lmdb import context
 from hat.event.server.backends.lmdb import latestdb
 from hat.event.server.backends.lmdb import ordereddb
 from hat.event.server.backends.lmdb import refdb
@@ -29,37 +29,50 @@ async def create(conf: json.Data
 
     backend._conditions = Conditions(conf['conditions'])
 
-    backend._env = await backend._executor(
-        common.ext_create_env, Path(conf['db_path']), conf['max_db_size'])
-
-    backend._sys_db = await systemdb.create(backend._executor, backend._env)
-
-    subscription = common.Subscription(
-        tuple(i) for i in conf['latest']['subscriptions'])
-    backend._latest_db = await latestdb.create(
-        backend._executor, backend._env, subscription, backend._conditions)
-
-    backend._ordered_dbs = collections.deque()
-    for i in conf['ordered']:
-        order_by = common.OrderBy[i['order_by']]
-        subscription = common.Subscription(tuple(et)
-                                           for et in i['subscriptions'])
-        limit = i.get('limit')
-        ordered_db = await ordereddb.create(
-            backend._executor, backend._env, subscription, backend._conditions,
-            order_by, limit)
-        backend._ordered_dbs.append(ordered_db)
-
-    # TODO: maybe cleanup unused ordered partitions
-    # ordereddb.cleanup(
-    #     {ordered_db.partition_id for ordered_db in backend._ordered_dbs})
-
-    backend._ref_db = await refdb.create(backend._executor, backend._env)
+    await backend._executor(_ext_init, backend, conf)
 
     backend._async_group = aio.Group()
     backend._async_group.spawn(backend._write_loop)
 
     return backend
+
+
+def _ext_init(backend, conf):
+    backend._env = common.ext_create_env(path=Path(conf['db_path']),
+                                         max_size=conf['max_db_size'])
+
+    backend._ref_db = refdb.ext_create(executor=backend._executor,
+                                       env=backend._env)
+
+    with backend._env.begin(write=True) as txn:
+        ctx = context.Context(txn=txn,
+                              ref_db=backend._ref_db)
+
+        backend._sys_db = systemdb.ext_create(env=backend._env,
+                                              ctx=ctx)
+
+        backend._latest_db = latestdb.ext_create(
+            env=backend._env,
+            ctx=ctx,
+            subscription=common.Subscription(
+                tuple(i) for i in conf['latest']['subscriptions']),
+            conditions=backend._conditions)
+
+        backend._ordered_dbs = [
+            ordereddb.ext_create(
+                executor=backend._executor,
+                env=backend._env,
+                ctx=ctx,
+                subscription=common.Subscription(
+                    tuple(et) for et in i['subscriptions']),
+                conditions=backend._conditions,
+                order_by=common.OrderBy[i['order_by']],
+                limit=i.get('limit'))
+            for i in conf['ordered']]
+
+    # TODO: maybe cleanup unused ordered partitions
+    # ordereddb.cleanup(
+    #     {ordered_db.partition_id for ordered_db in backend._ordered_dbs})
 
 
 class LmdbBackend(common.Backend):
@@ -180,10 +193,10 @@ class LmdbBackend(common.Backend):
 
             dbs = [self._sys_db,
                    self._latest_db,
-                   *self._ordered_dbs,
-                   self._ref_db]
+                   *self._ordered_dbs]
             ext_flush_fns = [db.create_ext_flush() for db in dbs]
-            events = await self._executor(_ext_flush, self._env, ext_flush_fns)
+            events = await self._executor(_ext_flush, self._env, self._ref_db,
+                                          ext_flush_fns)
             for session in events:
                 self._flushed_events_cbs.notify(session)
 
@@ -207,9 +220,10 @@ class LmdbBackend(common.Backend):
             await self._executor(self._env.close)
 
 
-def _ext_flush(env, flush_fns):
+def _ext_flush(env, ref_db, flush_fns):
     with env.begin(write=True) as txn:
-        ctx = common.FlushContext(txn)
+        ctx = context.Context(txn=txn,
+                              ref_db=ref_db)
         for flush_fn in flush_fns:
             flush_fn(ctx)
         return ctx.get_events()

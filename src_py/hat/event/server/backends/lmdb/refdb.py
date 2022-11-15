@@ -13,13 +13,9 @@ from hat.event.server.backends.lmdb import encoder
 query_queue_size = 100
 
 
-async def create(executor: aio.Executor,
-                 env: lmdb.Environment
-                 ) -> 'RefDb':
-    return await executor(_ext_create, executor, env)
-
-
-def _ext_create(executor, env):
+def ext_create(executor: aio.Executor,
+               env: lmdb.Environment
+               ) -> 'RefDb':
     db = RefDb()
     db._executor = executor
     db._env = env
@@ -31,7 +27,7 @@ def _ext_create(executor, env):
     return db
 
 
-class RefDb(common.Flushable):
+class RefDb:
 
     async def query(self,
                     event_id: common.EventId
@@ -54,8 +50,43 @@ class RefDb(common.Flushable):
         finally:
             queue.close()
 
-    def create_ext_flush(self) -> common.ExtFlushCb:
-        return self._ext_flush
+    def ext_add_event_ref(self,
+                          parent_txn: lmdb.Transaction,
+                          event_id: common.EventId,
+                          ref: common.EventRef):
+        with self._env.begin(db=self._ref_db,
+                             parent=parent_txn,
+                             write=True) as txn:
+            encoded_key = encoder.encode_ref_db_key(event_id)
+
+            encoded_value = txn.pop(encoded_key)
+            value = (encoder.decode_ref_db_value(encoded_value)
+                     if encoded_value else set())
+
+            value.add(ref)
+            encoded_value = encoder.encode_ref_db_value(value)
+
+            txn.put(encoded_key, encoded_value)
+
+    def ext_remove_event_ref(self,
+                             parent_txn: lmdb.Transaction,
+                             event_id: common.EventId,
+                             ref: common.EventRef):
+        with self._env.begin(db=self._ref_db,
+                             parent=parent_txn,
+                             write=True) as txn:
+            encoded_key = encoder.encode_ref_db_key(event_id)
+
+            encoded_value = txn.pop(encoded_key)
+            value = (encoder.decode_ref_db_value(encoded_value)
+                     if encoded_value else set())
+
+            value.discard(ref)
+            if not value:
+                return
+            encoded_value = encoder.encode_ref_db_value(value)
+
+            txn.put(encoded_key, encoded_value)
 
     def _ext_query(self, event_id, queue, loop):
         try:
@@ -68,61 +99,41 @@ class RefDb(common.Flushable):
             encoded_stop_key = encoder.encode_ref_db_key(stop_key)
 
             with self._env.begin(db=self._ref_db, buffers=True) as txn:
-                cursor = txn.cursor()
+                with txn.cursor() as cursor:
+                    available = cursor.set_range(encoded_start_key)
+                    if available and bytes(cursor.key()) == encoded_start_key:
+                        available = cursor.next()
 
-                available = cursor.set_range(encoded_start_key)
-                if available and bytes(cursor.key()) == encoded_start_key:
-                    available = cursor.next()
+                    events = collections.deque()
 
-                events = collections.deque()
+                    while available and bytes(cursor.key()) < encoded_stop_key:
+                        value = encoder.decode_ref_db_value(cursor.value())
+                        ref = util.first(value)
+                        if not ref:
+                            continue
 
-                while available and bytes(cursor.key()) < encoded_stop_key:
-                    value = encoder.decode_ref_db_value(cursor.value())
-                    ref = util.first(value)
-                    if not ref:
-                        continue
+                        event = self._ext_get_event(ref)
+                        session = event.event_id.session
 
-                    event = self._ext_get_event(ref)
-                    session = event.event_id.session
+                        if events and events[0].event_id.session != session:
+                            future = asyncio.run_coroutine_threadsafe(
+                                queue.put(list(events)), loop)
+                            future.result()
+                            events = collections.deque()
 
-                    if events and events[0].event_id.session != session:
+                        events.append(event)
+                        available = cursor.next()
+
+                    if events:
                         future = asyncio.run_coroutine_threadsafe(
                             queue.put(list(events)), loop)
                         future.result()
-                        events = collections.deque()
-
-                    events.append(event)
-                    available = cursor.next()
-
-                if events:
-                    future = asyncio.run_coroutine_threadsafe(
-                        queue.put(list(events)), loop)
-                    future.result()
 
         except aio.QueueClosedError:
             pass
 
         finally:
             loop.call_soon_threadsafe(queue.close)
-
-    def _ext_flush(self, ctx):
-        with self._env.begin(db=self._ref_db,
-                             parent=ctx.transaction,
-                             write=True) as txn:
-            for change in ctx.get_changes():
-                key = change.event_id
-                encoded_key = encoder.encode_ref_db_key(key)
-
-                encoded_value = txn.pop(encoded_key)
-                value = (encoder.decode_ref_db_value(encoded_value)
-                         if encoded_value else set())
-
-                value = (value | change.added) - change.removed
-                if not value:
-                    continue
-                encoded_value = encoder.encode_ref_db_value(value)
-
-                txn.put(encoded_key, encoded_value)
 
     def _ext_get_event(self, ref):
         if isinstance(ref, common.LatestEventRef):
@@ -136,7 +147,7 @@ class RefDb(common.Flushable):
             decode_value_fn = encoder.decode_ordered_data_db_value
 
         else:
-            raise ValueError('unssuported event reference type')
+            raise ValueError('unsupported event reference type')
 
         with self._env.begin(db=db, buffers=True) as txn:
             encoded_value = txn.get(encoded_key)

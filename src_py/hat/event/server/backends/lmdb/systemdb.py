@@ -3,21 +3,17 @@ import typing
 
 import lmdb
 
-from hat import aio
 from hat.event.server.backends.lmdb import common
+from hat.event.server.backends.lmdb import context
 from hat.event.server.backends.lmdb import encoder
 
 
 Changes = typing.Dict[common.SystemDbKey, common.SystemDbValue]
 
 
-async def create(executor: aio.Executor,
-                 env: lmdb.Environment,
-                 ) -> 'SystemDb':
-    return await executor(_ext_create, env)
-
-
-def _ext_create(env):
+def ext_create(env: lmdb.Environment,
+               ctx: context.Context
+               ) -> 'SystemDb':
     db = SystemDb()
     db._env = env
     db._cache = {}
@@ -25,7 +21,9 @@ def _ext_create(env):
 
     db._db = common.ext_open_db(env, common.DbType.SYSTEM)
 
-    with env.begin(db=db._db, buffers=True) as txn:
+    with env.begin(db=db._db,
+                   parent=ctx.txn,
+                   buffers=True) as txn:
         for encoded_key, encoded_value in txn.cursor():
             key = encoder.decode_system_db_key(encoded_key)
             value = encoder.decode_system_db_value(encoded_value)
@@ -34,7 +32,7 @@ def _ext_create(env):
     return db
 
 
-class SystemDb(common.Flushable):
+class SystemDb(context.Flushable):
 
     def get_last_event_id_timestamp(self,
                                     server_id: common.ServerId
@@ -56,15 +54,16 @@ class SystemDb(common.Flushable):
         self._cache[event_id.server] = event_id, timestamp
         self._changes[event_id.server] = event_id, timestamp
 
-    def create_ext_flush(self) -> common.ExtFlushCb:
+    def create_ext_flush(self) -> context.ExtFlushCb:
         changes, self._changes = self._changes, {}
         return functools.partial(self._ext_flush, changes)
 
     def _ext_flush(self, changes, ctx):
         with self._env.begin(db=self._db,
-                             parent=ctx.transaction,
+                             parent=ctx.tnx,
                              write=True) as txn:
-            for key, value in changes.items():
-                encoded_key = encoder.encode_system_db_key(key)
-                encoded_value = encoder.encode_system_db_value(value)
-                txn.put(encoded_key, encoded_value)
+            with txn.cursor() as cursor:
+                for key, value in changes.items():
+                    encoded_key = encoder.encode_system_db_key(key)
+                    encoded_value = encoder.encode_system_db_value(value)
+                    cursor.put(encoded_key, encoded_value)
