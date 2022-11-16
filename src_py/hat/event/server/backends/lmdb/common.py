@@ -1,4 +1,5 @@
 from pathlib import Path
+import abc
 import enum
 import typing
 
@@ -61,6 +62,17 @@ class EventRefChange(typing.NamedTuple):
     event_id: EventId
     added: typing.Set[EventRef]
     removed: typing.Set[EventRef]
+
+
+ExtFlushCb = typing.Callable[[typing.Optional[lmdb.Transaction], Timestamp],
+                             typing.Iterable[Event]]
+
+
+class Flushable(abc.ABC):
+
+    @abc.abstractmethod
+    def create_ext_flush(self) -> ExtFlushCb:
+        pass
 
 
 def ext_create_env(path: Path,

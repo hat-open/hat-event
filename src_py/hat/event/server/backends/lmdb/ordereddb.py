@@ -5,36 +5,34 @@ import typing
 
 import lmdb
 
-from hat import aio
 from hat import json
 from hat.event.server.backends.lmdb import common
-from hat.event.server.backends.lmdb import context
 from hat.event.server.backends.lmdb import encoder
+from hat.event.server.backends.lmdb import environment
+from hat.event.server.backends.lmdb import refdb
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
 Changes = typing.Iterable[typing.Tuple[common.Timestamp, common.Event]]
 
 
-def ext_create(executor: aio.Executor,
-               env: lmdb.Environment,
-               ctx: context.Context,
+def ext_create(env: environment.Environment,
+               ref_db: refdb.RefDb,
                subscription: common.Subscription,
                conditions: Conditions,
                order_by: common.OrderBy,
-               limit: typing.Optional[json.Data]
+               limit: typing.Optional[json.Data],
+               parent_txn: typing.Optional[lmdb.Transaction],
+               timestamp: common.Timestamp
                ) -> 'OrderedDb':
     db = OrderedDb()
-    db._executor = executor
     db._env = env
+    db._ref_db = ref_db
     db._subscription = subscription
     db._conditions = conditions
     db._order_by = order_by
     db._limit = limit
     db._changes = collections.deque()
-
-    db._data_db = common.ext_open_db(env, common.DbType.ORDERED_DATA)
-    db._count_db = common.ext_open_db(env, common.DbType.ORDERED_COUNT)
 
     db._partition_id = None
     last_partition_id = 0
@@ -43,11 +41,9 @@ def ext_create(executor: aio.Executor,
         'subscriptions': [list(i)
                           for i in sorted(subscription.get_query_types())]}
 
-    partition_db = common.ext_open_db(env, common.DbType.ORDERED_PARTITION)
-
-    with env.begin(db=partition_db,
-                   parent=ctx.txn,
-                   buffers=True) as txn:
+    with env.ext_begin(db_type=common.DbType.ORDERED_PARTITION,
+                       parent=parent_txn,
+                       write=True) as txn:
         for encoded_key, encoded_value in txn.cursor():
             key = encoder.decode_ordered_partition_db_key(encoded_key)
             value = encoder.decode_ordered_partition_db_value(encoded_value)
@@ -57,12 +53,9 @@ def ext_create(executor: aio.Executor,
                 db._partition_id = last_partition_id
                 break
 
-    if db._partition_id is None:
-        db._partition_id = last_partition_id + 1
+        if db._partition_id is None:
+            db._partition_id = last_partition_id + 1
 
-        with env.begin(db=partition_db,
-                       parent=ctx.txn,
-                       write=True) as txn:
             key = db._partition_id
             value = partition_data
 
@@ -71,12 +64,12 @@ def ext_create(executor: aio.Executor,
 
             txn.put(encoded_key, encoded_value)
 
-    db._ext_flush([], ctx)
+    db._ext_flush([], parent_txn, timestamp)
 
     return db
 
 
-class OrderedDb(context.Flushable):
+class OrderedDb(common.Flushable):
 
     @property
     def partition_id(self) -> int:
@@ -135,13 +128,13 @@ class OrderedDb(context.Flushable):
                 if max_results <= 0:
                     return events
 
-            events.extend(await self._executor(
+            events.extend(await self._env.execute(
                 self._ext_query, subscription, server_id, event_ids, t_from,
                 t_to, source_t_from, source_t_to, payload, order, unique_types,
                 max_results))
 
         elif order == common.Order.ASCENDING:
-            events.extend(await self._executor(
+            events.extend(await self._env.execute(
                 self._ext_query, subscription, server_id, event_ids, t_from,
                 t_to, source_t_from, source_t_to, payload, order, unique_types,
                 max_results))
@@ -161,7 +154,7 @@ class OrderedDb(context.Flushable):
 
         return events
 
-    def create_ext_flush(self) -> context.ExtFlushCb:
+    def create_ext_flush(self) -> common.ExtFlushCb:
         changes, self._changes = self._changes, collections.deque()
         return functools.partial(self._ext_flush, changes)
 
@@ -263,7 +256,7 @@ class OrderedDb(context.Flushable):
                   common.EventId((1 << 64) - 1, (1 << 64) - 1, (1 << 64) - 1))
         encoded_to_key = encoder.encode_ordered_data_db_key(to_key)
 
-        with self._env.begin(db=self._data_db, buffers=True) as txn:
+        with self._env.ext_begin(db_type=common.DbType.ORDERED_DATA) as txn:
             cursor = txn.cursor()
 
             if order == common.Order.DESCENDING:
@@ -292,42 +285,37 @@ class OrderedDb(context.Flushable):
             else:
                 raise ValueError('unsupported order')
 
-    def _ext_flush(self, changes, ctx):
-        entries_count = self._ext_get_entries_count(ctx.txn)
-        entries_count = self._ext_add_changes(ctx, entries_count, changes)
-        entries_count = self._ext_apply_limit(ctx, entries_count)
-        self._ext_set_entries_count(ctx.tnx, entries_count)
-
-    def _ext_get_entries_count(self, parent_tnx):
-        with self._env.begin(db=self._count_db,
-                             parent=parent_tnx,
-                             buffers=True) as txn:
+    def _ext_flush(self, changes, parent_txn, flush_timestamp):
+        with self._env.ext_begin(db_type=common.DbType.ORDERED_COUNT,
+                                 parent=parent_txn,
+                                 write=True) as txn:
             key = self._partition_id
             encoded_key = encoder.encode_ordered_count_db_key(key)
 
             encoded_value = txn.get(encoded_key)
-            return (encoder.decode_ordered_count_db_value(encoded_value)
-                    if encoded_value else 0)
+            value = (encoder.decode_ordered_count_db_value(encoded_value)
+                     if encoded_value else 0)
 
-    def _ext_set_entries_count(self, parent_tnx, entries_count):
-        with self._env.begin(db=self._count_db,
-                             parent=parent_tnx,
-                             write=True) as txn:
-            key = self._partition_id
+            entries_count = value
+            entries_count = self._ext_add_changes(txn, entries_count,
+                                                  changes)
+            entries_count = self._ext_apply_limit(txn, entries_count,
+                                                  flush_timestamp)
+
             value = entries_count
-
-            encoded_key = encoder.encode_ordered_count_db_key(key)
             encoded_value = encoder.encode_ordered_count_db_value(value)
 
             txn.put(encoded_key, encoded_value)
 
-    def _ext_add_changes(self, ctx, entries_count, changes):
+        return (i for _, i in changes)
+
+    def _ext_add_changes(self, parent_txn, entries_count, changes):
         if not changes:
             return entries_count
 
-        with self._env.begin(db=self._data_db,
-                             parent=ctx.tnx,
-                             write=True) as txn:
+        with self._env.ext_begin(db_type=common.DbType.ORDERED_DATA,
+                                 parent=parent_txn,
+                                 write=True) as txn:
             with txn.cursor() as cursor:
                 for timestamp, event in changes:
                     key = self._partition_id, timestamp, event.event_id
@@ -340,11 +328,12 @@ class OrderedDb(context.Flushable):
                     entries_count += 1
 
                     event_ref = common.OrderedEventRef(key)
-                    ctx.ext_add_event_ref(event, event_ref)
+                    self._ref_db.ext_add_event_ref(txn, event.event_id,
+                                                   event_ref)
 
         return entries_count
 
-    def _ext_apply_limit(self, ctx, entries_count):
+    def _ext_apply_limit(self, parent_txn, entries_count, flush_timestamp):
         if not self._limit:
             return entries_count
 
@@ -363,11 +352,11 @@ class OrderedDb(context.Flushable):
         max_entries = None
         encoded_duration_key = None
 
-        with self._env.begin(db=self._data_db,
-                             parent=ctx.tnx,
-                             write=True) as txn:
+        with self._env.ext_begin(db_type=common.DbType.ORDERED_DATA,
+                                 parent=parent_txn,
+                                 write=True) as txn:
             if 'size' in self._limit:
-                stat = txn.stat(self._data_db)
+                stat = self._env.ext_stat(txn, common.DbType.ORDERED_DATA)
 
                 if stat['entries']:
                     total_size = stat['psize'] * (stat['branch_pages'] +
@@ -383,7 +372,7 @@ class OrderedDb(context.Flushable):
 
             if 'duration' in self._limit:
                 duration_key = (self._partition_id,
-                                ctx.timestamp.add(-self._limit['duration']),
+                                flush_timestamp.add(-self._limit['duration']),
                                 common.EventId(0, 0, 0))
                 encoded_duration_key = encoder.encode_ordered_data_db_key(
                     duration_key)
@@ -413,7 +402,8 @@ class OrderedDb(context.Flushable):
                     entries_count -= 1
 
                     event_ref = common.OrderedEventRef(key)
-                    ctx.ext_remove_event_ref(value.event_id, event_ref)
+                    self._ref_db.ext_remove_event_ref(txn, value.event_id,
+                                                      event_ref)
 
         return entries_count
 

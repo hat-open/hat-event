@@ -1,18 +1,9 @@
-import itertools
-
-import lmdb
 import pytest
 
-from hat import aio
 from hat.event.server.backends.lmdb import common
-import hat.event.server.backends.lmdb.conditions
-import hat.event.server.backends.lmdb.latestdb
-import hat.event.server.backends.lmdb.ordereddb
+from hat.event.server.backends.lmdb import encoder
+from hat.event.server.backends.lmdb import environment
 import hat.event.server.backends.lmdb.refdb
-
-
-db_map_size = 1024 * 1024 * 1024
-db_max_dbs = 32
 
 
 @pytest.fixture
@@ -21,92 +12,120 @@ def db_path(tmp_path):
 
 
 @pytest.fixture
-async def executor():
-    return aio.create_executor(1)
+async def env(db_path):
+    db_map_size = 1024 * 1024 * 1024
+    env = await environment.create(db_path, db_map_size)
 
-
-@pytest.fixture
-async def env(executor, db_path):
-    env = await executor(lmdb.Environment, str(db_path),
-                         map_size=db_map_size, subdir=False,
-                         max_dbs=db_max_dbs)
     try:
         yield env
+
     finally:
-        await executor(env.close)
-
-
-@pytest.fixture
-def flush(executor, env):
-
-    async def flush(dbs):
-        txn = await executor(env.begin, write=True)
-        ctx = common.FlushContext(txn)
-        try:
-            for db in dbs:
-                await executor(db.create_ext_flush(), ctx)
-        finally:
-            await executor(txn.commit)
-
-    return flush
+        await env.async_close()
 
 
 @pytest.fixture
 def create_event():
-    instance_cntrs = {}
+    instance_ids = {}
 
-    def create_event(session):
-        nonlocal instance_cntrs
-        if session not in instance_cntrs:
-            instance_cntrs[session] = itertools.count(1)
-        instance = next(instance_cntrs[session])
-        event_id = common.EventId(1, session, instance)
-        event = common.Event(event_id=event_id,
-                             event_type=('a', str(instance)),
-                             timestamp=common.now(),
-                             source_timestamp=None,
-                             payload=common.EventPayload(
-                                type=common.EventPayloadType.JSON,
-                                data=instance))
-        return event
+    def create_event(session_id):
+        instance_id = instance_ids.get(session_id, 0) + 1
+        instance_ids[session_id] = instance_id
+        event_id = common.EventId(1, session_id, instance_id)
+        return common.Event(
+            event_id=event_id,
+            event_type=('a', str(instance_id)),
+            timestamp=common.now(),
+            source_timestamp=None,
+            payload=common.EventPayload(type=common.EventPayloadType.JSON,
+                                        data=instance_id))
 
     return create_event
 
 
-async def test_create(executor, env):
-    db = await hat.event.server.backends.lmdb.refdb.create(
-        executor=executor,
-        env=env)
+async def add_latest_data(env, event):
+
+    def ext_add_latest_data():
+        with env.ext_begin(db_type=common.DbType.LATEST_DATA,
+                           write=True) as txn:
+            key = int(event.event_type[1])
+            encoded_key = encoder.encode_latest_data_db_key(key)
+            encoded_value = encoder.encode_latest_data_db_value(event)
+            txn.put(encoded_key, encoded_value)
+            return common.LatestEventRef(key)
+
+    return await env.execute(ext_add_latest_data)
+
+
+async def add_ordered_data(env, event):
+
+    def ext_add_ordered_data():
+        with env.ext_begin(db_type=common.DbType.ORDERED_DATA,
+                           write=True) as txn:
+            key = 1, event.timestamp, event.event_id
+            encoded_key = encoder.encode_ordered_data_db_key(key)
+            encoded_value = encoder.encode_ordered_data_db_value(event)
+            txn.put(encoded_key, encoded_value)
+            return common.OrderedEventRef(key)
+
+    return await env.execute(ext_add_ordered_data)
+
+
+async def add_event_ref(env, ref_db, event_id, ref):
+    return await env.execute(ref_db.ext_add_event_ref, None, event_id, ref)
+
+
+async def remove_event_ref(env, ref_db, event_id, ref):
+    return await env.execute(ref_db.ext_remove_event_ref, None, event_id, ref)
+
+
+async def test_create(env):
+    db = hat.event.server.backends.lmdb.refdb.RefDb(env)
+
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == []
 
 
-async def test_query(executor, env, create_event, flush):
-    db = await hat.event.server.backends.lmdb.refdb.create(
-        executor=executor,
-        env=env)
+async def test_add_remove_event_ref(env, create_event):
+    db = hat.event.server.backends.lmdb.refdb.RefDb(env)
 
-    subscription = common.Subscription([('*',)])
-    conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    ordereddb = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=common.OrderBy.TIMESTAMP,
-        limit=None)
-
-    events1 = [create_event(session=1) for i in range(10)]
-
-    events2 = [create_event(session=2) for i in range(10)]
-
-    for e in events1:
-        ordereddb.add(e)
+    event = create_event(1)
+    ref1 = await add_latest_data(env, event)
+    ref2 = await add_ordered_data(env, event)
 
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == []
 
-    await flush([ordereddb, db])
+    await add_event_ref(env, db, event.event_id, ref1)
+
+    result = [i async for i in db.query(common.EventId(1, 0, 0))]
+    assert result == [[event]]
+
+    await add_event_ref(env, db, event.event_id, ref2)
+
+    result = [i async for i in db.query(common.EventId(1, 0, 0))]
+    assert result == [[event]]
+
+    await remove_event_ref(env, db, event.event_id, ref1)
+
+    result = [i async for i in db.query(common.EventId(1, 0, 0))]
+    assert result == [[event]]
+
+    await remove_event_ref(env, db, event.event_id, ref2)
+
+    result = [i async for i in db.query(common.EventId(1, 0, 0))]
+    assert result == []
+
+
+async def test_query(env, create_event):
+    db = hat.event.server.backends.lmdb.refdb.RefDb(env)
+
+    events1 = [create_event(1) for i in range(10)]
+    events2 = [create_event(2) for i in range(10)]
+    events3 = [create_event(3) for i in range(10)]
+
+    for event in events1:
+        ref = await add_ordered_data(env, event)
+        await add_event_ref(env, db, event.event_id, ref)
 
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == [events1]
@@ -123,10 +142,9 @@ async def test_query(executor, env, create_event, flush):
     result = [i async for i in db.query(common.EventId(2, 0, 0))]
     assert result == []
 
-    for e in events2:
-        ordereddb.add(e)
-
-    await flush([ordereddb, db])
+    for event in events2:
+        ref = await add_ordered_data(env, event)
+        await add_event_ref(env, db, event.event_id, ref)
 
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == [events1, events2]
@@ -140,32 +158,28 @@ async def test_query(executor, env, create_event, flush):
     result = [i async for i in db.query(common.EventId(1, 2, 6))]
     assert result == [events2[6:]]
 
-    latestdb = await hat.event.server.backends.lmdb.latestdb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions)
-
-    events3 = [create_event(session=3) for i in range(10)]
-    for e in events3:
-        latestdb.add(e)
-    await flush([latestdb, ordereddb, db])
+    for event in events3:
+        ref = await add_latest_data(env, event)
+        await add_event_ref(env, db, event.event_id, ref)
 
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == [events1, events2, events3]
 
-    for e in events3:
-        ordereddb.add(e)
-    await flush([latestdb, ordereddb, db])
+    for event in events3:
+        ref = await add_ordered_data(env, event)
+        await add_event_ref(env, db, event.event_id, ref)
 
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == [events1, events2, events3]
 
-    events4 = [create_event(session=3) for i in range(10)]
-    for e in events4:
-        latestdb.add(e)
-        ordereddb.add(e)
-    await flush([latestdb, ordereddb, db])
+    events4 = [create_event(3) for i in range(10)]
+
+    for event in events4:
+        ref = await add_latest_data(env, event)
+        await add_event_ref(env, db, event.event_id, ref)
+
+        ref = await add_ordered_data(env, event)
+        await add_event_ref(env, db, event.event_id, ref)
 
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == [events1, events2, events3 + events4]
@@ -180,9 +194,7 @@ async def test_query(executor, env, create_event, flush):
     result = [i async for i in db.query(common.EventId(1, 3, 20))]
     assert not result
 
-    db = await hat.event.server.backends.lmdb.refdb.create(
-        executor=executor,
-        env=env)
+    db = hat.event.server.backends.lmdb.refdb.RefDb(env)
 
     result = [i async for i in db.query(common.EventId(1, 0, 0))]
     assert result == [events1, events2, events3 + events4]

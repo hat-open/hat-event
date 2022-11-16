@@ -1,5 +1,6 @@
 from pathlib import Path
 import asyncio
+import collections
 import logging
 import typing
 
@@ -7,7 +8,7 @@ from hat import aio
 from hat import json
 from hat import util
 from hat.event.server.backends.lmdb import common
-from hat.event.server.backends.lmdb import context
+from hat.event.server.backends.lmdb import environment
 from hat.event.server.backends.lmdb import latestdb
 from hat.event.server.backends.lmdb import ordereddb
 from hat.event.server.backends.lmdb import refdb
@@ -21,53 +22,55 @@ mlog = logging.getLogger(__name__)
 async def create(conf: json.Data
                  ) -> 'LmdbBackend':
     backend = LmdbBackend()
-    backend._env_closed = False
     backend._flush_lock = asyncio.Lock()
     backend._flush_period = conf['flush_period']
     backend._flushed_events_cbs = util.CallbackRegistry()
-    backend._executor = aio.create_executor(1)
-
     backend._conditions = Conditions(conf['conditions'])
-
-    await backend._executor(_ext_init, backend, conf)
-
     backend._async_group = aio.Group()
-    backend._async_group.spawn(backend._write_loop)
+
+    backend._env = await environment.create(db_path=Path(conf['db_path']),
+                                            max_db_size=conf['max_db_size'])
+
+    try:
+        await backend._env.execute(_ext_init, backend, conf)
+
+    except BaseException:
+        await aio.uncancellable(backend._env.async_close())
+        raise
+
+    backend.async_group.spawn(aio.call_on_done, backend._env.wait_closing(),
+                              backend.close)
+    backend.async_group.spawn(backend._write_loop)
 
     return backend
 
 
 def _ext_init(backend, conf):
-    backend._env = common.ext_create_env(path=Path(conf['db_path']),
-                                         max_size=conf['max_db_size'])
+    timestamp = common.now()
 
-    backend._ref_db = refdb.ext_create(executor=backend._executor,
-                                       env=backend._env)
+    backend._ref_db = refdb.RefDb(backend._env)
 
-    with backend._env.begin(write=True) as txn:
-        ctx = context.Context(txn=txn,
-                              ref_db=backend._ref_db)
+    backend._sys_db = systemdb.ext_create(backend._env)
 
-        backend._sys_db = systemdb.ext_create(env=backend._env,
-                                              ctx=ctx)
+    backend._latest_db = latestdb.ext_create(
+        env=backend._env,
+        ref_db=backend._ref_db,
+        subscription=common.Subscription(
+            tuple(i) for i in conf['latest']['subscriptions']),
+        conditions=backend._conditions)
 
-        backend._latest_db = latestdb.ext_create(
-            env=backend._env,
-            ctx=ctx,
-            subscription=common.Subscription(
-                tuple(i) for i in conf['latest']['subscriptions']),
-            conditions=backend._conditions)
-
+    with backend._env.ext_begin(write=True) as txn:
         backend._ordered_dbs = [
             ordereddb.ext_create(
-                executor=backend._executor,
                 env=backend._env,
-                ctx=ctx,
+                ref_db=backend._ref_db,
                 subscription=common.Subscription(
                     tuple(et) for et in i['subscriptions']),
                 conditions=backend._conditions,
                 order_by=common.OrderBy[i['order_by']],
-                limit=i.get('limit'))
+                limit=i.get('limit'),
+                parent_txn=txn,
+                timestamp=timestamp)
             for i in conf['ordered']]
 
     # TODO: maybe cleanup unused ordered partitions
@@ -188,16 +191,17 @@ class LmdbBackend(common.Backend):
 
     async def flush(self):
         async with self._flush_lock:
-            if self._env_closed:
+            if not self._env.is_open:
                 return
 
             dbs = [self._sys_db,
                    self._latest_db,
                    *self._ordered_dbs]
             ext_flush_fns = [db.create_ext_flush() for db in dbs]
-            events = await self._executor(_ext_flush, self._env, self._ref_db,
-                                          ext_flush_fns)
-            for session in events:
+            sessions = await self._env.execute(_ext_flush, self._env,
+                                               ext_flush_fns)
+
+            for session in sessions:
                 self._flushed_events_cbs.notify(session)
 
     async def _write_loop(self):
@@ -215,15 +219,28 @@ class LmdbBackend(common.Backend):
 
     async def _close(self):
         await self.flush()
-        async with self._flush_lock:
-            self._env_closed = True
-            await self._executor(self._env.close)
+        await self._env.async_close()
 
 
-def _ext_flush(env, ref_db, flush_fns):
-    with env.begin(write=True) as txn:
-        ctx = context.Context(txn=txn,
-                              ref_db=ref_db)
+def _ext_flush(env, flush_fns):
+    events = {}
+    timestamp = common.now()
+
+    with env.ext_begin(write=True) as txn:
         for flush_fn in flush_fns:
-            flush_fn(ctx)
-        return ctx.get_events()
+            for event in flush_fn(txn, timestamp):
+                events[event.event_id] = event
+
+    sessions = collections.deque()
+    session = collections.deque()
+
+    for event_id in sorted(events.keys()):
+        if session and session[0].event_id.session != event_id.session:
+            sessions.append(list(session))
+            session = collections.deque()
+        session.append(events[event_id])
+
+    if session:
+        sessions.append(list(session))
+
+    return sessions

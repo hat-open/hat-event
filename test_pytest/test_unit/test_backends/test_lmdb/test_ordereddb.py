@@ -1,17 +1,36 @@
 import asyncio
+import collections
 import itertools
 
-import lmdb
 import pytest
 
-from hat import aio
 from hat.event.server.backends.lmdb import common
+from hat.event.server.backends.lmdb import environment
 import hat.event.server.backends.lmdb.conditions
 import hat.event.server.backends.lmdb.ordereddb
 
 
-db_map_size = 1024 * 1024 * 1024
-db_max_dbs = 32
+class RefDb:
+
+    def __init__(self):
+        self._add_event_id_queue = collections.deque()
+        self._remove_event_id_queue = collections.deque()
+
+    @property
+    def add_event_id_queue(self):
+        return self._add_event_id_queue
+
+    @property
+    def remove_event_id_queue(self):
+        return self._remove_event_id_queue
+
+    def ext_add_event_ref(self, parent_txn, event_id, ref):
+        assert isinstance(ref, common.OrderedEventRef)
+        self._add_event_id_queue.append(event_id)
+
+    def ext_remove_event_ref(self, parent_txn, event_id, ref):
+        assert isinstance(ref, common.OrderedEventRef)
+        self._remove_event_id_queue.append(event_id)
 
 
 @pytest.fixture
@@ -20,58 +39,15 @@ def db_path(tmp_path):
 
 
 @pytest.fixture
-async def executor():
-    return aio.create_executor(1)
+async def env(db_path):
+    db_map_size = 1024 * 1024 * 1024
+    env = await environment.create(db_path, db_map_size)
 
-
-@pytest.fixture
-async def env(executor, db_path):
-    env = await executor(lmdb.Environment, str(db_path),
-                         map_size=db_map_size, subdir=False,
-                         max_dbs=db_max_dbs)
     try:
         yield env
+
     finally:
-        await executor(env.close)
-
-
-@pytest.fixture
-def flush(executor, env):
-
-    async def flush(db, now=None):
-        txn = await executor(env.begin, write=True)
-        ctx = common.FlushContext(txn)
-        if now is not None:
-            ctx._timestamp = now
-        try:
-            await executor(db.create_ext_flush(), ctx)
-        finally:
-            await executor(txn.commit)
-
-    return flush
-
-
-@pytest.fixture
-def query(executor, env):
-
-    async def query(db, subscription=None, server_id=None, event_ids=None,
-                    t_from=None, t_to=None, source_t_from=None,
-                    source_t_to=None, payload=None,
-                    order=common.Order.DESCENDING, unique_type=False,
-                    max_results=None):
-        return list(await db.query(subscription=subscription,
-                                   server_id=server_id,
-                                   event_ids=event_ids,
-                                   t_from=t_from,
-                                   t_to=t_to,
-                                   source_t_from=source_t_from,
-                                   source_t_to=source_t_to,
-                                   payload=payload,
-                                   order=order,
-                                   unique_type=unique_type,
-                                   max_results=max_results))
-
-    return query
+        await env.async_close()
 
 
 @pytest.fixture
@@ -80,8 +56,9 @@ def create_event():
     instance_count = itertools.count(1)
 
     def create_event(event_type, with_source_timestamp, server_id=1):
-        event_id = common.EventId(
-            server_id, next(session_count), next(instance_count))
+        event_id = common.EventId(server_id,
+                                  next(session_count),
+                                  next(instance_count))
         t = common.now()
         event = common.Event(event_id=event_id,
                              event_type=event_type,
@@ -94,72 +71,76 @@ def create_event():
     return create_event
 
 
-async def test_create(executor, env, query):
+async def create_ordered_db(env, ref_db, subscription, conditions,
+                            order_by, limit):
+    return await env.execute(
+        hat.event.server.backends.lmdb.ordereddb.ext_create, env, ref_db,
+        subscription, conditions, order_by, limit, None, common.now())
+
+
+async def flush(env, db, timestamp):
+    await env.execute(db.create_ext_flush(), None, timestamp)
+
+
+async def query(db, subscription=None, server_id=None, event_ids=None,
+                t_from=None, t_to=None, source_t_from=None,
+                source_t_to=None, payload=None,
+                order=common.Order.DESCENDING, unique_type=False,
+                max_results=None):
+    return list(await db.query(subscription=subscription,
+                               server_id=server_id,
+                               event_ids=event_ids,
+                               t_from=t_from,
+                               t_to=t_to,
+                               source_t_from=source_t_from,
+                               source_t_to=source_t_to,
+                               payload=payload,
+                               order=order,
+                               unique_type=unique_type,
+                               max_results=max_results))
+
+
+async def test_create(env):
     subscription = common.Subscription([])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    order_by_ts = common.OrderBy.TIMESTAMP
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by_ts,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 common.OrderBy.TIMESTAMP, None)
 
     assert db.subscription == subscription
-    assert db.order_by == order_by_ts
+    assert db.order_by == common.OrderBy.TIMESTAMP
     assert db.partition_id == 1
     result = await query(db)
     assert result == []
 
     subscription2 = common.Subscription([('*',)])
-    db2 = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription2,
-        conditions=conditions,
-        order_by=order_by_ts,
-        limit=None)
+    db2 = await create_ordered_db(env, ref_db, subscription2, conditions,
+                                  common.OrderBy.TIMESTAMP, None)
 
     assert db2.subscription == subscription2
-    assert db2.order_by == order_by_ts
+    assert db2.order_by == common.OrderBy.TIMESTAMP
     assert db2.partition_id == 2
 
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by_ts,
-        limit=None)
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 common.OrderBy.TIMESTAMP, None)
 
     assert db.partition_id == 1
 
-    order_by_source_ts = common.OrderBy.SOURCE_TIMESTAMP
-    db3 = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by_source_ts,
-        limit=None)
+    db3 = await create_ordered_db(env, ref_db, subscription, conditions,
+                                  common.OrderBy.SOURCE_TIMESTAMP, None)
 
     assert db3.subscription == subscription
-    assert db3.order_by == order_by_source_ts
+    assert db3.order_by == common.OrderBy.SOURCE_TIMESTAMP
     assert db3.partition_id == 3
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_add(executor, env, flush, query, create_event, order_by):
+async def test_add(env, create_event, order_by):
     subscription = common.Subscription([('a',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True)
     event2 = create_event(('b',), True)
@@ -172,7 +153,7 @@ async def test_add(executor, env, flush, query, create_event, order_by):
     result = await query(db)
     assert result == [event1]
 
-    await flush(db)
+    await flush(env, db, common.now())
 
     db.add(event3)
     db.add(event4)
@@ -186,17 +167,12 @@ async def test_add(executor, env, flush, query, create_event, order_by):
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
 @pytest.mark.parametrize('order', common.Order)
-async def test_query_max_results(executor, env, flush, query, create_event,
-                                 order_by, order):
+async def test_query_max_results(env, create_event, order_by, order):
     subscription = common.Subscription([('a',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True)
     event2 = create_event(('a',), True)
@@ -210,7 +186,7 @@ async def test_query_max_results(executor, env, flush, query, create_event,
     result = await query(db, max_results=2, order=order)
     assert result == [event1]
 
-    await flush(db)
+    await flush(env, db, common.now())
 
     result = await query(db, max_results=2, order=order)
     assert result == [event1]
@@ -231,7 +207,7 @@ async def test_query_max_results(executor, env, flush, query, create_event,
     elif order == common.Order.ASCENDING:
         assert result == [event1, event2]
 
-    await flush(db)
+    await flush(env, db, common.now())
 
     result = await query(db, max_results=2, order=order)
     if order == common.Order.DESCENDING:
@@ -242,17 +218,12 @@ async def test_query_max_results(executor, env, flush, query, create_event,
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
 @pytest.mark.parametrize('order', common.Order)
-async def test_query_timestamps(executor, env, flush, query, create_event,
-                                order_by, order):
+async def test_query_timestamps(env, create_event, order_by, order):
     subscription = common.Subscription([('a',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True)
     await asyncio.sleep(0.001)
@@ -319,21 +290,16 @@ async def test_query_timestamps(executor, env, flush, query, create_event,
                              source_t_to=t)
         assert result == []
 
-        await flush(db)
+        await flush(env, db, common.now())
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_query_subscription(executor, env, flush, query, create_event,
-                                  order_by):
+async def test_query_subscription(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True)
     event2 = create_event(('b',), True)
@@ -354,17 +320,12 @@ async def test_query_subscription(executor, env, flush, query, create_event,
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_query_server_id(executor, env, flush, query, create_event,
-                               order_by):
+async def test_query_server_id(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True, server_id=123)
     event2 = create_event(('a', 'b'), True, server_id=123)
@@ -390,17 +351,12 @@ async def test_query_server_id(executor, env, flush, query, create_event,
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_query_event_ids(executor, env, flush, query, create_event,
-                               order_by):
+async def test_query_event_ids(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True)
     event2 = create_event(('b',), True)
@@ -425,17 +381,12 @@ async def test_query_event_ids(executor, env, flush, query, create_event,
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_query_payload(executor, env, flush, query, create_event,
-                             order_by):
+async def test_query_payload(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True)
     event2 = create_event(('b',), True)._replace(payload=common.EventPayload(
@@ -460,17 +411,12 @@ async def test_query_payload(executor, env, flush, query, create_event,
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_query_unique_type(executor, env, flush, query, create_event,
-                                 order_by):
+async def test_query_unique_type(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=None)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, None)
 
     event1 = create_event(('a',), True)
     event2 = create_event(('b',), True)
@@ -490,22 +436,17 @@ async def test_query_unique_type(executor, env, flush, query, create_event,
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_limit_max_entries(executor, env, flush, query, create_event,
-                                 order_by):
+async def test_limit_max_entries(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     limit = {'max_entries': 3}
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=limit)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, limit)
 
     for i in range(limit['max_entries'] * 2):
         db.add(create_event(('a',), True))
-        await flush(db)
+        await flush(env, db, common.now())
 
         expected_len = (i + 1 if i < limit['max_entries']
                         else limit['max_entries'])
@@ -514,23 +455,18 @@ async def test_limit_max_entries(executor, env, flush, query, create_event,
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_limit_min_entries(executor, env, flush, query, create_event,
-                                 order_by):
+async def test_limit_min_entries(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     limit = {'min_entries': 5,
              'max_entries': 3}
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=limit)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, limit)
 
     for i in range(limit['min_entries'] * 2):
         db.add(create_event(('a',), True))
-        await flush(db)
+        await flush(env, db, common.now())
 
         expected_len = (i + 1 if i < limit['min_entries']
                         else limit['min_entries'])
@@ -539,18 +475,13 @@ async def test_limit_min_entries(executor, env, flush, query, create_event,
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
-async def test_limit_duration(executor, env, flush, query, create_event,
-                              order_by):
+async def test_limit_duration(env, create_event, order_by):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     limit = {'duration': 1}
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=order_by,
-        limit=limit)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 order_by, limit)
 
     t1 = common.now()
     t2 = t1._replace(s=t1.s + 2 * limit['duration'])
@@ -567,28 +498,24 @@ async def test_limit_duration(executor, env, flush, query, create_event,
     result = await query(db)
     assert result == [event2, event1]
 
-    await flush(db, t2)
+    await flush(env, db, t2)
 
     result = await query(db)
     assert result == [event2]
 
-    await flush(db, t3)
+    await flush(env, db, t3)
 
     result = await query(db)
     assert result == []
 
 
-async def test_limit_size(db_path, executor, env, flush, query, create_event):
+async def test_limit_size(env, create_event):
     subscription = common.Subscription([('*',)])
     conditions = hat.event.server.backends.lmdb.conditions.Conditions([])
     limit = {'size': 100000}
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=common.OrderBy.TIMESTAMP,
-        limit=limit)
+    ref_db = RefDb()
+    db = await create_ordered_db(env, ref_db, subscription, conditions,
+                                 common.OrderBy.TIMESTAMP, limit)
 
     events_all = []
 
@@ -596,7 +523,7 @@ async def test_limit_size(db_path, executor, env, flush, query, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(db)
+    await flush(env, db, common.now())
 
     events_persisted = await query(db)
     assert events_persisted == events_all[::-1]
@@ -606,7 +533,7 @@ async def test_limit_size(db_path, executor, env, flush, query, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(db)
+    await flush(env, db, common.now())
 
     events_persisted = await query(db)
     assert len(events_persisted) < len(events_all)
@@ -620,7 +547,7 @@ async def test_limit_size(db_path, executor, env, flush, query, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(db)
+    await flush(env, db, common.now())
 
     events_persisted = await query(db)
     assert len(events_persisted) <= max_events_count
@@ -630,19 +557,14 @@ async def test_limit_size(db_path, executor, env, flush, query, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(db)
+    await flush(env, db, common.now())
 
     events_persisted = await query(db)
     assert len(events_persisted) <= max_events_count
     assert events_persisted == events_all[-len(events_persisted):][::-1]
 
-    db = await hat.event.server.backends.lmdb.ordereddb.create(
-        executor=executor,
-        env=env,
-        subscription=subscription,
-        conditions=conditions,
-        order_by=common.OrderBy.TIMESTAMP,
-        limit=limit)
+    # db = await create_ordered_db(env, ref_db, subscription, conditions,
+    #                              common.OrderBy.TIMESTAMP, limit)
 
-    events = await query(db)
-    assert events == events_persisted
+    # events = await query(db)
+    # assert events == events_persisted

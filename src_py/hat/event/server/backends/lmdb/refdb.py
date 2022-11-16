@@ -8,26 +8,16 @@ from hat import aio
 from hat import util
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import encoder
+from hat.event.server.backends.lmdb import environment
 
 
 query_queue_size = 100
 
 
-def ext_create(executor: aio.Executor,
-               env: lmdb.Environment
-               ) -> 'RefDb':
-    db = RefDb()
-    db._executor = executor
-    db._env = env
-
-    db._ref_db = common.ext_open_db(env, common.DbType.REF)
-    db._latest_db = common.ext_open_db(env, common.DbType.LATEST_DATA)
-    db._ordered_db = common.ext_open_db(env, common.DbType.ORDERED_DATA)
-
-    return db
-
-
 class RefDb:
+
+    def __init__(self, env: environment.Environment):
+        self._env = env
 
     async def query(self,
                     event_id: common.EventId
@@ -40,23 +30,22 @@ class RefDb:
         loop = asyncio.get_running_loop()
 
         try:
-            async with aio.Group() as async_group:
-                async_group.spawn(self._executor, self._ext_query, event_id,
-                                  queue, loop)
+            self._env.async_group.spawn(self._env.execute, self._ext_query,
+                                        event_id, queue, loop)
 
-                async for events in queue:
-                    yield events
+            async for events in queue:
+                yield events
 
         finally:
             queue.close()
 
     def ext_add_event_ref(self,
-                          parent_txn: lmdb.Transaction,
+                          parent_txn: typing.Optional[lmdb.Transaction],
                           event_id: common.EventId,
                           ref: common.EventRef):
-        with self._env.begin(db=self._ref_db,
-                             parent=parent_txn,
-                             write=True) as txn:
+        with self._env.ext_begin(db_type=common.DbType.REF,
+                                 parent=parent_txn,
+                                 write=True) as txn:
             encoded_key = encoder.encode_ref_db_key(event_id)
 
             encoded_value = txn.pop(encoded_key)
@@ -69,12 +58,12 @@ class RefDb:
             txn.put(encoded_key, encoded_value)
 
     def ext_remove_event_ref(self,
-                             parent_txn: lmdb.Transaction,
+                             parent_txn: typing.Optional[lmdb.Transaction],
                              event_id: common.EventId,
                              ref: common.EventRef):
-        with self._env.begin(db=self._ref_db,
-                             parent=parent_txn,
-                             write=True) as txn:
+        with self._env.ext_begin(db_type=common.DbType.REF,
+                                 parent=parent_txn,
+                                 write=True) as txn:
             encoded_key = encoder.encode_ref_db_key(event_id)
 
             encoded_value = txn.pop(encoded_key)
@@ -98,7 +87,7 @@ class RefDb:
             encoded_start_key = encoder.encode_ref_db_key(start_key)
             encoded_stop_key = encoder.encode_ref_db_key(stop_key)
 
-            with self._env.begin(db=self._ref_db, buffers=True) as txn:
+            with self._env.ext_begin(db_type=common.DbType.REF) as txn:
                 with txn.cursor() as cursor:
                     available = cursor.set_range(encoded_start_key)
                     if available and bytes(cursor.key()) == encoded_start_key:
@@ -137,18 +126,18 @@ class RefDb:
 
     def _ext_get_event(self, ref):
         if isinstance(ref, common.LatestEventRef):
-            db = self._latest_db
+            db_type = common.DbType.LATEST_DATA
             encoded_key = encoder.encode_latest_data_db_key(ref.key)
             decode_value_fn = encoder.decode_latest_data_db_value
 
         elif isinstance(ref, common.OrderedEventRef):
-            db = self._ordered_db
+            db_type = common.DbType.ORDERED_DATA
             encoded_key = encoder.encode_ordered_data_db_key(ref.key)
             decode_value_fn = encoder.decode_ordered_data_db_value
 
         else:
             raise ValueError('unsupported event reference type')
 
-        with self._env.begin(db=db, buffers=True) as txn:
+        with self._env.ext_begin(db_type=db_type) as txn:
             encoded_value = txn.get(encoded_key)
             return decode_value_fn(encoded_value)
