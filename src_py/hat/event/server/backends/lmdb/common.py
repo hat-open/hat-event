@@ -81,9 +81,7 @@ def ext_create_env(path: Path,
     return lmdb.Environment(str(path),
                             map_size=max_size,
                             subdir=False,
-                            max_dbs=len(DbType),
-                            writemap=True,
-                            map_async=True)
+                            max_dbs=len(DbType))
 
 
 def ext_open_db(env: lmdb.Environment,

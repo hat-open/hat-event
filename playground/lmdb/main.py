@@ -257,7 +257,7 @@ conf = {'db_path': 'data/event.db',
         'flush_period': 100000,
         'conditions': [],
         'latest': {'subscriptions': [['*']]},
-        'ordered': [{**i, 'limit': {'max_entries': 5}}
+        'ordered': [{**i, 'limit': {'max_entries': 0}}
                     for i in ordered]}
 
 
