@@ -15,11 +15,12 @@ def ext_create(env: environment.Environment) -> 'SystemDb':
     db._cache = {}
     db._changes = {}
 
-    with env.ext_begin(db_type=common.DbType.SYSTEM) as txn:
-        for encoded_key, encoded_value in txn.cursor():
-            key = encoder.decode_system_db_key(encoded_key)
-            value = encoder.decode_system_db_value(encoded_value)
-            db._cache[key] = value
+    with env.ext_begin() as txn:
+        with env.ext_cursor(txn, common.DbType.SYSTEM) as cursor:
+            for encoded_key, encoded_value in cursor:
+                key = encoder.decode_system_db_key(encoded_key)
+                value = encoder.decode_system_db_value(encoded_value)
+                db._cache[key] = value
 
     return db
 
@@ -50,14 +51,11 @@ class SystemDb(common.Flushable):
         changes, self._changes = self._changes, {}
         return functools.partial(self._ext_flush, changes)
 
-    def _ext_flush(self, changes, parent_txn, flush_timestamp):
-        with self._env.ext_begin(db_type=common.DbType.SYSTEM,
-                                 parent=parent_txn,
-                                 write=True) as txn:
-            with txn.cursor() as cursor:
-                for key, value in changes.items():
-                    encoded_key = encoder.encode_system_db_key(key)
-                    encoded_value = encoder.encode_system_db_value(value)
-                    cursor.put(encoded_key, encoded_value)
+    def _ext_flush(self, changes, txn, flush_timestamp):
+        with self._env.ext_cursor(txn, common.DbType.SYSTEM) as cursor:
+            for key, value in changes.items():
+                encoded_key = encoder.encode_system_db_key(key)
+                encoded_value = encoder.encode_system_db_value(value)
+                cursor.put(encoded_key, encoded_value)
 
         return []

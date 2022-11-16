@@ -73,7 +73,8 @@ async def create_latest_db(env, ref_db, subscription, conditions):
 
 
 async def flush(env, db):
-    await env.execute(db.create_ext_flush(), None, common.now())
+    with env.ext_begin(write=True) as txn:
+        await env.execute(db.create_ext_flush(), txn, common.now())
 
 
 async def test_create(env):

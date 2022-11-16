@@ -25,23 +25,24 @@ def ext_create(env: environment.Environment,
     db._subscription = subscription
     db._conditions = conditions
     db._changes = {}, {}
-
     db._events = {}
-    with env.ext_begin(db_type=common.DbType.LATEST_DATA) as txn:
-        for _, encoded_value in txn.cursor():
-            event = encoder.decode_latest_data_db_value(encoded_value)
-            if not subscription.matches(event.event_type):
-                continue
-            if not conditions.matches(event):
-                continue
-            db._events[event.event_type] = event
-
     db._type_refs = {}
-    with env.ext_begin(db_type=common.DbType.LATEST_TYPE) as txn:
-        for encoded_key, encoded_value in txn.cursor():
-            ref = encoder.decode_latest_type_db_key(encoded_key)
-            event_type = encoder.decode_latest_type_db_value(encoded_value)
-            db._type_refs[event_type] = ref
+
+    with env.ext_begin() as txn:
+        with env.ext_cursor(txn, common.DbType.LATEST_DATA) as cursor:
+            for _, encoded_value in cursor:
+                event = encoder.decode_latest_data_db_value(encoded_value)
+                if not subscription.matches(event.event_type):
+                    continue
+                if not conditions.matches(event):
+                    continue
+                db._events[event.event_type] = event
+
+        with env.ext_cursor(txn, common.DbType.LATEST_TYPE) as cursor:
+            for encoded_key, encoded_value in cursor:
+                ref = encoder.decode_latest_type_db_key(encoded_key)
+                event_type = encoder.decode_latest_type_db_value(encoded_value)
+                db._type_refs[event_type] = ref
 
     return db
 
@@ -91,35 +92,28 @@ class LatestDb(common.Flushable):
         changes, self._changes = self._changes, ({}, {})
         return functools.partial(self._ext_flush, changes)
 
-    def _ext_flush(self, changes, parent_txn, flush_timestamp):
-        with self._env.ext_begin(db_type=common.DbType.LATEST_DATA,
-                                 parent=parent_txn,
-                                 write=True) as txn:
-            with txn.cursor() as cursor:
-                for key, value in changes[0].items():
-                    event_ref = common.LatestEventRef(key)
-                    encoded_key = encoder.encode_latest_data_db_key(key)
-                    encoded_value = encoder.encode_latest_data_db_value(value)
+    def _ext_flush(self, changes, txn, flush_timestamp):
+        with self._env.ext_cursor(txn, common.DbType.LATEST_DATA) as cursor:
+            for key, value in changes[0].items():
+                event_ref = common.LatestEventRef(key)
+                encoded_key = encoder.encode_latest_data_db_key(key)
+                encoded_value = encoder.encode_latest_data_db_value(value)
 
-                    previous_encoded_value = cursor.get(encoded_key)
-                    if previous_encoded_value:
-                        previous_value = encoder.decode_latest_data_db_value(
-                            previous_encoded_value)
-                        self._ref_db.ext_remove_event_ref(
-                            txn, previous_value.event_id, event_ref)
+                previous_encoded_value = cursor.get(encoded_key)
+                if previous_encoded_value:
+                    previous_value = encoder.decode_latest_data_db_value(
+                        previous_encoded_value)
+                    self._ref_db.ext_remove_event_ref(
+                        txn, previous_value.event_id, event_ref)
 
-                    cursor.put(encoded_key, encoded_value)
-                    self._ref_db.ext_add_event_ref(txn, value.event_id,
-                                                   event_ref)
+                cursor.put(encoded_key, encoded_value)
+                self._ref_db.ext_add_event_ref(txn, value.event_id, event_ref)
 
-        with self._env.ext_begin(db_type=common.DbType.LATEST_TYPE,
-                                 parent=parent_txn,
-                                 write=True) as txn:
-            with txn.cursor() as cursor:
-                for key, value in changes[1].items():
-                    encoded_key = encoder.encode_latest_type_db_key(key)
-                    encoded_value = encoder.encode_latest_type_db_value(value)
+        with self._env.ext_cursor(txn, common.DbType.LATEST_TYPE) as cursor:
+            for key, value in changes[1].items():
+                encoded_key = encoder.encode_latest_type_db_key(key)
+                encoded_value = encoder.encode_latest_type_db_value(value)
 
-                    cursor.put(encoded_key, encoded_value)
+                cursor.put(encoded_key, encoded_value)
 
         return changes[0].values()

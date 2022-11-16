@@ -39,17 +39,15 @@ class Environment(aio.Resource):
     async def execute(self, *args: typing.Any) -> typing.Any:
         return await self.async_group.spawn(self._executor, *args)
 
-    def ext_begin(self,
-                  db_type: typing.Optional[common.DbType] = None,
-                  parent: typing.Optional[lmdb.Transaction] = None,
-                  write: bool = False,
-                  buffers: bool = True,
-                  ) -> lmdb.Transaction:
-        db = self._dbs[db_type] if db_type is not None else None
-        return self._env.begin(db=db,
-                               parent=parent,
-                               write=write,
-                               buffers=buffers)
+    def ext_begin(self, write: bool = False) -> lmdb.Transaction:
+        return self._env.begin(write=write,
+                               buffers=True)
+
+    def ext_cursor(self,
+                   txn: lmdb.Transaction,
+                   db_type: common.DbType
+                   ) -> lmdb.Cursor:
+        return txn.cursor(self._dbs[db_type])
 
     def ext_stat(self,
                  txn: lmdb.Transaction,

@@ -59,19 +59,17 @@ def _ext_init(backend, conf):
             tuple(i) for i in conf['latest']['subscriptions']),
         conditions=backend._conditions)
 
-    with backend._env.ext_begin(write=True) as txn:
-        backend._ordered_dbs = [
-            ordereddb.ext_create(
-                env=backend._env,
-                ref_db=backend._ref_db,
-                subscription=common.Subscription(
-                    tuple(et) for et in i['subscriptions']),
-                conditions=backend._conditions,
-                order_by=common.OrderBy[i['order_by']],
-                limit=i.get('limit'),
-                parent_txn=txn,
-                timestamp=timestamp)
-            for i in conf['ordered']]
+    backend._ordered_dbs = [
+        ordereddb.ext_create(
+            env=backend._env,
+            ref_db=backend._ref_db,
+            subscription=common.Subscription(
+                tuple(et) for et in i['subscriptions']),
+            conditions=backend._conditions,
+            order_by=common.OrderBy[i['order_by']],
+            limit=i.get('limit'),
+            timestamp=timestamp)
+        for i in conf['ordered']]
 
     # TODO: maybe cleanup unused ordered partitions
     # ordereddb.cleanup(

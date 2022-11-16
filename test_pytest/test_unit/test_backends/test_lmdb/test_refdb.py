@@ -45,13 +45,13 @@ def create_event():
 async def add_latest_data(env, event):
 
     def ext_add_latest_data():
-        with env.ext_begin(db_type=common.DbType.LATEST_DATA,
-                           write=True) as txn:
-            key = int(event.event_type[1])
-            encoded_key = encoder.encode_latest_data_db_key(key)
-            encoded_value = encoder.encode_latest_data_db_value(event)
-            txn.put(encoded_key, encoded_value)
-            return common.LatestEventRef(key)
+        with env.ext_begin(write=True) as txn:
+            with env.ext_cursor(txn, common.DbType.LATEST_DATA) as cursor:
+                key = int(event.event_type[1])
+                encoded_key = encoder.encode_latest_data_db_key(key)
+                encoded_value = encoder.encode_latest_data_db_value(event)
+                cursor.put(encoded_key, encoded_value)
+                return common.LatestEventRef(key)
 
     return await env.execute(ext_add_latest_data)
 
@@ -59,23 +59,26 @@ async def add_latest_data(env, event):
 async def add_ordered_data(env, event):
 
     def ext_add_ordered_data():
-        with env.ext_begin(db_type=common.DbType.ORDERED_DATA,
-                           write=True) as txn:
-            key = 1, event.timestamp, event.event_id
-            encoded_key = encoder.encode_ordered_data_db_key(key)
-            encoded_value = encoder.encode_ordered_data_db_value(event)
-            txn.put(encoded_key, encoded_value)
-            return common.OrderedEventRef(key)
+        with env.ext_begin(write=True) as txn:
+            with env.ext_cursor(txn, common.DbType.ORDERED_DATA) as cursor:
+                key = 1, event.timestamp, event.event_id
+                encoded_key = encoder.encode_ordered_data_db_key(key)
+                encoded_value = encoder.encode_ordered_data_db_value(event)
+                cursor.put(encoded_key, encoded_value)
+                return common.OrderedEventRef(key)
 
     return await env.execute(ext_add_ordered_data)
 
 
 async def add_event_ref(env, ref_db, event_id, ref):
-    return await env.execute(ref_db.ext_add_event_ref, None, event_id, ref)
+    with env.ext_begin(write=True) as txn:
+        return await env.execute(ref_db.ext_add_event_ref, txn, event_id, ref)
 
 
 async def remove_event_ref(env, ref_db, event_id, ref):
-    return await env.execute(ref_db.ext_remove_event_ref, None, event_id, ref)
+    with env.ext_begin(write=True) as txn:
+        return await env.execute(ref_db.ext_remove_event_ref, txn, event_id,
+                                 ref)
 
 
 async def test_create(env):

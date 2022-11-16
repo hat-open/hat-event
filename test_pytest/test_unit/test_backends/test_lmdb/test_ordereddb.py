@@ -75,11 +75,12 @@ async def create_ordered_db(env, ref_db, subscription, conditions,
                             order_by, limit):
     return await env.execute(
         hat.event.server.backends.lmdb.ordereddb.ext_create, env, ref_db,
-        subscription, conditions, order_by, limit, None, common.now())
+        subscription, conditions, order_by, limit, common.now())
 
 
 async def flush(env, db, timestamp):
-    await env.execute(db.create_ext_flush(), None, timestamp)
+    with env.ext_begin(write=True) as txn:
+        await env.execute(db.create_ext_flush(), txn, timestamp)
 
 
 async def query(db, subscription=None, server_id=None, event_ids=None,

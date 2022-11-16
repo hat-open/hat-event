@@ -64,7 +64,7 @@ class EventRefChange(typing.NamedTuple):
     removed: typing.Set[EventRef]
 
 
-ExtFlushCb = typing.Callable[[typing.Optional[lmdb.Transaction], Timestamp],
+ExtFlushCb = typing.Callable[[lmdb.Transaction, Timestamp],
                              typing.Iterable[Event]]
 
 
@@ -81,7 +81,9 @@ def ext_create_env(path: Path,
     return lmdb.Environment(str(path),
                             map_size=max_size,
                             subdir=False,
-                            max_dbs=len(DbType))
+                            max_dbs=len(DbType),
+                            writemap=True,
+                            map_async=True)
 
 
 def ext_open_db(env: lmdb.Environment,

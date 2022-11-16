@@ -40,33 +40,29 @@ class RefDb:
             queue.close()
 
     def ext_add_event_ref(self,
-                          parent_txn: typing.Optional[lmdb.Transaction],
+                          txn: lmdb.Transaction,
                           event_id: common.EventId,
                           ref: common.EventRef):
-        with self._env.ext_begin(db_type=common.DbType.REF,
-                                 parent=parent_txn,
-                                 write=True) as txn:
+        with self._env.ext_cursor(txn, common.DbType.REF) as cursor:
             encoded_key = encoder.encode_ref_db_key(event_id)
 
-            encoded_value = txn.pop(encoded_key)
+            encoded_value = cursor.pop(encoded_key)
             value = (encoder.decode_ref_db_value(encoded_value)
                      if encoded_value else set())
 
             value.add(ref)
             encoded_value = encoder.encode_ref_db_value(value)
 
-            txn.put(encoded_key, encoded_value)
+            cursor.put(encoded_key, encoded_value)
 
     def ext_remove_event_ref(self,
-                             parent_txn: typing.Optional[lmdb.Transaction],
+                             txn: lmdb.Transaction,
                              event_id: common.EventId,
                              ref: common.EventRef):
-        with self._env.ext_begin(db_type=common.DbType.REF,
-                                 parent=parent_txn,
-                                 write=True) as txn:
+        with self._env.ext_cursor(txn, common.DbType.REF) as cursor:
             encoded_key = encoder.encode_ref_db_key(event_id)
 
-            encoded_value = txn.pop(encoded_key)
+            encoded_value = cursor.pop(encoded_key)
             value = (encoder.decode_ref_db_value(encoded_value)
                      if encoded_value else set())
 
@@ -75,7 +71,7 @@ class RefDb:
                 return
             encoded_value = encoder.encode_ref_db_value(value)
 
-            txn.put(encoded_key, encoded_value)
+            cursor.put(encoded_key, encoded_value)
 
     def _ext_query(self, event_id, queue, loop):
         try:
@@ -87,8 +83,8 @@ class RefDb:
             encoded_start_key = encoder.encode_ref_db_key(start_key)
             encoded_stop_key = encoder.encode_ref_db_key(stop_key)
 
-            with self._env.ext_begin(db_type=common.DbType.REF) as txn:
-                with txn.cursor() as cursor:
+            with self._env.ext_begin() as txn:
+                with self._env.ext_cursor(txn, common.DbType.REF) as cursor:
                     available = cursor.set_range(encoded_start_key)
                     if available and bytes(cursor.key()) == encoded_start_key:
                         available = cursor.next()
@@ -101,7 +97,7 @@ class RefDb:
                         if not ref:
                             continue
 
-                        event = self._ext_get_event(ref)
+                        event = self._ext_get_event(txn, ref)
                         session = event.event_id.session
 
                         if events and events[0].event_id.session != session:
@@ -124,7 +120,7 @@ class RefDb:
         finally:
             loop.call_soon_threadsafe(queue.close)
 
-    def _ext_get_event(self, ref):
+    def _ext_get_event(self, txn, ref):
         if isinstance(ref, common.LatestEventRef):
             db_type = common.DbType.LATEST_DATA
             encoded_key = encoder.encode_latest_data_db_key(ref.key)
@@ -138,6 +134,6 @@ class RefDb:
         else:
             raise ValueError('unsupported event reference type')
 
-        with self._env.ext_begin(db_type=db_type) as txn:
-            encoded_value = txn.get(encoded_key)
+        with self._env.ext_cursor(txn, db_type) as cursor:
+            encoded_value = cursor.get(encoded_key)
             return decode_value_fn(encoded_value)
