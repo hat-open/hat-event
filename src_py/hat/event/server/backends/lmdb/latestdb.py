@@ -92,7 +92,7 @@ class LatestDb(common.Flushable):
         changes, self._changes = self._changes, ({}, {})
         return functools.partial(self._ext_flush, changes)
 
-    def _ext_flush(self, changes, txn, flush_timestamp):
+    def _ext_flush(self, changes, txn):
         with self._env.ext_cursor(txn, common.DbType.LATEST_DATA) as cursor:
             for key, value in changes[0].items():
                 event_ref = common.LatestEventRef(key)

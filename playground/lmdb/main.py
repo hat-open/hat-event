@@ -268,7 +268,11 @@ def main():
 
 async def async_main():
     backend = await hat.event.server.backends.lmdb.create(conf)
-    await backend.async_close()
+    try:
+        await asyncio.Future()
+
+    finally:
+        await aio.uncancellable(backend.async_close())
 
 
 if __name__ == '__main__':

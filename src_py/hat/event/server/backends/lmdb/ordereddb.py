@@ -19,8 +19,7 @@ def ext_create(env: environment.Environment,
                subscription: common.Subscription,
                conditions: Conditions,
                order_by: common.OrderBy,
-               limit: typing.Optional[json.Data],
-               timestamp: common.Timestamp
+               limit: typing.Optional[json.Data]
                ) -> 'OrderedDb':
     db = OrderedDb()
     db._env = env
@@ -59,8 +58,6 @@ def ext_create(env: environment.Environment,
                     partition_data)
 
                 cursor.put(encoded_key, encoded_value)
-
-        db._ext_flush([], txn, timestamp)
 
     return db
 
@@ -153,6 +150,22 @@ class OrderedDb(common.Flushable):
     def create_ext_flush(self) -> common.ExtFlushCb:
         changes, self._changes = self._changes, collections.deque()
         return functools.partial(self._ext_flush, changes)
+
+    def ext_apply_limit(self,
+                        now: common.Timestamp,
+                        max_entries_remove: typing.Optional[int] = None,
+                        ) -> int:
+        if not self._limit:
+            return True
+
+        with self._env.ext_begin(write=True) as txn:
+            entries_count = self._ext_get_entries_count(txn)
+            new_entries_count = self._ext_apply_limit(txn, entries_count,
+                                                      max_entries_remove, now)
+            if new_entries_count != entries_count:
+                self._ext_set_entries_count(txn, new_entries_count)
+
+        return entries_count - new_entries_count
 
     def _query_changes(self, subscription, server_id, event_ids, t_from, t_to,
                        source_t_from, source_t_to, payload, order,
@@ -283,12 +296,11 @@ class OrderedDb(common.Flushable):
                 else:
                     raise ValueError('unsupported order')
 
-    def _ext_flush(self, changes, txn, flush_timestamp):
+    def _ext_flush(self, changes, txn):
         entries_count = self._ext_get_entries_count(txn)
-        entries_count = self._ext_add_changes(txn, entries_count, changes)
-        entries_count = self._ext_apply_limit(txn, entries_count,
-                                              flush_timestamp)
-        self._ext_set_entries_count(txn, entries_count)
+        new_entries_count = self._ext_add_changes(txn, entries_count, changes)
+        if new_entries_count != entries_count:
+            self._ext_set_entries_count(txn, new_entries_count)
         return (i for _, i in changes)
 
     def _ext_get_entries_count(self, txn):
@@ -330,7 +342,7 @@ class OrderedDb(common.Flushable):
 
         return entries_count
 
-    def _ext_apply_limit(self, txn, entries_count, flush_timestamp):
+    def _ext_apply_limit(self, txn, entries_count, max_entries_remove, now):
         if not self._limit:
             return entries_count
 
@@ -366,7 +378,7 @@ class OrderedDb(common.Flushable):
 
         if 'duration' in self._limit:
             duration_key = (self._partition_id,
-                            flush_timestamp.add(-self._limit['duration']),
+                            now.add(-self._limit['duration']),
                             common.EventId(0, 0, 0))
             encoded_duration_key = encoder.encode_ordered_data_db_key(
                 duration_key)
@@ -374,6 +386,9 @@ class OrderedDb(common.Flushable):
         with self._env.ext_cursor(txn, common.DbType.ORDERED_DATA) as cursor:
             more = cursor.set_range(encoded_start_key)
             while more:
+                if max_entries_remove is not None and max_entries_remove < 1:
+                    break
+
                 if entries_count <= min_entries:
                     break
 
@@ -392,6 +407,8 @@ class OrderedDb(common.Flushable):
 
                 more = cursor.delete()
                 entries_count -= 1
+                if max_entries_remove is not None:
+                    max_entries_remove -= 1
 
                 event_ref = common.OrderedEventRef(key)
                 self._ref_db.ext_remove_event_ref(txn, event_id, event_ref)

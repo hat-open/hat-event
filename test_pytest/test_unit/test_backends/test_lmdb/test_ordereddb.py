@@ -75,12 +75,16 @@ async def create_ordered_db(env, ref_db, subscription, conditions,
                             order_by, limit):
     return await env.execute(
         hat.event.server.backends.lmdb.ordereddb.ext_create, env, ref_db,
-        subscription, conditions, order_by, limit, common.now())
+        subscription, conditions, order_by, limit)
 
 
-async def flush(env, db, timestamp):
+async def flush(env, db):
     with env.ext_begin(write=True) as txn:
-        await env.execute(db.create_ext_flush(), txn, timestamp)
+        await env.execute(db.create_ext_flush(), txn)
+
+
+async def apply_limit(env, db, timestamp):
+    return await env.execute(db.ext_apply_limit, timestamp)
 
 
 async def query(db, subscription=None, server_id=None, event_ids=None,
@@ -154,7 +158,7 @@ async def test_add(env, create_event, order_by):
     result = await query(db)
     assert result == [event1]
 
-    await flush(env, db, common.now())
+    await flush(env, db)
 
     db.add(event3)
     db.add(event4)
@@ -187,7 +191,7 @@ async def test_query_max_results(env, create_event, order_by, order):
     result = await query(db, max_results=2, order=order)
     assert result == [event1]
 
-    await flush(env, db, common.now())
+    await flush(env, db)
 
     result = await query(db, max_results=2, order=order)
     assert result == [event1]
@@ -208,7 +212,7 @@ async def test_query_max_results(env, create_event, order_by, order):
     elif order == common.Order.ASCENDING:
         assert result == [event1, event2]
 
-    await flush(env, db, common.now())
+    await flush(env, db)
 
     result = await query(db, max_results=2, order=order)
     if order == common.Order.DESCENDING:
@@ -291,7 +295,7 @@ async def test_query_timestamps(env, create_event, order_by, order):
                              source_t_to=t)
         assert result == []
 
-        await flush(env, db, common.now())
+        await flush(env, db)
 
 
 @pytest.mark.parametrize('order_by', common.OrderBy)
@@ -447,7 +451,8 @@ async def test_limit_max_entries(env, create_event, order_by):
 
     for i in range(limit['max_entries'] * 2):
         db.add(create_event(('a',), True))
-        await flush(env, db, common.now())
+        await flush(env, db)
+        await apply_limit(env, db, common.now())
 
         expected_len = (i + 1 if i < limit['max_entries']
                         else limit['max_entries'])
@@ -467,7 +472,8 @@ async def test_limit_min_entries(env, create_event, order_by):
 
     for i in range(limit['min_entries'] * 2):
         db.add(create_event(('a',), True))
-        await flush(env, db, common.now())
+        await flush(env, db)
+        await apply_limit(env, db, common.now())
 
         expected_len = (i + 1 if i < limit['min_entries']
                         else limit['min_entries'])
@@ -499,12 +505,14 @@ async def test_limit_duration(env, create_event, order_by):
     result = await query(db)
     assert result == [event2, event1]
 
-    await flush(env, db, t2)
+    await flush(env, db)
+    await apply_limit(env, db, t2)
 
     result = await query(db)
     assert result == [event2]
 
-    await flush(env, db, t3)
+    await flush(env, db)
+    await apply_limit(env, db, t3)
 
     result = await query(db)
     assert result == []
@@ -524,7 +532,8 @@ async def test_limit_size(env, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(env, db, common.now())
+    await flush(env, db)
+    await apply_limit(env, db, common.now())
 
     events_persisted = await query(db)
     assert events_persisted == events_all[::-1]
@@ -534,7 +543,8 @@ async def test_limit_size(env, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(env, db, common.now())
+    await flush(env, db)
+    await apply_limit(env, db, common.now())
 
     events_persisted = await query(db)
     assert len(events_persisted) < len(events_all)
@@ -548,7 +558,8 @@ async def test_limit_size(env, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(env, db, common.now())
+    await flush(env, db)
+    await apply_limit(env, db, common.now())
 
     events_persisted = await query(db)
     assert len(events_persisted) <= max_events_count
@@ -558,7 +569,8 @@ async def test_limit_size(env, create_event):
         event = create_event(('a',), True)
         db.add(event)
         events_all.append(event)
-    await flush(env, db, common.now())
+    await flush(env, db)
+    await apply_limit(env, db, common.now())
 
     events_persisted = await query(db)
     assert len(events_persisted) <= max_events_count

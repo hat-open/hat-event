@@ -18,6 +18,8 @@ from hat.event.server.backends.lmdb.conditions import Conditions
 
 mlog = logging.getLogger(__name__)
 
+cleanup_max_entries_remove = 100
+
 
 async def create(conf: json.Data
                  ) -> 'LmdbBackend':
@@ -40,14 +42,13 @@ async def create(conf: json.Data
 
     backend.async_group.spawn(aio.call_on_done, backend._env.wait_closing(),
                               backend.close)
-    backend.async_group.spawn(backend._write_loop)
+    backend.async_group.spawn(backend._flush_loop)
+    backend.async_group.spawn(backend._cleanup_loop)
 
     return backend
 
 
 def _ext_init(backend, conf):
-    timestamp = common.now()
-
     backend._ref_db = refdb.RefDb(backend._env)
 
     backend._sys_db = systemdb.ext_create(backend._env)
@@ -67,8 +68,7 @@ def _ext_init(backend, conf):
                 tuple(et) for et in i['subscriptions']),
             conditions=backend._conditions,
             order_by=common.OrderBy[i['order_by']],
-            limit=i.get('limit'),
-            timestamp=timestamp)
+            limit=i.get('limit'))
         for i in conf['ordered']]
 
     # TODO: maybe cleanup unused ordered partitions
@@ -202,18 +202,44 @@ class LmdbBackend(common.Backend):
             for session in sessions:
                 self._flushed_events_cbs.notify(session)
 
-    async def _write_loop(self):
+    async def _flush_loop(self):
         try:
             while True:
                 await asyncio.sleep(self._flush_period)
                 await aio.uncancellable(self.flush())
 
         except Exception as e:
-            mlog.error('backend write error: %s', e, exc_info=e)
+            mlog.error('backend flush error: %s', e, exc_info=e)
 
         finally:
             self.close()
             await aio.uncancellable(self._close())
+
+    async def _cleanup_loop(self):
+        try:
+            while True:
+                repeat = True
+                while repeat:
+                    repeat = False
+
+                    for ordered_db in self._ordered_dbs:
+                        await asyncio.sleep(0)
+
+                        entries_removed = await aio.uncancellable(
+                            self._env.execute(ordered_db.ext_apply_limit,
+                                              common.now(),
+                                              cleanup_max_entries_remove))
+
+                        if entries_removed >= cleanup_max_entries_remove:
+                            repeat = True
+
+                await asyncio.sleep(self._flush_period)
+
+        except Exception as e:
+            mlog.error('backend cleanup error: %s', e, exc_info=e)
+
+        finally:
+            self.close()
 
     async def _close(self):
         await self.flush()
@@ -222,11 +248,10 @@ class LmdbBackend(common.Backend):
 
 def _ext_flush(env, flush_fns):
     events = {}
-    timestamp = common.now()
 
     with env.ext_begin(write=True) as txn:
         for flush_fn in flush_fns:
-            for event in flush_fn(txn, timestamp):
+            for event in flush_fn(txn):
                 events[event.event_id] = event
 
     sessions = collections.deque()

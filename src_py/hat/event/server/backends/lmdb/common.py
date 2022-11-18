@@ -64,8 +64,7 @@ class EventRefChange(typing.NamedTuple):
     removed: typing.Set[EventRef]
 
 
-ExtFlushCb = typing.Callable[[lmdb.Transaction, Timestamp],
-                             typing.Iterable[Event]]
+ExtFlushCb = typing.Callable[[lmdb.Transaction], typing.Iterable[Event]]
 
 
 class Flushable(abc.ABC):
