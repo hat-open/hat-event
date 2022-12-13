@@ -5,4 +5,4 @@ hat-json ~= 0.5.8
 hat-monitor >= 0.6.10, < 0.8.0
 hat-sbs ~= 0.6.0
 hat-util >= 0.5.8, < 0.7.0
-lmdb ~= 1.2.1
+lmdb ~= 1.4.0
