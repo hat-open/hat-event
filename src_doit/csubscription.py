@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from hat.doit import common
-from hat.doit.c import (get_target_ext_suffix,
-                        get_py_cpp_flags,
+from hat.doit.c import (get_py_ext_suffix,
+                        get_py_c_flags,
                         get_py_ld_flags,
+                        get_py_ld_libs,
                         CBuild)
 
 
@@ -21,10 +22,10 @@ deps_dir = Path('deps')
 src_c_dir = Path('src_c')
 src_py_dir = Path('src_py')
 
-target_ext_suffix = get_target_ext_suffix(py_limited_api)
+py_ext_suffix = get_py_ext_suffix(py_limited_api=py_limited_api)
 csubscription_path = (
     src_py_dir /
-    'hat/event/common/_csubscription').with_suffix(target_ext_suffix)
+    'hat/event/common/_csubscription').with_suffix(py_ext_suffix)
 
 
 def task_csubscription():
@@ -54,13 +55,10 @@ def _cleanup():
         common.rm_rf(path)
 
 
-def _get_cpp_flags():
-    yield from get_py_cpp_flags(py_limited_api)
+def _get_c_flags():
+    yield from get_py_c_flags(py_limited_api=py_limited_api)
     yield f"-I{deps_dir / 'hat-util/src_c'}"
     yield '-DMODULE_NAME="_csubscription"'
-
-
-def _get_cc_flags():
     yield '-fPIC'
     yield '-O2'
     # yield '-O0'
@@ -68,7 +66,11 @@ def _get_cc_flags():
 
 
 def _get_ld_flags():
-    yield from get_py_ld_flags(py_limited_api)
+    yield from get_py_ld_flags(py_limited_api=py_limited_api)
+
+
+def _get_ld_libs():
+    yield from get_py_ld_libs(py_limited_api=py_limited_api)
 
 
 _build = CBuild(src_paths=[*(src_c_dir / 'py/_csubscription').rglob('*.c'),
@@ -77,8 +79,8 @@ _build = CBuild(src_paths=[*(src_c_dir / 'py/_csubscription').rglob('*.c'),
                 build_dir=(build_dir / 'csubscription' /
                            f'{common.target_platform.name.lower()}_'
                            f'{common.target_py_version.name.lower()}'),
-                cpp_flags=list(_get_cpp_flags()),
-                cc_flags=list(_get_cc_flags()),
+                c_flags=list(_get_c_flags()),
                 ld_flags=list(_get_ld_flags()),
+                ld_libs=list(_get_ld_libs()),
                 task_dep=['deps',
                           'csubscription_cleanup'])
