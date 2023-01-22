@@ -67,8 +67,9 @@ Event data structure:
         main identifier of the occurred event's type. Each component
         registering an event should have its own naming convention defined
         which does not collide with other components' naming conventions. This
-        property is set by the user while registering an event. Subtypes ``?``
-        and ``*`` are not allowed as parts of event type.
+        property is set by the user while registering an event. Subtypes are
+        arbitrary strings formed from valid utf-8 characters excluding
+        characters ``?``, ``*`` and ``/``.
 
         When used in querying and subscription, this property has additional
         semantics. Any string in the list can be replaced with ``?`` while the
