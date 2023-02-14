@@ -1,0 +1,18 @@
+---
+"$schema": "http://json-schema.org/schema#"
+id: "hat-event://mariner/server.yaml#"
+title: Mariner server
+type: object
+required:
+    - type
+    - log
+properties:
+    type:
+        const: mariner
+        description: configuration type identification
+    version:
+        type: string
+        description: component version
+    log:
+        "$ref": "hat-json://logging.yaml#"
+...

@@ -1,5 +1,5 @@
-hat-event - Event server and client
-=======================================
+hat-event - Event server and communication libraries
+====================================================
 
 This component is part of Hat Open project - open-source framework of tools and
 libraries for developing applications used for remote monitoring, control and
@@ -32,7 +32,7 @@ Install
 License
 -------
 
-Copyright 2020-2022 Hat Open AUTHORS
+Copyright 2020-2023 Hat Open AUTHORS
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
