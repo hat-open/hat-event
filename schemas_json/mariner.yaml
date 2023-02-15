@@ -1,12 +1,12 @@
 ---
 "$schema": "http://json-schema.org/schema#"
-id: "hat-event://mariner/messages.yaml#"
+id: "hat-event://mariner.yaml#"
 title: Mariner communication messages
 oneOf:
-  - "$ref": "hat-event://mariner/messages.yaml#/definitions/messages/ping"
-  - "$ref": "hat-event://mariner/messages.yaml#/definitions/messages/pong"
-  - "$ref": "hat-event://mariner/messages.yaml#/definitions/messages/init"
-  - "$ref": "hat-event://mariner/messages.yaml#/definitions/messages/events"
+  - "$ref": "hat-event://mariner.yaml#/definitions/messages/ping"
+  - "$ref": "hat-event://mariner.yaml#/definitions/messages/pong"
+  - "$ref": "hat-event://mariner.yaml#/definitions/messages/init"
+  - "$ref": "hat-event://mariner.yaml#/definitions/messages/events"
 definitions:
     messages:
         ping:
@@ -43,11 +43,11 @@ definitions:
                 last_event_id:
                     oneOf:
                         - type: "null"
-                        - "$ref": "hat-event://mariner/messages.yaml#/definitions/event_id"
+                        - "$ref": "hat-event://mariner.yaml#/definitions/event_id"
                 subscriptions:
                     type: array
                     items:
-                        "$ref": "hat-event://mariner/messages.yaml#/definitions/event_type"
+                        "$ref": "hat-event://mariner.yaml#/definitions/event_type"
         events:
             type: object
             required:
@@ -55,11 +55,11 @@ definitions:
                 - events
             properties:
                 type:
-                    const: init
+                    const: events
                 events:
                     type: array
                     items:
-                        "$ref": "hat-event://mariner/messages.yaml#/definitions/event"
+                        "$ref": "hat-event://mariner.yaml#/definitions/event"
     event_id:
         type: object
         required:
@@ -137,17 +137,17 @@ definitions:
             - payload
         properties:
             id:
-                "$ref": "hat-event://mariner/messages.yaml#/definitions/event_id"
+                "$ref": "hat-event://mariner.yaml#/definitions/event_id"
             type:
-                "$ref": "hat-event://mariner/messages.yaml#/definitions/event_type"
+                "$ref": "hat-event://mariner.yaml#/definitions/event_type"
             timestamp:
-                "$ref": "hat-event://mariner/messages.yaml#/definitions/timestamp"
+                "$ref": "hat-event://mariner.yaml#/definitions/timestamp"
             source_timestamp:
                 oneOf:
                   - "null"
-                  - "$ref": "hat-event://mariner/messages.yaml#/definitions/timestamp"
+                  - "$ref": "hat-event://mariner.yaml#/definitions/timestamp"
             payload:
                 oneOf:
                   - "null"
-                  - "$ref": "hat-event://mariner/messages.yaml#/definitions/payload"
+                  - "$ref": "hat-event://mariner.yaml#/definitions/payload"
 ...

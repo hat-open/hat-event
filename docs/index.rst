@@ -10,5 +10,5 @@ Content
     event
     eventer
     syncer
-    server
     mariner
+    server

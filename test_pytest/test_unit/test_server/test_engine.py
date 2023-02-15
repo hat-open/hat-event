@@ -6,8 +6,9 @@ import types
 import pytest
 
 from hat import aio
+
 from hat.event.server import common
-from hat.event.server.engine import create_engine
+import hat.event.server.engine
 
 
 @pytest.fixture
@@ -107,7 +108,7 @@ async def test_create():
             'modules': []}
     backend = Backend(register_cb=on_backend_events)
 
-    engine = await create_engine(conf, backend)
+    engine = await hat.event.server.engine.create_engine(conf, backend)
     assert engine.is_open
 
     events = await events_q.get()
@@ -180,7 +181,7 @@ async def test_register(create_module, module_count, value):
                         for module_name in module_names]}
     backend = Backend(register_cb=on_backend_events)
 
-    engine = await create_engine(conf, backend)
+    engine = await hat.event.server.engine.create_engine(conf, backend)
     engine.register_events_cb(on_engine_events)
 
     backend_events = await backend_events_q.get()
@@ -276,7 +277,7 @@ async def test_query():
 
     conf = {'server_id': server_id, 'modules': []}
     backend = Backend(query_cb=on_query)
-    engine = await create_engine(conf, backend)
+    engine = await hat.event.server.engine.create_engine(conf, backend)
 
     result = await engine.query(query_data)
     assert result == events
@@ -303,7 +304,7 @@ async def test_cancel_register(create_module):
     conf = {'server_id': 1, 'modules': [{'module': module_name}]}
     backend = Backend()
 
-    engine = await create_engine(conf, backend)
+    engine = await hat.event.server.engine.create_engine(conf, backend)
     registered_events = aio.Queue()
     engine.register_events_cb(registered_events.put_nowait)
     await registered_events.get()  # engine event

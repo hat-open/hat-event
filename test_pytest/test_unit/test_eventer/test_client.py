@@ -5,14 +5,10 @@ import pytest
 from hat import aio
 from hat import chatter
 from hat import util
+
 from hat.event import common
-import hat.event.eventer_client
+import hat.event.eventer
 import hat.monitor.common
-
-
-@pytest.fixture
-def patch_reconnect_delay(monkeypatch):
-    monkeypatch.setattr(hat.event.eventer_client, 'reconnect_delay', 0.01)
 
 
 @pytest.fixture
@@ -119,12 +115,12 @@ class MonitorClient(aio.Resource):
 
 async def test_client_connect_failure(server_address):
     with pytest.raises(ConnectionError):
-        await hat.event.eventer_client.connect(server_address)
+        await hat.event.eventer.connect(server_address)
 
 
 async def test_client_connect(server_address):
     server = await create_server(server_address)
-    client = await hat.event.eventer_client.connect(server_address)
+    client = await hat.event.eventer.connect(server_address)
     conn = await server.get_connection()
 
     assert server.is_open
@@ -139,7 +135,7 @@ async def test_client_connect(server_address):
 async def test_client_subscriptions(server_address):
     server = await create_server(server_address)
 
-    client = await hat.event.eventer_client.connect(server_address)
+    client = await hat.event.eventer.connect(server_address)
     conn = await server.get_connection()
 
     with pytest.raises(asyncio.TimeoutError):
@@ -150,8 +146,7 @@ async def test_client_subscriptions(server_address):
 
     subscriptions = [('a',),
                      ('b', '*')]
-    client = await hat.event.eventer_client.connect(server_address,
-                                                    subscriptions)
+    client = await hat.event.eventer.connect(server_address, subscriptions)
     conn = await server.get_connection()
 
     msg = await conn.receive()
@@ -177,7 +172,7 @@ async def test_client_receive(server_address):
         for i in range(10)]
 
     server = await create_server(server_address)
-    client = await hat.event.eventer_client.connect(server_address)
+    client = await hat.event.eventer.connect(server_address)
     conn = await server.get_connection()
 
     conn.send_notify([])
@@ -205,7 +200,7 @@ async def test_client_register(server_address):
         for i in range(10)]
 
     server = await create_server(server_address)
-    client = await hat.event.eventer_client.connect(server_address)
+    client = await hat.event.eventer.connect(server_address)
     conn = await server.get_connection()
 
     client.register([])
@@ -251,7 +246,7 @@ async def test_client_register_with_response(server_address):
               for i, event in enumerate(events)]
 
     server = await create_server(server_address)
-    client = await hat.event.eventer_client.connect(server_address)
+    client = await hat.event.eventer.connect(server_address)
     conn = await server.get_connection()
 
     register_future = asyncio.ensure_future(client.register_with_response([]))
@@ -296,7 +291,7 @@ async def test_client_query(server_address):
         for i in range(10)]
 
     server = await create_server(server_address)
-    client = await hat.event.eventer_client.connect(server_address)
+    client = await hat.event.eventer.connect(server_address)
     conn = await server.get_connection()
 
     query_data = common.QueryData()
@@ -345,7 +340,7 @@ async def test_run_client(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_eventer_client(
+        hat.event.eventer.run_client(
             monitor_client, component_info.group, run_cb))
 
     with pytest.raises(asyncio.TimeoutError):
@@ -426,7 +421,7 @@ async def test_run_client_return(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_eventer_client(
+        hat.event.eventer.run_client(
             monitor_client, component_info.group, run_cb))
 
     monitor_client.change([component_info._replace(
@@ -455,7 +450,7 @@ async def test_run_client_exception(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_eventer_client(
+        hat.event.eventer.run_client(
             monitor_client, component_info.group, run_cb))
 
     monitor_client.change([component_info._replace(
@@ -474,8 +469,7 @@ async def test_run_client_exception(server_address, component_info):
     await server.async_close()
 
 
-async def test_run_client_reconnect(patch_reconnect_delay, server_address,
-                                    component_info):
+async def test_run_client_reconnect(server_address, component_info):
     client_queue = aio.Queue()
 
     async def run_cb(client):
@@ -489,8 +483,9 @@ async def test_run_client_reconnect(patch_reconnect_delay, server_address,
     server1 = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_eventer_client(
-            monitor_client, component_info.group, run_cb))
+        hat.event.eventer.run_client(
+            monitor_client, component_info.group, run_cb,
+            reconnect_delay=0.01))
 
     component1 = component_info._replace(
         blessing_req=hat.monitor.common.BlessingReq(token=123,
@@ -566,7 +561,7 @@ async def test_run_client_cancellation(server_address, component_info):
     server = await create_server(server_address)
 
     run_future = asyncio.ensure_future(
-        hat.event.eventer_client.run_eventer_client(
+        hat.event.eventer.run_client(
             monitor_client, component_info.group, run_cb))
 
     monitor_client.change([component_info._replace(

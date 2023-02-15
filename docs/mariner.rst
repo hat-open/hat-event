@@ -51,7 +51,7 @@ Single message is represented with JSON Object with mandatory property ``type``
 (value of this property is always string). Property with key ``type``
 represents type of communication message. Existence and semantics of other
 properties is dependent of message type. Structure of messages is defined
-by JSON Schema ``hat-event://mariner/messages.yaml#`` (see
+by JSON Schema ``hat-event://mariner.yaml#`` (see
 `JSON Schema definitions`_).
 
 Supported messages (identified by message type) are:
@@ -108,12 +108,6 @@ Communication
 ...
 
 
-Server
-------
-
-...
-
-
 Implementation
 --------------
 
@@ -125,8 +119,5 @@ Documentation is available as part of generated API reference:
 JSON Schema definitions
 -----------------------
 
-.. literalinclude:: ../schemas_json/mariner/messages.yaml
-    :language: yaml
-
-.. literalinclude:: ../schemas_json/mariner/server.yaml
+.. literalinclude:: ../schemas_json/mariner.yaml
     :language: yaml

@@ -7,14 +7,15 @@ Event Server is a central component responsible for registering, processing,
 storing and providing access to events.
 
 `Configuration`_ for Event Server is defined with schema
-``hat-event://main.yaml#``.
+``hat-event://server.yaml#``.
 
 
 Running
 -------
 
-By installing Event Server from `hat-event` package, executable `hat-event`
-becomes available and can be used for starting this component.
+By installing Event Server from `hat-event` package, executable
+`hat-event-server` becomes available and can be used for starting this
+component.
 
     .. program-output:: python -m hat.event.server --help
 
@@ -69,23 +70,22 @@ Event Server functionality can be defined by using the following components:
 
 .. uml::
 
-    folder "Component 1" <<Component>> {
-        component "Eventer Client" as EventerClient1
+    folder "Hat Component" <<Component>> {
+        component "Eventer Client" as EventerClient
     }
 
-    folder "Component 2" <<Component>> {
-        component " Eventer Client" as EventerClient2
+    folder "External Application" <<Component>> {
+        component "Mariner Client" as MarinerClient
     }
 
     folder "Event Server" {
         component "Eventer Server" as EventerServer
         component "Engine" as Engine
-        component "Module 1" <<Module>> as Module1
-        component "Module 2" <<Module>> as Module2
-        component "Module 3" <<Module>> as Module3
+        component "Module" <<Module>> as Module
         component "Backend" as Backend
         component "Syncer Server" as SyncerServer
         component "Syncer Client" as SyncerClient
+        component "Mariner Server" as MarinerServer
 
         interface subscribe
         interface notify
@@ -107,22 +107,15 @@ Event Server functionality can be defined by using the following components:
     EventerServer -- register
     EventerServer -- query
 
-    subscribe <-- EventerClient1
-    notify --> EventerClient1
-    register <-- EventerClient1
-    query <-- EventerClient1
-
-    subscribe <-- EventerClient2
-    notify --> EventerClient2
-    register <-- EventerClient2
-    query <-- EventerClient2
+    subscribe <-- EventerClient
+    notify --> EventerClient
+    register <-- EventerClient
+    query <-- EventerClient
 
     Engine <-> EventerServer
     Engine --> Backend
 
-    Module1 --o Engine
-    Module2 --o Engine
-    Module3 --o Engine
+    Module --o Engine
 
     Backend --> Database
 
@@ -134,8 +127,12 @@ Event Server functionality can be defined by using the following components:
     RemoteSyncerClient --> RemoteBackend
     RemoteBackend --> RemoteDatabase
 
-    RemoteSyncerClient --> SyncerServer
-    SyncerClient --> RemoteSyncerServer
+    RemoteSyncerClient -> SyncerServer
+    SyncerClient -> RemoteSyncerServer
+
+    MarinerClient <-- MarinerServer
+    MarinerServer <-- Backend
+    MarinerServer --> Engine
 
 
 Eventer Server
@@ -168,7 +165,7 @@ closed. These events are defined by unique `event type`:
         * `source_timestamp` is ``None``
 
         * `payload` is specified by
-          ``hat-event://main.yaml#/definitions/events/eventer``.
+          ``hat-event://server.yaml#/definitions/events/eventer``.
 
 This events are registered through `Engine`_ with `Source.type` ``EVENTER``.
 
@@ -219,7 +216,7 @@ defined with unique event type:
         * `source_timestamp` is ``None``
 
         * `payload` is specified by
-          ``hat-event://main.yaml#/definitions/events/syncer/client``.
+          ``hat-event://server.yaml#/definitions/events/syncer/client``.
 
 More precisely, this event is not registered by the Syncer Client itself, but
 Event Server registers it on behalf of Syncer Client, with `Source.type` set to
@@ -258,7 +255,7 @@ time this state changes. Event is defined with unique event type:
         * `source_timestamp` is ``None``
 
         * `payload` is specified by
-          ``hat-event://main.yaml#/definitions/events/syncer/server``.
+          ``hat-event://server.yaml#/definitions/events/syncer/server``.
 
 More precisely, this event is not registered by the Syncer Server itself, but
 Event Server registers it on behalf of Syncer Server, with `Source.type` set to
@@ -284,6 +281,12 @@ represented with:
 
 Multiple clients can be connected to a server, where each connection is handled
 independently, as described.
+
+
+Mariner Server
+''''''''''''''
+
+...
 
 
 Engine
@@ -344,7 +347,7 @@ stopped. Event is registered by Engine, with `Source.Type` set to
         * `source timestamp` - None
 
         * `payload`  is specified by
-          ``hat-event://main.yaml#/definitions/events/engine``.
+          ``hat-event://server.yaml#/definitions/events/engine``.
 
 
 Modules
@@ -400,7 +403,7 @@ Documentation is available as part of generated API reference:
 Configuration
 -------------
 
-.. literalinclude:: ../schemas_json/main.yaml
+.. literalinclude:: ../schemas_json/server.yaml
     :language: yaml
 
 

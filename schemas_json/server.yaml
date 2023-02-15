@@ -1,6 +1,6 @@
 ---
 "$schema": "http://json-schema.org/schema#"
-id: "hat-event://main.yaml#"
+id: "hat-event://server.yaml#"
 title: Event Server
 description: Event Server's configuration
 type: object
@@ -28,13 +28,13 @@ properties:
     log:
         "$ref": "hat-json://logging.yaml#"
     backend:
-        "$ref": "hat-event://main.yaml#/definitions/backend"
+        "$ref": "hat-event://server.yaml#/definitions/backend"
     engine:
-        "$ref": "hat-event://main.yaml#/definitions/engine"
+        "$ref": "hat-event://server.yaml#/definitions/engine"
     eventer_server:
-        "$ref": "hat-event://main.yaml#/definitions/eventer_server"
+        "$ref": "hat-event://server.yaml#/definitions/eventer_server"
     syncer_server:
-        "$ref": "hat-event://main.yaml#/definitions/syncer_server"
+        "$ref": "hat-event://server.yaml#/definitions/syncer_server"
 definitions:
     backend:
         type: object
@@ -69,7 +69,7 @@ definitions:
             modules:
                 type: array
                 items:
-                    "$ref": "hat-event://main.yaml#/definitions/module"
+                    "$ref": "hat-event://server.yaml#/definitions/module"
     eventer_server:
         type: object
         required:

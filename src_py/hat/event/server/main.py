@@ -13,16 +13,17 @@ import appdirs
 
 from hat import aio
 from hat import json
+import hat.monitor.client
+import hat.monitor.common
+
 from hat.event.server import common
 from hat.event.server.engine import create_engine
 from hat.event.server.eventer_server import create_eventer_server
 from hat.event.server.syncer_server import (create_syncer_server,
                                             SyncerServer)
-from hat.event.syncer_client import (create_syncer_client,
-                                     SyncerClientState,
-                                     SyncerClient)
-import hat.monitor.client
-import hat.monitor.common
+from hat.event.server.syncer_client import (create_syncer_client,
+                                            SyncerClientState,
+                                            SyncerClient)
 
 
 mlog: logging.Logger = logging.getLogger('hat.event.server.main')
@@ -41,7 +42,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--conf', metavar='PATH', type=Path, default=None,
-        help="configuration defined by hat-event://main.yaml# "
+        help="configuration defined by hat-event://server.yaml# "
              "(default $XDG_CONFIG_HOME/hat/event.{yaml|yml|json})")
     return parser
 
@@ -70,7 +71,7 @@ def sync_main(conf: json.Data):
     """Sync main entry point"""
     aio.init_asyncio()
 
-    common.json_schema_repo.validate('hat-event://main.yaml#', conf)
+    common.json_schema_repo.validate('hat-event://server.yaml#', conf)
 
     sub_confs = [conf['backend'], *conf['engine']['modules']]
     for sub_conf in sub_confs:
@@ -277,5 +278,5 @@ async def run_engine(component: typing.Optional[hat.monitor.client.Component],
 
 
 if __name__ == '__main__':
-    sys.argv[0] = 'hat-event'
+    sys.argv[0] = 'hat-event-server'
     sys.exit(main())
