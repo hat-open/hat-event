@@ -5,16 +5,15 @@ import logging
 import typing
 
 from hat import aio
-from hat import chatter
 from hat import util
-from hat.event.server import common
-import hat.event.common.data
 import hat.monitor.client
+
+from hat.event.server import common
+import hat.event.syncer
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
-
 
 reconnect_delay: float = 10
 """Reconnect delay"""
@@ -185,12 +184,24 @@ class _Connection(aio.Resource):
     def synced(self):
         return self._synced
 
+    def _on_synced(self):
+        self._synced = True
+        self._state_cb(SyncerClientState.SYNCED)
+
     async def _connection_loop(self):
         while True:
             try:
+                mlog.debug("querying last event id")
+                last_event_id = await self._backend.get_last_event_id(
+                    self._server_id)
+
                 mlog.debug("connecting to syncer server")
-                conn = await chatter.connect(common.sbs_repo, self._address,
-                                             **self._kwargs)
+                client = await hat.event.syncer.connect(
+                    address=self._address,
+                    client_name=self._client_name,
+                    last_event_id=last_event_id,
+                    synced_cb=self._on_synced,
+                    events_cb=self._backend.register)
 
             except Exception:
                 mlog.debug("can not connect to syncer server")
@@ -198,55 +209,18 @@ class _Connection(aio.Resource):
                 continue
 
             try:
-                last_event_id = await self._backend.get_last_event_id(
-                    self._server_id)
-                msg_data = chatter.Data(
-                    module='HatSyncer',
-                    type='MsgReq',
-                    data=hat.event.common.data.syncer_req_to_sbs(
-                         hat.event.common.data.SyncerReq(last_event_id,
-                                                         self._client_name)))
-                conn.send(msg_data)
-
-                self._state_cb(SyncerClientState.CONNECTED)
                 self._synced = False
-                try:
-                    while True:
-                        mlog.debug("waiting for incoming message")
-                        msg = await conn.receive()
-                        msg_type = msg.data.module, msg.data.type
+                self._state_cb(SyncerClientState.CONNECTED)
 
-                        if msg_type == ('HatSyncer', 'MsgEvents'):
-                            mlog.debug("received events")
-                            events = [common.event_from_sbs(i)
-                                      for i in msg.data.data]
-                            await self._backend.register(events)
-                            self._events_cb(events)
-
-                        elif msg_type == ('HatSyncer', 'MsgSynced'):
-                            mlog.debug("received synced")
-                            self._state_cb(SyncerClientState.SYNCED)
-                            self._synced = True
-
-                        elif msg_type == ('HatSyncer', 'MsgFlushReq'):
-                            mlog.debug("received flush request")
-                            conn.send(chatter.Data(module='HatSyncer',
-                                                   type='MsgFlushRes',
-                                                   data=None),
-                                      conv=msg.conv)
-
-                        else:
-                            raise Exception("unsupported message type")
-
-                finally:
-                    self._state_cb(SyncerClientState.DISCONNECTED)
-                    self._synced = False
-
-            except ConnectionError:
-                pass
+                await client.wait_closing()
 
             except Exception as e:
                 mlog.error("connection loop error: %s", e, exc_info=e)
 
             finally:
-                await aio.uncancellable(conn.async_close())
+                try:
+                    await aio.uncancellable(client.async_close())
+
+                finally:
+                    self._synced = False
+                    self._state_cb(SyncerClientState.DISCONNECTED)

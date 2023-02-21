@@ -26,6 +26,10 @@ module (see `Chatter messages`_), are the following:
     +--------------------+-------+------+-------+-----------+
     | MsgEvents          | T     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
+    | MsgFlushReq        | T     | F    | T     | s |arr| c |
+    +--------------------+-------+------+-------+-----------+
+    | MsgFlushRes        | F     | T    | T     | c |arr| s |
+    +--------------------+-------+------+-------+-----------+
 
 Communication between Syncer Client and server starts with synchronization
 request initiated by the client with `MsgReq` message. The connection between
