@@ -10,7 +10,7 @@ required:
     - backend
     - engine
     - eventer_server
-    - syncer_server
+    - synced_restart_engine
 properties:
     type:
         const: event
@@ -35,6 +35,8 @@ properties:
         "$ref": "hat-event://server.yaml#/definitions/eventer_server"
     syncer_server:
         "$ref": "hat-event://server.yaml#/definitions/syncer_server"
+    synced_restart_engine:
+        type: boolean
 definitions:
     backend:
         type: object

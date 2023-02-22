@@ -118,7 +118,8 @@ class SyncerClient(aio.Resource):
                                          info.data['server_id'],
                                          info.data['syncer_server_address'])
                             continue
-                        server_id_addresses[info.data['server_id']] = info.data['syncer_server_address']  # NOQA
+                        server_id_addresses[info.data['server_id']] = \
+                            info.data['syncer_server_address']
 
                     for server_id, address in server_id_addresses.items():
                         conn = self._conns.get(server_id)
