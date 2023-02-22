@@ -210,8 +210,7 @@ class EngineRunner(aio.Resource):
                 exit_stack.enter_context(
                     self._syncer_server.register_state_cb(
                         self._on_syncer_server_state))
-                self._on_syncer_server_state(
-                    list(self._syncer_server.state))
+                self._on_syncer_server_state(self._syncer_server.state)
 
             self._restart_future = asyncio.Future()
             self._synced = True

@@ -57,12 +57,12 @@ class Server(aio.Resource):
     @property
     def async_group(self):
         """Async group"""
-        return self._srv.async_group
+        return self._server.async_group
 
     @property
-    def state(self) -> typing.Iterable[ClientInfo]:
+    def state(self) -> typing.List[ClientInfo]:
         """State of all active connections"""
-        return self._state.values()
+        return list(self._state.values())
 
     def register_state_cb(self,
                           cb: StateCb
@@ -78,6 +78,9 @@ class Server(aio.Resource):
         """Send flush requests and wait for flush responses"""
         if not self.is_open:
             await self.wait_closed()
+            return
+
+        if not self._clients:
             return
 
         await asyncio.wait([self.async_group.spawn(client.flush)

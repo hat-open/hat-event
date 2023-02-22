@@ -5,9 +5,10 @@ import pytest
 from hat import aio
 from hat import chatter
 from hat import util
-from hat.event import common
-from hat.event.syncer_client import create_syncer_client, SyncerClient
 import hat.monitor.common
+
+from hat.event.server import common
+from hat.event.server.syncer_client import create_syncer_client, SyncerClient
 
 
 @pytest.fixture
