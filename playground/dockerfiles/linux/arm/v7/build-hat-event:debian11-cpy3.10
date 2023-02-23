@@ -1,0 +1,10 @@
+FROM python:3.10-bullseye as base
+RUN apt update -qy && \
+    apt install -qy build-essential wget git \
+                    libffi-dev lzma-dev libssl-dev libsqlite3-dev
+
+FROM base
+WORKDIR /hat
+VOLUME /hat/dist
+VOLUME /root/.cache/pip
+COPY . .
