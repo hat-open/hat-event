@@ -7,8 +7,9 @@ import asyncio
 import contextlib
 
 from hat import aio
+
 from hat.event import common
-import hat.event.client
+import hat.event.eventer
 
 def main():
     aio.init_asyncio()
@@ -16,7 +17,7 @@ def main():
         aio.run_asyncio(async_main())
 
 async def async_main():
-    conn = await hat.event.client.connect('tcp+sbs://127.0.0.1:23012')
+    conn = await hat.event.eventer.connect('tcp+sbs://127.0.0.1:23012')
     try:
         await conn.register_with_response([common.RegisterEvent(
             event_type=('a', 'b', 'c'),

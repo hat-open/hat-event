@@ -109,7 +109,7 @@ class MainRunner(aio.Resource):
 
     async def _start_monitor_component(self):
 
-        async def on_run(self, monitor_component):
+        async def on_run(monitor_component):
             engine_runner = EngineRunner(self._conf, self._backend,
                                          self._syncer_server,
                                          self._syncer_client)
@@ -191,7 +191,8 @@ class EngineRunner(aio.Resource):
                 finally:
                     await self._eventer_server.async_close()
                     await self._engine.async_close()
-                    await self._subgroup.async_close()
+
+                    await subgroup.async_close()
 
         except Exception as e:
             mlog.error("engine runner loop error: %s", e, exc_info=e)

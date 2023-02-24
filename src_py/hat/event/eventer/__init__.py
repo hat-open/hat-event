@@ -1,13 +1,13 @@
 """Eventer communication protocol
 
-This package provides eventer client as:
-    * low-level interface - `connect`/`EventerClient`
-    * high-level interface - `run_client`
+This package provides Eventer Client as:
+    * low-level interface - `Client`
+    * high-level interface - `Component`
 
 `connect` is used for establishing single eventer connection
-with Eventer Server which is represented by `EventerClient`. Once
-connection is terminated (signaled with `EventerClient.closed`),
-it is up to user to repeat `connect` call and create new `EventerClient`
+with Eventer Server which is represented by `Client`. Once
+connection is terminated (signaled with `Client.closed`),
+it is up to user to repeat `connect` call and create new `Client`
 instance, if additional communication with Event Server is required.
 
 Example of low-level interface usage::
@@ -36,41 +36,21 @@ Example of low-level interface usage::
 
     await client.async_close()
 
-`run_client` provides high-level interface for continuous
-communication with currenty active Event Server based on information obtained
-from Monitor Server. This function repeatedly tries to create active connection
+`Component` provides high-level interface for continuous communication with
+currenty active Event Server based on information obtained from Monitor Server.
+This implementation repeatedly tries to create active connection
 with Eventer Server. When this connection is created, users code is notified by
-calling `run_cb` callback. Once connection is closed, execution of
-`run_cb` is cancelled and `run_client` repeats connection
-estabishment process.
-
-Example of high-level interface usage::
-
-    async def monitor_run(component):
-        await hat.event.eventer.run_client(
-            monitor_client=monitor,
-            server_group='event servers',
-            run_cb=event_run])
-
-    async def event_run(client):
-        while True:
-            assert not client.is_closed
-            await asyncio.sleep(10)
-
-    monitor = await hat.monitor.client.connect({
-        'name': 'client',
-        'group': 'test clients',
-        'monitor_address': 'tcp+sbs://127.0.0.1:23010'})
-    component = hat.monitor.client.Component(monitor, monitor_run)
-    component.set_enabled(True)
-    await monitor.async_close()
+calling `component_cb` callback. Once connection is closed, user defined
+resource, resulting from `component_cb`, is cancelled and `Component` repeats
+connection estabishment process.
 
 """
 
-from hat.event.eventer.client import (RunClientCb,
-                                      connect,
+from hat.event.eventer.client import (connect,
                                       Client,
-                                      run_client)
+                                      Runner,
+                                      ComponentCb,
+                                      Component)
 from hat.event.eventer.server import (ClientId,
                                       ClientCb,
                                       RegisterCb,
@@ -79,10 +59,11 @@ from hat.event.eventer.server import (ClientId,
                                       Server)
 
 
-__all__ = ['RunClientCb',
-           'connect',
+__all__ = ['connect',
            'Client',
-           'run_client',
+           'Runner',
+           'ComponentCb',
+           'Component',
            'ClientId',
            'ClientCb',
            'RegisterCb',

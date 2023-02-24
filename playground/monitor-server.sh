@@ -3,10 +3,10 @@
 . $(dirname -- "$0")/env.sh
 
 LOG_LEVEL=DEBUG
-CONF_PATH=$DATA_PATH/event.yaml
+CONF_PATH=$DATA_PATH/monitor.yaml
 
 cat > $CONF_PATH << EOF
-type: event
+type: monitor
 log:
     version: 1
     formatters:
@@ -18,28 +18,28 @@ log:
             formatter: console_formatter
             level: DEBUG
     loggers:
-        hat.event:
+        hat.monitor:
             level: $LOG_LEVEL
     root:
         level: INFO
         handlers: ['console_handler']
     disable_existing_loggers: false
-monitor:
-    name: event
-    group: event
-    monitor_address: "tcp+sbs://127.0.0.1:23010"
-backend:
-    module: hat.event.server.backends.dummy
-engine:
-    server_id: 1
-    modules: []
-eventer_server:
-    address: "tcp+sbs://localhost:23012"
-syncer_server:
-    address: "tcp+sbs://localhost:23013"
-synced_restart_engine: false
+server:
+    address: "tcp+sbs://127.0.0.1:23010"
+    default_rank: 1
+master:
+    address: "tcp+sbs://127.0.0.1:23011"
+    default_algorithm: BLESS_ONE
+    group_algorithms: {}
+slave:
+    parents: []
+    connect_timeout: 5
+    connect_retry_count: 3
+    connect_retry_delay: 5
+ui:
+    address: "http://127.0.0.1:23022"
 EOF
 
-exec $PYTHON -m hat.event.server \
+exec $PYTHON -m hat.monitor.server \
     --conf $CONF_PATH \
     "$@"

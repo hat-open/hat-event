@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import logging
 import typing
 
@@ -13,9 +12,6 @@ from hat.event import common
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
-
-RunClientCb = typing.Callable[['Client'], typing.Awaitable]
-"""Event client run callback coroutine"""
 
 
 async def connect(address: str,
@@ -198,131 +194,180 @@ class Client(aio.Resource):
         f.set_result(events)
 
 
-async def run_client(monitor_client: hat.monitor.client.Client,
-                     server_group: str,
-                     run_cb: RunClientCb,
-                     subscriptions: typing.List[common.EventType] = [],
-                     reconnect_delay: float = 0.5
-                     ) -> typing.Any:
-    """Continuously communicate with currently active Event Server
+Runner = aio.Resource
+"""Component runner"""
 
-    This function tries to establish active connection with Event Server
-    within monitor component group `server_group`. Once this connection is
-    established, `run_cb` is called with currently active `Client`
-    instance. Once connection to Event Server is closed or new active Event
-    Server is detected, execution of `run_cb` is canceled. If new
+ComponentCb = typing.Callable[[Client], Runner]
+"""Component callback"""
+
+
+class Component(aio.Resource):
+    """Eventer component
+
+    High-level interface for communication with Event Server, based on
+    information obtained from Monitor Server.
+
+    Instance of this class tries to establish active connection with
+    Event Server within monitor component group `server_group`. Once this
+    connection is established, `component_cb` is called with currently active
+    `Client` instance. Result of calling `component_cb` should be `Runner`
+    representing user defined components activity associated with connection
+    to active Event Server. Once connection to Event Server is closed or new
+    active Event Server is detected, associated `Runner` is closed. If new
     connection to Event Server is successfully established,
-    `run_cb` is called with new instance of `Client`.
+    `component_cb` will be called again to create new `Runner` associated with
+    new instance of `Client`.
 
-    `run_cb` is called when:
+    `component_cb` is called when:
         * new active `Client` is created
 
-    `run_cb` execution is cancelled when:
-        * `run_client` finishes execution
+    `Runner`, returned by `component_cb`, is closed when:
+        * `Component` is closed
         * connection to Event Server is closed
         * different active Event Server is detected from Monitor Server's list
           of components
 
-    `run_client` finishes execution when:
+    `Component` is closed when:
         * connection to Monitor Server is closed
-        * `run_cb` finishes execution (by returning value or raising
-          exception, other than `asyncio.CancelledError`)
-
-    Return value of this function is the same as return value of
-    `run_cb`. If `run_cb` finishes by raising exception or if
-    connection to Monitor Server is closed, ConnectionError is raised.
-
-    If execution of `run_client` is canceled while `run_cb` is
-    running, connection to Event Server is closed after `run_cb`
-    cancellation finishes.
+        * `Runner`, returned by `component_cb`, is closed by causes other
+          than change of active Event Server
 
     `reconnect_delay` defines delay in seconds before trying to reconnect to
     Event Server.
 
     """
-    async_group = aio.Group()
-    address_queue = aio.Queue()
-    async_group.spawn(aio.call_on_done, monitor_client.wait_closing(),
-                      address_queue.close)
-    async_group.spawn(_address_loop, monitor_client, server_group,
-                      address_queue)
 
-    address = None
-    try:
-        while True:
-            while not address:
-                address = await address_queue.get_until_empty()
+    def __init__(self,
+                 monitor_client: hat.monitor.client.Client,
+                 server_group: str,
+                 component_cb: ComponentCb,
+                 subscriptions: typing.List[common.EventType] = [],
+                 reconnect_delay: float = 0.5):
+        self._monitor_client = monitor_client
+        self._server_group = server_group
+        self._component_cb = component_cb
+        self._subscriptions = subscriptions
+        self._reconnect_delay = reconnect_delay
+        self._async_group = aio.Group()
+        self._address_queue = aio.Queue()
 
-            async with async_group.create_subgroup() as subgroup:
-                address_future = subgroup.spawn(address_queue.get_until_empty)
-                client_future = subgroup.spawn(_client_loop, address,
-                                               subscriptions, reconnect_delay,
-                                               run_cb)
+        self.async_group.spawn(self._monitor_loop)
+        self.async_group.spawn(self._address_loop)
 
-                await asyncio.wait([address_future, client_future],
-                                   return_when=asyncio.FIRST_COMPLETED)
+        self.async_group.spawn(aio.call_on_done, monitor_client.wait_closing(),
+                               self.close)
 
-                if address_future.done():
-                    address = address_future.result()
-                else:
-                    return client_future.result()
+    @property
+    def async_group(self):
+        return self._async_group
 
-    except aio.QueueClosedError:
-        raise ConnectionError()
+    async def _monitor_loop(self):
+        last_address = None
+        changes = aio.Queue()
 
-    finally:
-        await aio.uncancellable(async_group.async_close())
+        def on_change():
+            changes.put_nowait(None)
 
+        def info_filter(info):
+            return (info.group == self._server_group and
+                    info.blessing_req.token is not None and
+                    info.blessing_req.token == info.blessing_res.token)
 
-async def _address_loop(monitor_client, server_group, address_queue):
-    last_address = None
-    changes = aio.Queue()
-
-    with monitor_client.register_change_cb(lambda: changes.put_nowait(None)):
-        while True:
-            info = util.first(monitor_client.components, lambda c: (
-                c.group == server_group and
-                c.blessing_req.token is not None and
-                c.blessing_req.token == c.blessing_res.token))
-            address = info.data['eventer_server_address'] if info else None
-
-            if (address and address != last_address and
-                    not address_queue.is_closed):
-                mlog.debug("new server address: %s", address)
-                last_address = address
-                address_queue.put_nowait(address)
-
-            await changes.get()
-
-
-async def _client_loop(address, subscriptions, reconnect_delay, run_cb):
-    while True:
-        client = None
         try:
-            mlog.debug("connecting to server %s", address)
-            try:
-                client = await connect(address, subscriptions)
-            except Exception as e:
-                mlog.warning("error connecting to server: %s", e, exc_info=e)
-                await asyncio.sleep(reconnect_delay)
-                continue
+            with self._monitor_client.register_change_cb(on_change):
+                while True:
+                    info = util.first(self._monitor_client.components,
+                                      info_filter)
+                    address = (info.data.get('eventer_server_address')
+                               if info else None)
 
-            mlog.debug("connected to server - running run_cb")
+                    if address and address != last_address:
+                        mlog.debug("new server address: %s", address)
+                        last_address = address
+                        self._address_queue.put_nowait(address)
 
-            subgroup = client.async_group.create_subgroup()
-            try:
-                run_future = subgroup.spawn(run_cb, client)
-                await asyncio.wait([run_future])
+                    await changes.get()
 
-                with contextlib.suppress(asyncio.CancelledError):
-                    return run_future.result()
-
-            finally:
-                await aio.uncancellable(subgroup.async_close())
+        except Exception as e:
+            mlog.error("component monitor loop error: %s", e, exc_info=e)
 
         finally:
-            if client:
-                await aio.uncancellable(client.async_close())
+            self.close()
 
-        mlog.debug("connection to server closed")
-        await asyncio.sleep(reconnect_delay)
+    async def _address_loop(self):
+        try:
+            address = None
+            while True:
+                while not address:
+                    address = await self._address_queue.get_until_empty()
+
+                async with self.async_group.create_subgroup() as subgroup:
+                    address_future = subgroup.spawn(
+                        self._address_queue.get_until_empty)
+                    client_future = subgroup.spawn(self._client_loop, address)
+
+                    await asyncio.wait([address_future, client_future],
+                                       return_when=asyncio.FIRST_COMPLETED)
+
+                    if address_future.done():
+                        address = address_future.result()
+
+                    elif client_future.done():
+                        break
+
+        except Exception as e:
+            mlog.error("component address loop error: %s", e, exc_info=e)
+
+        finally:
+            self.close()
+
+    async def _client_loop(self, address):
+        try:
+            while True:
+                try:
+                    mlog.debug("connecting to server %s", address)
+                    client = await connect(address, self._subscriptions)
+
+                except Exception as e:
+                    mlog.warning("error connecting to server: %s", e,
+                                 exc_info=e)
+                    await asyncio.sleep(self._reconnect_delay)
+                    continue
+
+                try:
+                    mlog.debug("connected to server")
+                    async with self.async_group.create_subgroup() as subgroup:
+                        client_future = subgroup.spawn(client.wait_closing)
+                        runner_future = subgroup.spawn(self._runner_loop,
+                                                       client)
+
+                        await asyncio.wait([client_future, runner_future],
+                                           return_when=asyncio.FIRST_COMPLETED)
+
+                        if client_future.done():
+                            pass
+
+                        elif runner_future.done():
+                            break
+
+                finally:
+                    await aio.uncancellable(client.async_close())
+
+                mlog.debug("connection to server closed")
+                await asyncio.sleep(self._reconnect_delay)
+
+        except Exception as e:
+            mlog.error("component client loop error: %s", e, exc_info=e)
+
+    async def _runner_loop(self, client):
+        try:
+            runner = self._component_cb(client)
+
+            try:
+                await runner.wait_closing()
+
+            finally:
+                await aio.uncancellable(runner.async_close())
+
+        except Exception as e:
+            mlog.error("component runner loop error: %s", e, exc_info=e)
