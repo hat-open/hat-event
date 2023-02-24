@@ -149,7 +149,7 @@ Implementation
 
 Documentation is available as part of generated API reference:
 
-    * `Python hat.event module <py_api/hat/event/eventer.html>`_
+    * `Python hat.event.eventer module <py_api/hat/event/eventer.html>`_
 
 
 Chatter messages

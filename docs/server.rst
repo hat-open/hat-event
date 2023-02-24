@@ -397,7 +397,7 @@ Implementation
 
 Documentation is available as part of generated API reference:
 
-    * `Python hat.event module <py_api/hat/event/server.html>`_
+    * `Python hat.event.server module <py_api/hat/event/server.html>`_
 
 
 Configuration

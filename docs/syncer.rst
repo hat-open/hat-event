@@ -64,7 +64,7 @@ Implementation
 
 Documentation is available as part of generated API reference:
 
-    * `Python hat.event module <py_api/hat/event/syncer.html>`_
+    * `Python hat.event.syncer module <py_api/hat/event/syncer.html>`_
 
 
 Chatter messages
