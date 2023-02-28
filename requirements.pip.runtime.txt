@@ -1,6 +1,7 @@
 appdirs ~= 1.4.4
 hat-aio ~= 0.7.4
 hat-chatter ~= 0.5.10
+hat-drivers ~= 0.6.10
 hat-json ~= 0.5.15
 hat-monitor >= 0.6.10, < 0.8.0
 hat-sbs ~= 0.6.3
