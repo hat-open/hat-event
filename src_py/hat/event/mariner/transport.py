@@ -15,7 +15,7 @@ class Transport(aio.Resource):
         self._conn = conn
 
     @property
-    def async_group(self):
+    def async_group(self) -> aio.Group:
         return self._conn.async_group
 
     async def drain(self):
