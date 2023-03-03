@@ -88,7 +88,7 @@ async def test_events(address, events):
 
     srv_conn = await srv_conn_queue.get()
 
-    srv_conn.notify(events)
+    srv_conn.send_events(events)
 
     msg = await conn.receive()
     assert msg == common.EventsMsg(events)

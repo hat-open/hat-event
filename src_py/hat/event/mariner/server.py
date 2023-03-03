@@ -100,8 +100,8 @@ class ServerConnection(aio.Resource):
         """Subscription"""
         return self._subscription
 
-    def notify(self, events: typing.List[common.Event]):
-        """Notify events"""
+    def send_events(self, events: typing.List[common.Event]):
+        """Send events"""
         self._transport.send(common.EventsMsg(events=events))
 
     async def _receive_loop(self):

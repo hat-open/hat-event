@@ -12,6 +12,7 @@ import hat.monitor.common
 from hat.event.server import common
 from hat.event.server.engine import create_engine
 from hat.event.server.eventer_server import create_eventer_server
+from hat.event.server.mariner_server import create_mariner_server
 from hat.event.server.syncer_server import (create_syncer_server,
                                             SyncerServer)
 from hat.event.server.syncer_client import (create_syncer_client,
@@ -30,6 +31,7 @@ class MainRunner(aio.Resource):
         self._async_group = aio.Group()
         self._backend = None
         self._syncer_server = None
+        self._mariner_server = None
         self._monitor_client = None
         self._syncer_client = None
         self._monitor_component = None
@@ -59,6 +61,9 @@ class MainRunner(aio.Resource):
         if 'syncer_server' in self._conf:
             await self._start_syncer_server()
 
+        if 'mariner_server' in self._conf:
+            await self._start_mariner_server()
+
         if 'monitor' in self._conf:
             await self._start_monitor_client()
             await self._start_syncer_client()
@@ -79,6 +84,13 @@ class MainRunner(aio.Resource):
             self._backend)
 
         _bind_resource(self.async_group, self._syncer_server)
+
+    async def _start_mariner_server(self):
+        self._mariner_server = await create_mariner_server(
+            self._conf['mariner_server'],
+            self._backend)
+
+        _bind_resource(self.async_group, self._mariner_server)
 
     async def _start_monitor_client(self):
         data = {
@@ -145,6 +157,9 @@ class MainRunner(aio.Resource):
 
         if self._monitor_client:
             await self._monitor_client.async_close()
+
+        if self._mariner_server:
+            await self._mariner_server.async_close()
 
         if self._syncer_server:
             with contextlib.suppress(Exception):
@@ -273,7 +288,7 @@ class EngineRunner(aio.Resource):
                 type=common.EventPayloadType.JSON,
                 data=True))
 
-        if self._conf['synced_restart_engine'] and not self._synced:
+        if self._conf.get('synced_restart_engine') and not self._synced:
             self.async_group.spawn(register_with_restart, [event])
 
         else:

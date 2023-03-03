@@ -10,7 +10,6 @@ required:
     - backend
     - engine
     - eventer_server
-    - synced_restart_engine
 properties:
     type:
         const: event
@@ -35,6 +34,8 @@ properties:
         "$ref": "hat-event://server.yaml#/definitions/eventer_server"
     syncer_server:
         "$ref": "hat-event://server.yaml#/definitions/syncer_server"
+    mariner_server:
+        "$ref": "hat-event://server.yaml#/definitions/mariner_server"
     synced_restart_engine:
         type: boolean
 definitions:
@@ -79,7 +80,7 @@ definitions:
         properties:
             address:
                 type: string
-                default: "tcp+sbs://localhost:23012"
+                default: "tcp+sbs://127.0.0.1:23012"
     syncer_server:
         type: object
         required:
@@ -87,7 +88,15 @@ definitions:
         properties:
             address:
                 type: string
-                default: "tcp+sbs://localhost:23013"
+                default: "tcp+sbs://127.0.0.1:23013"
+    mariner_server:
+        type: object
+        required:
+            - address
+        properties:
+            address:
+                type: string
+                default: "tcp://127.0.0.1:23014"
     events:
         eventer:
             enum:
