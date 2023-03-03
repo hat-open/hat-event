@@ -58,7 +58,7 @@ def decode_msg(msg: json.Data):
 
         return common.InitMsg(client_id=client_id,
                               client_token=client_token,
-                              laste_event_id=last_event_id,
+                              last_event_id=last_event_id,
                               subscriptions=subscriptions)
 
     if msg['type'] == 'events':
@@ -139,7 +139,7 @@ def _encode_event_payload(payload):
         return {'type': 'json',
                 'data': payload.data}
 
-    if payload.type == common.EventPayloadType.BINARY:
+    if payload.type == common.EventPayloadType.SBS:
         sbs_data = str(base64.b64encode(payload.data.data), 'utf-8')
 
         return {'type': 'sbs',
@@ -163,7 +163,7 @@ def _decode_event_payload(payload):
             type=common.EventPayloadType.JSON,
             data=payload['data'])
 
-    if payload['type'] == 'binary':
+    if payload['type'] == 'sbs':
         sbs_module = payload['data']['module']
         if not (sbs_module is None or isinstance(sbs_module, str)):
             raise ValueError('invalid sbs module')

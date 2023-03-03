@@ -49,4 +49,4 @@ class Transport(aio.Resource):
         msg_str = str(msg_bytes, 'utf-8')
         msg_json = json.decode(msg_str)
 
-        return encoder.decod_msg(msg_json)
+        return encoder.decode_msg(msg_json)

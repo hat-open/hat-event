@@ -43,8 +43,8 @@ async def connect(address: tcp.Address,
                                               last_event_id=last_event_id,
                                               subscriptions=subscriptions))
 
-        client.spawn(client._receive_loop)
-        client.spawn(client._ping_loop)
+        client.async_group.spawn(client._receive_loop)
+        client.async_group.spawn(client._ping_loop)
 
     except BaseException:
         await aio.uncancellable(conn.async_close())
@@ -96,12 +96,14 @@ class Client(aio.Resource):
                 self._ping_event.clear()
 
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(self._ping_event, self._ping_delay)
+                    await asyncio.wait_for(self._ping_event.wait(),
+                                           self._ping_delay)
                     continue
 
                 self._transport.send(common.PingMsg())
 
-                await asyncio.wait_for(self._ping_event, self._ping_timeout)
+                await asyncio.wait_for(self._ping_event.wait(),
+                                       self._ping_timeout)
 
         except ConnectionError:
             pass

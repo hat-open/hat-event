@@ -65,7 +65,7 @@ class Server(aio.Resource):
             srv_conn.async_group.spawn(srv_conn._receive_loop)
             srv_conn.async_group.spawn(srv_conn._ping_loop)
 
-            await aio.call(self._connection_cb, conn)
+            await aio.call(self._connection_cb, srv_conn)
 
         except Exception as e:
             mlog.error("on connection error: %s", e, exc_info=e)
@@ -135,12 +135,14 @@ class ServerConnection(aio.Resource):
                 self._ping_event.clear()
 
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(self._ping_event, self._ping_delay)
+                    await asyncio.wait_for(self._ping_event.wait(),
+                                           self._ping_delay)
                     continue
 
                 self._transport.send(common.PingMsg())
 
-                await asyncio.wait_for(self._ping_event, self._ping_timeout)
+                await asyncio.wait_for(self._ping_event.wait(),
+                                       self._ping_timeout)
 
         except ConnectionError:
             pass
