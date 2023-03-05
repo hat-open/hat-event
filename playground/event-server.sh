@@ -34,10 +34,11 @@ engine:
     server_id: 1
     modules: []
 eventer_server:
-    address: "tcp+sbs://localhost:23012"
+    address: "tcp+sbs://127.0.0.1:23012"
 syncer_server:
-    address: "tcp+sbs://localhost:23013"
-synced_restart_engine: false
+    address: "tcp+sbs://127.0.0.1:23013"
+mariner_server:
+    address: "tcp://127.0.0.1:23014"
 EOF
 
 exec $PYTHON -m hat.event.server \

@@ -32,6 +32,7 @@ async def listen(address: tcp.Address,
     server._server = await tcp.listen(server._on_connection, address,
                                       bind_connections=True)
 
+    mlog.debug('listening on %s', address)
     return server
 
 
@@ -106,6 +107,8 @@ class ServerConnection(aio.Resource):
 
     async def _receive_loop(self):
         try:
+            mlog.debug("starting receive loop")
+
             while True:
                 msg = await self._transport.receive()
                 self._ping_event.set()
@@ -131,18 +134,20 @@ class ServerConnection(aio.Resource):
 
     async def _ping_loop(self):
         try:
+            mlog.debug("starting ping loop")
+
             while True:
                 self._ping_event.clear()
 
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(self._ping_event.wait(),
-                                           self._ping_delay)
+                    await aio.wait_for(self._ping_event.wait(),
+                                       self._ping_delay)
                     continue
 
                 self._transport.send(common.PingMsg())
 
-                await asyncio.wait_for(self._ping_event.wait(),
-                                       self._ping_timeout)
+                await aio.wait_for(self._ping_event.wait(),
+                                   self._ping_timeout)
 
         except ConnectionError:
             pass

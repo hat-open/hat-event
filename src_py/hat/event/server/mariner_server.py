@@ -56,7 +56,7 @@ class MarinerServer(aio.Resource):
             mlog.error("on connection error: %s", e, exc_info=e)
             conn.close()
 
-        await conn.wait_closing()
+        # await conn.wait_closing()
 
 
 class _Connection(aio.Resource):
@@ -66,8 +66,11 @@ class _Connection(aio.Resource):
                  conn: mariner.ServerConnection):
         self._backend = backend
         self._conn = conn
-        self._last_event_ids = {conn.last_event_id.server: conn.last_event_id}
+        self._last_event_ids = ({conn.last_event_id.server: conn.last_event_id}
+                                if conn.last_event_id else {})
         self._subscription = self._conn.subscription
+
+        self.async_group.spawn(self._connection_loop)
 
     @property
     def async_group(self) -> aio.Group:
@@ -81,7 +84,7 @@ class _Connection(aio.Resource):
             with self._backend.register_flushed_events_cb(
                     events_queue.put_nowait):
 
-                for last_event_id in self._last_event_ids.items():
+                for last_event_id in self._last_event_ids.values():
                     async for events in self._backend.query_flushed(
                             last_event_id):
                         self._send_events(events)
@@ -106,10 +109,10 @@ class _Connection(aio.Resource):
 
         last_event_id = self._last_event_ids.get(events[0].event_id.server)
         if last_event_id:
-            if events[0].event_id.session < last_event_id:
+            if events[0].event_id.session < last_event_id.session:
                 return
 
-            if events[0].event_id.session == last_event_id:
+            if events[0].event_id.session == last_event_id.session:
                 events = (event for event in events
                           if event.event_id > last_event_id)
 
