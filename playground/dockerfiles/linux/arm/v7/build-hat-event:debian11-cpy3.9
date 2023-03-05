@@ -1,7 +1,8 @@
 FROM python:3.9-bullseye as base
 RUN apt update -qy && \
     apt install -qy build-essential wget git \
-                    libffi-dev lzma-dev libssl-dev libsqlite3-dev
+                    libffi-dev lzma-dev libssl-dev libsqlite3-dev \
+                    rustc cargo
 
 FROM base
 WORKDIR /hat
