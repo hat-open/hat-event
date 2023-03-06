@@ -78,11 +78,6 @@ class SyncerClient(aio.Resource):
         """Async group"""
         return self._async_group
 
-    @property
-    def servers_synced(self) -> typing.List[int]:
-        """server_ids of all servers that client is synced with"""
-        return [srv_id for srv_id, conn in self._conns.items() if conn.synced]
-
     def register_state_cb(self,
                           cb: StateCb
                           ) -> util.RegisterCallbackHandle:
