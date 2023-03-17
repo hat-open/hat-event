@@ -24,6 +24,7 @@ async def create(conf: json.Data) -> 'MemoryBackend':
     backend = MemoryBackend()
     backend._async_group = aio.Group()
     backend._events = collections.deque()
+    backend._registered_events_cbs = util.CallbackRegistry()
     return backend
 
 
@@ -32,6 +33,12 @@ class MemoryBackend(common.Backend):
     @property
     def async_group(self) -> aio.Group:
         return self._async_group
+
+    def register_registered_events_cb(self,
+                                      cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                                          None]
+                                      ) -> util.RegisterCallbackHandle:
+        return self._registered_events_cbs.register(cb)
 
     def register_flushed_events_cb(self,
                                    cb: typing.Callable[[typing.List[common.Event]],  # NOQA
@@ -52,6 +59,7 @@ class MemoryBackend(common.Backend):
                        events: typing.List[common.Event]
                        ) -> typing.List[typing.Optional[common.Event]]:
         self._events.extend(events)
+        self._registered_events_cbs.notify(events)
         return events
 
     async def query(self,

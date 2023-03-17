@@ -3,6 +3,7 @@ import sys
 
 from hat import json
 
+from hat.event.server.backends.lmdb.manager import copy
 from hat.event.server.backends.lmdb.manager import query
 
 
@@ -12,6 +13,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest='action', required=True)
 
     query.create_argument_parser(subparsers)
+    copy.create_argument_parser(subparsers)
 
     return parser
 
@@ -22,6 +24,9 @@ def main():
 
     if args.action == 'query':
         results = query.query(args)
+
+    if args.action == 'copy':
+        results = copy.copy(args)
 
     else:
         raise ValueError('unsupported action')

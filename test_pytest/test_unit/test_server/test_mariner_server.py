@@ -32,20 +32,23 @@ class Backend(aio.Resource):
     def __init__(self, query_cb=None):
         self._query_cb = query_cb
         self._async_group = aio.Group()
-        self._flushed_events_cbs = util.CallbackRegistry()
+        self._events_cbs = util.CallbackRegistry()
 
     @property
     def async_group(self):
         return self._async_group
 
+    def register_registered_events_cb(self, cb):
+        return self._events_cbs.register(cb)
+
     def register_flushed_events_cb(self, cb):
-        return self._flushed_events_cbs.register(cb)
+        return self._events_cbs.register(cb)
 
     async def get_last_event_id(self, server_id):
         raise NotImplementedError()
 
     async def register(self, events):
-        self._flushed_events_cbs.notify(events)
+        self._events_cbs.notify(events)
         return events
 
     async def query(self, data):

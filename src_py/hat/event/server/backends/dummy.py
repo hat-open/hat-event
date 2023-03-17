@@ -35,6 +35,12 @@ class DummyBackend(common.Backend):
     def async_group(self) -> aio.Group:
         return self._async_group
 
+    def register_registered_events_cb(self,
+                                      cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                                          None]
+                                      ) -> util.RegisterCallbackHandle:
+        return util.RegisterCallbackHandle(cancel=lambda: None)
+
     def register_flushed_events_cb(self,
                                    cb: typing.Callable[[typing.List[common.Event]],  # NOQA
                                                        None]

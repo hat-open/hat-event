@@ -75,12 +75,14 @@ class Flushable(abc.ABC):
 
 
 def ext_create_env(path: Path,
-                   max_size: int
+                   max_size: int,
+                   readonly: bool = False
                    ) -> lmdb.Environment:
     return lmdb.Environment(str(path),
                             map_size=max_size,
                             subdir=False,
-                            max_dbs=len(DbType))
+                            max_dbs=len(DbType),
+                            readonly=readonly)
 
 
 def ext_open_db(env: lmdb.Environment,

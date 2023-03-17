@@ -52,6 +52,13 @@ class Backend(aio.Resource):
     """
 
     @abc.abstractmethod
+    def register_registered_events_cb(self,
+                                      cb: typing.Callable[[typing.List[Event]],
+                                                          None]
+                                      ) -> util.RegisterCallbackHandle:
+        """Register registered events callback"""
+
+    @abc.abstractmethod
     def register_flushed_events_cb(self,
                                    cb: typing.Callable[[typing.List[Event]],
                                                        None]

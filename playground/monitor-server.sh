@@ -12,17 +12,27 @@ log:
     formatters:
         console_formatter:
             format: "[%(asctime)s %(levelname)s %(name)s] %(message)s"
+        syslog_formatter: {}
     handlers:
         console_handler:
             class: logging.StreamHandler
             formatter: console_formatter
             level: DEBUG
+        syslog_handler:
+            class: hat.syslog.handler.SyslogHandler
+            host: '127.0.0.1'
+            port: 6514
+            comm_type: TCP
+            level: DEBUG
+            formatter: syslog_formatter
     loggers:
         hat.monitor:
             level: $LOG_LEVEL
     root:
         level: INFO
-        handlers: ['console_handler']
+        handlers:
+            - console_handler
+            - syslog_handler
     disable_existing_loggers: false
 server:
     address: "tcp+sbs://127.0.0.1:23010"

@@ -27,6 +27,7 @@ async def create(conf: json.Data
     backend._flush_lock = asyncio.Lock()
     backend._flush_period = conf['flush_period']
     backend._flushed_events_cbs = util.CallbackRegistry()
+    backend._registered_events_cbs = util.CallbackRegistry()
     backend._conditions = Conditions(conf['conditions'])
     backend._async_group = aio.Group()
 
@@ -82,6 +83,12 @@ class LmdbBackend(common.Backend):
     def async_group(self) -> aio.Group:
         return self._async_group
 
+    def register_registered_events_cb(self,
+                                      cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                                          None]
+                                      ) -> util.RegisterCallbackHandle:
+        return self._registered_events_cbs.register(cb)
+
     def register_flushed_events_cb(self,
                                    cb: typing.Callable[[typing.List[common.Event]],  # NOQA
                                                        None]
@@ -128,6 +135,7 @@ class LmdbBackend(common.Backend):
             self._sys_db.set_last_event_id_timestamp(event.event_id,
                                                      event.timestamp)
 
+        self._registered_events_cbs.notify(events)
         return events
 
     async def query(self,
