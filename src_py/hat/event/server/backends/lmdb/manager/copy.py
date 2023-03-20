@@ -33,8 +33,8 @@ def _act_copy(src_path, dst_path, skip_latest, skip_ordered):
                    common.DbType.ORDERED_COUNT]
                   if not skip_latest else [])]
 
-    with common.ext_create_env(src_path, common.max_db_size, True) as src_env:
-        with common.ext_create_env(dst_path, common.max_db_size) as dst_env:
+    with common.ext_create_env(src_path, readonly=True) as src_env:
+        with common.ext_create_env(dst_path) as dst_env:
             with src_env.begin(buffers=True) as src_txn:
                 for db_name in db_names:
                     src_db = common.ext_open_db(src_env, db_name)

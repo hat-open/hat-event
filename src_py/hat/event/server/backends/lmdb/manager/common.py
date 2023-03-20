@@ -1,14 +1,8 @@
-import platform
+from hat.event.server.backends.lmdb.common import *  # NOQA
 
 from hat import json
 
 from hat.event.server.common import EventId, Timestamp, Event, EventPayloadType
-from hat.event.server.backends.lmdb.common import *  # NOQA
-
-
-max_db_size = (512 * 1024 * 1024 * 1024
-               if platform.architecture()[0] == '64bit'
-               else 1024 * 1024 * 1024)
 
 
 def event_id_to_json(event_id: EventId) -> json.Data:

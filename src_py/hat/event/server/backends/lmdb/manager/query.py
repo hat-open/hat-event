@@ -36,7 +36,7 @@ def create_argument_parser(subparsers) -> argparse.ArgumentParser:
 
 
 def query(args) -> typing.Iterable[json.Data]:
-    with common.ext_create_env(args.db, common.max_db_size) as env:
+    with common.ext_create_env(args.db, readonly=True) as env:
         if args.subaction == 'last_event_id':
             yield from _act_last_event_id(env, args.server_id)
 

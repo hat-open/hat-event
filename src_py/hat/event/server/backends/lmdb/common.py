@@ -1,6 +1,7 @@
 from pathlib import Path
 import abc
 import enum
+import platform
 import typing
 
 import lmdb
@@ -8,6 +9,11 @@ import lmdb
 from hat import json
 from hat.event.server.common import Event, EventId, EventType, Timestamp
 from hat.event.server.common import *  # NOQA
+
+
+default_max_size = (512 * 1024 * 1024 * 1024
+                    if platform.architecture()[0] == '64bit'
+                    else 1024 * 1024 * 1024)
 
 
 class DbType(enum.Enum):
@@ -75,7 +81,7 @@ class Flushable(abc.ABC):
 
 
 def ext_create_env(path: Path,
-                   max_size: int,
+                   max_size: int = default_max_size,
                    readonly: bool = False
                    ) -> lmdb.Environment:
     return lmdb.Environment(str(path),
