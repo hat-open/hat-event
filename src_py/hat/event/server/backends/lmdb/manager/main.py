@@ -25,7 +25,7 @@ def main():
     if args.action == 'query':
         results = query.query(args)
 
-    if args.action == 'copy':
+    elif args.action == 'copy':
         results = copy.copy(args)
 
     else:
