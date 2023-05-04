@@ -21,6 +21,7 @@ async def listen(address: tcp.Address,
                  connection_cb: ServerConnectionCb,
                  ping_delay: int = 30,
                  ping_timeout: int = 10,
+                 subscriptions: typing.List[common.EventType] = [['*']],
                  **kwargs
                  ) -> 'Server':
     """Create listening server"""

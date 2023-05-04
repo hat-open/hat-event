@@ -2,9 +2,9 @@
 /.peru
 /build
 /compile_flags.txt
-/deps
+/peru
 /src_py/**/json_schema_repo.json
 /src_py/**/sbs_repo.json
-/src_py/hat/event/common/_csubscription.*
+/src_py/hat/event/common/subscription/csubscription.*
 /test_pytest/.coverage
 __pycache__

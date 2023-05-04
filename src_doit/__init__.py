@@ -1,3 +1,5 @@
+from .pymodules import *  # NOQA
+
 from pathlib import Path
 import sys
 
@@ -12,9 +14,9 @@ from hat.doit.py import (build_wheel,
                          run_flake8,
                          get_py_versions)
 
-from .csubscription import py_limited_api
-from .csubscription import *  # NOQA
-from . import csubscription
+from .pymodules import py_limited_api
+
+from . import pymodules
 
 
 __all__ = ['task_clean_all',
@@ -24,13 +26,14 @@ __all__ = ['task_clean_all',
            'task_docs',
            'task_json_schema_repo',
            'task_sbs_repo',
-           'task_deps',
+           'task_peru',
            'task_format',
-           *csubscription.__all__]
+           *pymodules.__all__]
 
 
 build_dir = Path('build')
 src_py_dir = Path('src_py')
+src_c_dir = Path('src_c')
 pytest_dir = Path('test_pytest')
 docs_dir = Path('docs')
 schemas_json_dir = Path('schemas_json')
@@ -49,7 +52,9 @@ def task_clean_all():
         build_dir,
         json_schema_repo_path,
         sbs_repo_path,
-        *(src_py_dir / 'hat/event/common').glob('_csubscription.*')])]}
+        *(src_py_dir / 'hat/event/common/subscription'
+          ).glob('csubscription.*')
+        ])]}
 
 
 def task_build():
@@ -74,7 +79,7 @@ def task_build():
     return {'actions': [build],
             'task_dep': ['json_schema_repo',
                          'sbs_repo',
-                         'csubscription']}
+                         'pymodules']}
 
 
 def task_check():
@@ -89,7 +94,7 @@ def task_test():
             'pos_arg': 'args',
             'task_dep': ['json_schema_repo',
                          'sbs_repo',
-                         'csubscription']}
+                         'pymodules']}
 
 
 def task_docs():
@@ -108,7 +113,7 @@ def task_docs():
     return {'actions': [build],
             'task_dep': ['json_schema_repo',
                          'sbs_repo',
-                         'csubscription']}
+                         'pymodules']}
 
 
 def task_json_schema_repo():
@@ -139,12 +144,12 @@ def task_sbs_repo():
             'targets': [sbs_repo_path]}
 
 
-def task_deps():
-    """Dependencies"""
+def task_peru():
+    """Peru"""
     return {'actions': [f'{sys.executable} -m peru sync']}
 
 
 def task_format():
     """Format"""
-    yield from get_task_clang_format([*Path('src_c').rglob('*.c'),
-                                      *Path('src_c').rglob('*.h')])
+    yield from get_task_clang_format([*src_c_dir.rglob('*.c'),
+                                      *src_c_dir.rglob('*.h')])

@@ -1,12 +1,11 @@
 import pytest
 
 from hat.event.server import common
-import hat.event.common._pysubscription
-import hat.event.common._csubscription
+import hat.event.common.subscription
 
 
-subscription_classes = [hat.event.common._pysubscription.Subscription,
-                        hat.event.common._csubscription.Subscription]
+subscription_classes = [hat.event.common.subscription.PySubscription,
+                        hat.event.common.subscription.CSubscription]
 
 
 @pytest.mark.parametrize("event_type, query_type, is_match", [

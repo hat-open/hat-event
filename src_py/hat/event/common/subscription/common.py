@@ -1,18 +1,7 @@
+import abc
 import typing
 
 from hat.event.common.data import EventType
-from hat.event.common import _pysubscription
-
-try:
-    from hat.event.common import _csubscription
-except ImportError:
-    _csubscription = None
-
-
-Subscription: typing.Type = (_csubscription.Subscription
-                             if _csubscription
-                             else _pysubscription.Subscription)
-"""Default subscription implementation"""
 
 
 def matches_query_type(event_type: EventType,
@@ -56,3 +45,29 @@ def matches_query_type(event_type: EventType,
             return False
 
     return True
+
+
+class BaseSubscription(abc.ABC):
+    """Subscription defined by query event types"""
+
+    @abc.abstractmethod
+    def __init__(self, query_types: typing.Iterable[EventType]):
+        pass
+
+    @abc.abstractmethod
+    def get_query_types(self) -> typing.Iterable[EventType]:
+        """Calculate sanitized query event types"""
+
+    @abc.abstractmethod
+    def matches(self, event_type: EventType) -> bool:
+        """Does `event_type` match subscription"""
+
+    @abc.abstractmethod
+    def union(self, *others: 'BaseSubscription') -> 'BaseSubscription':
+        """Create new subscription including event types from this and
+        other subscriptions."""
+
+    @abc.abstractmethod
+    def isdisjoint(self, other: 'BaseSubscription') -> bool:
+        """Return ``True`` if this subscription has no event types in common
+        with other subscription."""

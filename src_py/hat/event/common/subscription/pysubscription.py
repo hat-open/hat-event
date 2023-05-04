@@ -1,48 +1,41 @@
 import collections
-import functools
 import typing
 
-from hat.event.common.data import EventType
+from hat.event.common.data import EventTypeSegment
+from hat.event.common.subscription.common import BaseSubscription
 
 
-class Subscription:
-    """Subscription defined by query event types"""
+class PySubscription(BaseSubscription):
+    """Python implementation of Subscription"""
 
-    def __init__(self,
-                 query_types: typing.Iterable[EventType],
-                 cache_maxsize: typing.Optional[int] = 0):
-        self._root = False, {}
+    def __init__(self, query_types):
+        self._root = _Node(False, {})
         for query_type in query_types:
             self._root = _add_query_type(self._root, query_type)
-        if cache_maxsize is None or cache_maxsize > 0:
-            self.matches = functools.lru_cache(
-                maxsize=cache_maxsize)(self.matches)
 
-    def get_query_types(self) -> typing.Iterable[EventType]:
-        """Calculate sanitized query event types"""
+    def get_query_types(self):
         yield from _get_query_types(self._root)
 
-    def matches(self, event_type: EventType) -> bool:
-        """Does `event_type` match subscription"""
+    def matches(self, event_type):
         return _matches(self._root, event_type, 0)
 
-    def union(self, *others: 'Subscription') -> 'Subscription':
-        """Create new subscription including event types from this and
-        other subscriptions."""
-        result = Subscription([])
-        result._root = _union(
-            [self._root, *(other._root for other in others)])
+    def union(self, *others):
+        result = PySubscription([])
+        other_roots = ((other if isinstance(other, PySubscription)
+                        else PySubscription(other.get_query_types()))._root
+                       for other in others)
+        result._root = _union([self._root, *other_roots])
         return result
 
-    def isdisjoint(self, other: 'Subscription') -> bool:
-        """Return ``True`` if this subscription has no event types in common
-        with other subscription."""
-        return _isdisjoint(self._root, other._root)
+    def isdisjoint(self, other):
+        other_root = (other if isinstance(other, PySubscription)
+                      else PySubscription(other.get_query_types()))._root
+        return _isdisjoint(self._root, other_root)
 
 
-_Node = typing.Tuple[bool,                  # is_leaf
-                     typing.Dict[str,       # subtype
-                                 '_Node']]  # child
+class _Node(typing.NamedTuple):
+    is_leaf: bool
+    children: typing.Dict[EventTypeSegment, '_Node']
 
 
 def _add_query_type(node, query_type):
@@ -52,7 +45,7 @@ def _add_query_type(node, query_type):
         return node
 
     if not query_type:
-        return True, children
+        return _Node(True, children)
 
     head, rest = query_type[0], query_type[1:]
 
@@ -111,7 +104,7 @@ def _union(nodes):
     for _, node_children in nodes:
         for name, node_child in node_children.items():
             if name == '*':
-                return is_leaf, {'*': (True, {})}
+                return _Node(is_leaf, {'*': (True, {})})
             if name not in names:
                 names[name] = collections.deque()
             names[name].append(node_child)
@@ -119,7 +112,7 @@ def _union(nodes):
     children = {name: _union(named_children)
                 for name, named_children in names.items()}
 
-    return is_leaf, children
+    return _Node(is_leaf, children)
 
 
 def _isdisjoint(first_node, second_node):

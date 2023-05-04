@@ -23,7 +23,12 @@ with importlib.resources.path(__package__, 'sbs_repo.json') as _path:
                                               sbs.Repository.from_json(_path))
     """SBS schema repository"""
 
-EventType: typing.Type = typing.Tuple[str, ...]
+
+EventTypeSegment = str
+"""Event type segment"""
+
+
+EventType: typing.Type = typing.Tuple[EventTypeSegment, ...]
 """Event type"""
 
 
