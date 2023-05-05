@@ -68,6 +68,11 @@ class BaseSubscription(abc.ABC):
         other subscriptions."""
 
     @abc.abstractmethod
+    def intersection(self, *others: 'BaseSubscription') -> 'BaseSubscription':
+        """Create new subscription containing event types in common with
+        other subscriptions."""
+
+    @abc.abstractmethod
     def isdisjoint(self, other: 'BaseSubscription') -> bool:
         """Return ``True`` if this subscription has no event types in common
         with other subscription."""

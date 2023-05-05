@@ -508,6 +508,12 @@ static PyObject *CSubscription_union(CSubscription *self, PyObject *args) {
 }
 
 
+static PyObject *CSubscription_intersection(CSubscription *self, PyObject *args) {
+    PyErr_SetString(PyExc_Exception, "not implemented");
+    return NULL;
+}
+
+
 static PyObject *CSubscription_isdisjoint(CSubscription *self, PyObject *args) {
     PyTypeObject *type = Py_TYPE(self);
 
@@ -534,6 +540,9 @@ static PyMethodDef csubscription_methods[] = {
      .ml_flags = METH_O},
     {.ml_name = "union",
      .ml_meth = (PyCFunction)CSubscription_union,
+     .ml_flags = METH_VARARGS},
+    {.ml_name = "intersection",
+     .ml_meth = (PyCFunction)CSubscription_intersection,
      .ml_flags = METH_VARARGS},
     {.ml_name = "isdisjoint",
      .ml_meth = (PyCFunction)CSubscription_isdisjoint,
