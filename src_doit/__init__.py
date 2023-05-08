@@ -52,8 +52,8 @@ def task_clean_all():
         build_dir,
         json_schema_repo_path,
         sbs_repo_path,
-        *(src_py_dir / 'hat/event/common/subscription'
-          ).glob('csubscription.*')
+        *(src_py_dir /
+          'hat/event/common/subscription').glob('_csubscription.*')
         ])]}
 
 

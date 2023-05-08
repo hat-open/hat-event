@@ -198,67 +198,6 @@ static bool matches(node_t *node, PyObject *event_type,
 }
 
 
-static int merge_node(node_t *node, node_t *other) {
-    if (other->is_leaf)
-        node->is_leaf = true;
-
-    if (!other->children)
-        return 0;
-
-    if (node->children && hat_ht_get(node->children, (uint8_t *)"*", 1))
-        return 0;
-
-    if (hat_ht_get(other->children, (uint8_t *)"*", 1))
-        free_children(node);
-
-    if (!node->children) {
-        node->children = hat_ht_create(&hat_py_allocator, 8);
-        if (!node->children) {
-            PyErr_SetString(PyExc_RuntimeError, "internal error");
-            return 1;
-        }
-    }
-
-    if (hat_ht_resize(node->children, hat_ht_count(node->children) +
-                                          hat_ht_count(other->children))) {
-        PyErr_SetString(PyExc_RuntimeError, "internal error");
-        return 1;
-    }
-
-    hat_ht_iter_t iter = NULL;
-    while ((iter = hat_ht_iter_next(other->children, iter))) {
-        size_t key_size;
-        uint8_t *key;
-        hat_ht_iter_key(iter, &key, &key_size);
-
-        node_t *other_child;
-        hat_ht_iter_value(iter, (void **)&other_child);
-
-        node_t *node_child = hat_ht_get(node->children, key, key_size);
-        if (!node_child) {
-            node_child = PyMem_Malloc(sizeof(node_t));
-            if (!node_child) {
-                PyErr_SetString(PyExc_RuntimeError, "allocation error");
-                return 1;
-            }
-
-            *node_child = (node_t){.is_leaf = false, .children = NULL};
-            if (hat_ht_set(node->children, (uint8_t *)key, key_size,
-                           node_child)) {
-                PyMem_Free(node_child);
-                PyErr_SetString(PyExc_RuntimeError, "internal error");
-                return 1;
-            }
-        }
-
-        if (merge_node(node_child, other_child))
-            return 1;
-    }
-
-    return 0;
-}
-
-
 static bool isdisjoint(node_t *first, node_t *second) {
     if (first->is_leaf && second->is_leaf)
         return false;
@@ -342,12 +281,12 @@ static bool isdisjoint(node_t *first, node_t *second) {
 typedef struct {
     PyObject_HEAD
     node_t root;
-} CSubscription;
+} Subscription;
 // clang-format on
 
 
-static PyObject *CSubscription_new(PyTypeObject *type, PyObject *args,
-                                   PyObject *kwds) {
+static PyObject *Subscription_new(PyTypeObject *type, PyObject *args,
+                                  PyObject *kwds) {
     PyObject *query_types;
     if (!PyArg_ParseTuple(args, "O", &query_types))
         return NULL;
@@ -356,7 +295,7 @@ static PyObject *CSubscription_new(PyTypeObject *type, PyObject *args,
     if (!query_types_iter)
         return NULL;
 
-    CSubscription *self = (CSubscription *)PyType_GenericAlloc(type, 0);
+    Subscription *self = (Subscription *)PyType_GenericAlloc(type, 0);
     if (!self) {
         Py_DECREF(query_types_iter);
         return NULL;
@@ -396,7 +335,7 @@ static PyObject *CSubscription_new(PyTypeObject *type, PyObject *args,
 }
 
 
-static void CSubscription_dealloc(CSubscription *self) {
+static void Subscription_dealloc(Subscription *self) {
     free_children(&(self->root));
 
     PyTypeObject *tp = Py_TYPE(self);
@@ -405,8 +344,8 @@ static void CSubscription_dealloc(CSubscription *self) {
 }
 
 
-static PyObject *CSubscription_get_query_types(CSubscription *self,
-                                               PyObject *args) {
+static PyObject *Subscription_get_query_types(Subscription *self,
+                                              PyObject *args) {
     PyObject *collections = PyImport_ImportModule("collections");
     if (!collections)
         return NULL;
@@ -438,7 +377,7 @@ static PyObject *CSubscription_get_query_types(CSubscription *self,
 }
 
 
-static PyObject *CSubscription_matches(CSubscription *self, PyObject *args) {
+static PyObject *Subscription_matches(Subscription *self, PyObject *args) {
     if (!PyTuple_Check(args)) {
         PyErr_SetString(PyExc_ValueError, "event_type is not tuple");
         return NULL;
@@ -451,70 +390,7 @@ static PyObject *CSubscription_matches(CSubscription *self, PyObject *args) {
 }
 
 
-static PyObject *CSubscription_union(CSubscription *self, PyObject *args) {
-    PyTypeObject *type = Py_TYPE(self);
-
-    if (!PyTuple_Check(args)) {
-        PyErr_SetString(PyExc_ValueError, "unsuported arguments");
-        return NULL;
-    }
-
-    CSubscription *subscription = (CSubscription *)PyType_GenericAlloc(type, 0);
-    if (!subscription)
-        return NULL;
-
-    if (merge_node(&(subscription->root), &(self->root))) {
-        Py_DECREF(subscription);
-        return NULL;
-    }
-
-    PyObject *args_iter = PyObject_GetIter(args);
-    if (!args_iter) {
-        Py_DECREF(subscription);
-        return NULL;
-    }
-
-    while (true) {
-        PyObject *arg = PyIter_Next(args_iter);
-        if (!arg)
-            break;
-
-        if (!PyObject_TypeCheck(arg, type)) {
-            Py_DECREF(arg);
-            Py_DECREF(args_iter);
-            Py_DECREF(subscription);
-            PyErr_SetString(PyExc_ValueError, "unsuported argument type");
-            return NULL;
-        }
-
-        CSubscription *other = (CSubscription *)arg;
-        int err = merge_node(&(subscription->root), &(other->root));
-        Py_DECREF(other);
-        if (err) {
-            Py_DECREF(args_iter);
-            Py_DECREF(subscription);
-            PyErr_SetString(PyExc_Exception, "union error");
-            return NULL;
-        }
-    }
-    Py_DECREF(args_iter);
-
-    if (resize_children(&(subscription->root))) {
-        Py_DECREF(subscription);
-        return NULL;
-    }
-
-    return (PyObject *)subscription;
-}
-
-
-static PyObject *CSubscription_intersection(CSubscription *self, PyObject *args) {
-    PyErr_SetString(PyExc_Exception, "not implemented");
-    return NULL;
-}
-
-
-static PyObject *CSubscription_isdisjoint(CSubscription *self, PyObject *args) {
+static PyObject *Subscription_isdisjoint(Subscription *self, PyObject *args) {
     PyTypeObject *type = Py_TYPE(self);
 
     if (!PyObject_TypeCheck(args, type)) {
@@ -522,7 +398,7 @@ static PyObject *CSubscription_isdisjoint(CSubscription *self, PyObject *args) {
         return NULL;
     }
 
-    CSubscription *other = (CSubscription *)args;
+    Subscription *other = (Subscription *)args;
 
     if (isdisjoint(&(self->root), &(other->root)))
         Py_RETURN_TRUE;
@@ -531,47 +407,39 @@ static PyObject *CSubscription_isdisjoint(CSubscription *self, PyObject *args) {
 }
 
 
-static PyMethodDef csubscription_methods[] = {
+static PyMethodDef subscription_methods[] = {
     {.ml_name = "get_query_types",
-     .ml_meth = (PyCFunction)CSubscription_get_query_types,
+     .ml_meth = (PyCFunction)Subscription_get_query_types,
      .ml_flags = METH_NOARGS},
     {.ml_name = "matches",
-     .ml_meth = (PyCFunction)CSubscription_matches,
+     .ml_meth = (PyCFunction)Subscription_matches,
      .ml_flags = METH_O},
-    {.ml_name = "union",
-     .ml_meth = (PyCFunction)CSubscription_union,
-     .ml_flags = METH_VARARGS},
-    {.ml_name = "intersection",
-     .ml_meth = (PyCFunction)CSubscription_intersection,
-     .ml_flags = METH_VARARGS},
     {.ml_name = "isdisjoint",
-     .ml_meth = (PyCFunction)CSubscription_isdisjoint,
+     .ml_meth = (PyCFunction)Subscription_isdisjoint,
      .ml_flags = METH_O},
     {NULL}};
 
-static PyType_Slot csubscription_type_slots[] = {
-    {Py_tp_new, CSubscription_new},
-    {Py_tp_dealloc, CSubscription_dealloc},
-    {Py_tp_methods, csubscription_methods},
-    {Py_tp_doc, "C implementation of Subscription"},
+static PyType_Slot subscription_type_slots[] = {
+    {Py_tp_new, Subscription_new},
+    {Py_tp_dealloc, Subscription_dealloc},
+    {Py_tp_methods, subscription_methods},
     {0, NULL}};
 
-static PyType_Spec csubscription_type_spec = {
-    .name = "hat.event.common.subscription.csubscription.CSubscription",
-    .basicsize = sizeof(CSubscription),
+static PyType_Spec subscription_type_spec = {
+    .name = "hat.event.common.subscription._csubscription.Subscription",
+    .basicsize = sizeof(Subscription),
     .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HEAPTYPE,
-    .slots = csubscription_type_slots};
+    .slots = subscription_type_slots};
 
 
 static int module_exec(PyObject *module) {
-    PyObject *csubscription_type = PyType_FromSpec(&csubscription_type_spec);
-    if (!csubscription_type)
+    PyObject *subscription_type = PyType_FromSpec(&subscription_type_spec);
+    if (!subscription_type)
         return -1;
 
-    int result =
-        PyModule_AddObject(module, "CSubscription", csubscription_type);
+    int result = PyModule_AddObject(module, "Subscription", subscription_type);
     if (result) {
-        Py_DECREF(csubscription_type);
+        Py_DECREF(subscription_type);
         return -1;
     }
 
@@ -583,8 +451,8 @@ static PyModuleDef_Slot module_slots[] = {{Py_mod_exec, module_exec},
                                           {0, NULL}};
 
 static PyModuleDef module_def = {.m_base = PyModuleDef_HEAD_INIT,
-                                 .m_name = "csubscription",
+                                 .m_name = "_csubscription",
                                  .m_slots = module_slots};
 
 
-PyMODINIT_FUNC PyInit_csubscription() { return PyModuleDef_Init(&module_def); }
+PyMODINIT_FUNC PyInit__csubscription() { return PyModuleDef_Init(&module_def); }

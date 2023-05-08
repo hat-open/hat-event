@@ -11,7 +11,6 @@ __all__ = ['matches_query_type',
 try:
     from hat.event.common.subscription.csubscription import CSubscription
 
-    BaseSubscription.register(CSubscription)
     Subscription = CSubscription
     __all__ += ['CSubscription']
 

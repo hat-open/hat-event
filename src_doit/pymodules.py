@@ -26,9 +26,10 @@ src_py_dir = Path('src_py')
 
 pymodules_build_dir = build_dir / 'pymodules'
 
-subscription_path = (src_py_dir / 'hat/event/common/subscription/csubscription'
+subscription_path = (src_py_dir /
+                     'hat/event/common/subscription/_csubscription'
                      ).with_suffix(py_ext_suffix)
-subscription_src_paths = [src_c_dir / 'py/subscription/csubscription.c',
+subscription_src_paths = [src_c_dir / 'py/subscription/_csubscription.c',
                           peru_dir / 'hat-util/src_c/hat/py_allocator.c',
                           peru_dir / 'hat-util/src_c/hat/ht.c']
 subscription_build_dir = (pymodules_build_dir / 'subscription' /
@@ -78,7 +79,7 @@ def task_pymodules_subscription_cleanup():
     """Cleanup pymodules subscription"""
 
     def cleanup():
-        for path in subscription_path.parent.glob('csubscription.*'):
+        for path in subscription_path.parent.glob('_csubscription.*'):
             if path == subscription_path:
                 continue
             common.rm_rf(path)

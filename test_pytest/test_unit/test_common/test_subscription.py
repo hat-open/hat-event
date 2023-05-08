@@ -253,7 +253,7 @@ def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
     assert result is isdisjoint
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes[:1])
+@pytest.mark.parametrize("Subscription", subscription_classes)
 @pytest.mark.parametrize("subscription_types, other_types, intersection_types", [  # NOQA
     ([],
      [],
@@ -270,6 +270,10 @@ def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
     ([('a',), ('b',)],
      [('b',), ('c',)],
      [('b',)]),
+
+    ([('?', 'b')],
+     [('a', 'b')],
+     [('a', 'b')]),
 ])
 def test_subscription_intersection(Subscription, subscription_types,
                                    other_types, intersection_types):
