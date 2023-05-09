@@ -32,7 +32,10 @@ async def create_mariner_server(conf: json.Data,
     server = MarinerServer()
     server._backend = backend
 
-    server._server = await mariner.listen(address, server._on_connection)
+    server._server = await mariner.listen(
+        address, server._on_connection,
+        subscriptions=[tuple(event_type)
+                       for event_type in conf['subscriptions']])
 
     return server
 

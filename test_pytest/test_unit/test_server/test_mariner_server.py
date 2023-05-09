@@ -24,7 +24,8 @@ def address(port):
 
 @pytest.fixture
 def conf(address):
-    return {'address': f'tcp://{address.host}:{address.port}'}
+    return {'address': f'tcp://{address.host}:{address.port}',
+            'subscriptions': [['*']]}
 
 
 class Backend(aio.Resource):

@@ -93,10 +93,13 @@ definitions:
         type: object
         required:
             - address
+            - subscriptions
         properties:
             address:
                 type: string
                 default: "tcp://127.0.0.1:23014"
+            subscriptions:
+                "$ref": "hat-event://server.yaml#/definitions/event_types"
     events:
         eventer:
             enum:
@@ -121,4 +124,10 @@ definitions:
             enum:
                 - STARTED
                 - STOPPED
+    event_types:
+        type: array
+        items:
+            type: array
+            items:
+                type: string
 ...

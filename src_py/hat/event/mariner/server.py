@@ -29,6 +29,7 @@ async def listen(address: tcp.Address,
     server._connection_cb = connection_cb
     server._ping_delay = ping_delay
     server._ping_timeout = ping_timeout
+    server._subscription = common.Subscription(subscriptions)
 
     server._server = await tcp.listen(server._on_connection, address,
                                       bind_connections=True)
@@ -54,6 +55,9 @@ class Server(aio.Resource):
             if not isinstance(msg, common.InitMsg):
                 raise Exception('invalid initialization')
 
+            subscription = self._subscription.intersection(
+                common.Subscription(msg.subscriptions))
+
             srv_conn = ServerConnection()
             srv_conn._transport = transport
             srv_conn._ping_delay = self._ping_delay
@@ -61,7 +65,7 @@ class Server(aio.Resource):
             srv_conn._client_id = msg.client_id
             srv_conn._client_token = msg.client_token
             srv_conn._last_event_id = msg.last_event_id
-            srv_conn._subscription = common.Subscription(msg.subscriptions)
+            srv_conn._subscription = subscription
             srv_conn._ping_event = asyncio.Event()
 
             srv_conn.async_group.spawn(srv_conn._receive_loop)
