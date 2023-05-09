@@ -33,10 +33,11 @@ for TARGET in $TARGETS; do
     cp $ROOT_PATH/build/py/dist/*.whl $DIST_PATH
 done
 
-IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.8
-        linux/arm/v7/build-hat-event:debian11-cpy3.9
-        linux/arm/v7/build-hat-event:debian11-cpy3.10
-        linux/arm/v7/build-hat-event:debian11-cpy3.11"
+# IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.8
+#         linux/arm/v7/build-hat-event:debian11-cpy3.9
+#         linux/arm/v7/build-hat-event:debian11-cpy3.10
+#         linux/arm/v7/build-hat-event:debian11-cpy3.11"
+IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.10"
 
 for IMAGE in $IMAGES; do
     $PYTHON -m doit clean_all
@@ -57,6 +58,7 @@ for IMAGE in $IMAGES; do
 set -e
 python3 -m venv venv
 . venv/bin/activate
+export CARGO_NET_GIT_FETCH_WITH_CLI=true  # cryptography
 pip install --upgrade pip
 pip install --upgrade -r requirements.pip.dev.txt
 doit clean_all
