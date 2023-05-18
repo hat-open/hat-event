@@ -20,6 +20,7 @@ TARGETS="linux_gnu_x86_64:cp38
          windows_amd64:cp39
          windows_amd64:cp310
          windows_amd64:cp311"
+TARGETS=""
 
 cd $ROOT_PATH
 rm -rf $DIST_PATH
@@ -33,11 +34,12 @@ for TARGET in $TARGETS; do
     cp $ROOT_PATH/build/py/dist/*.whl $DIST_PATH
 done
 
-# IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.8
-#         linux/arm/v7/build-hat-event:debian11-cpy3.9
-#         linux/arm/v7/build-hat-event:debian11-cpy3.10
-#         linux/arm/v7/build-hat-event:debian11-cpy3.11"
+IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.8
+        linux/arm/v7/build-hat-event:debian11-cpy3.9
+        linux/arm/v7/build-hat-event:debian11-cpy3.10
+        linux/arm/v7/build-hat-event:debian11-cpy3.11"
 IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.10"
+IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.11"
 
 for IMAGE in $IMAGES; do
     $PYTHON -m doit clean_all
@@ -60,7 +62,7 @@ python3 -m venv venv
 . venv/bin/activate
 export CARGO_NET_GIT_FETCH_WITH_CLI=true  # cryptography
 pip install --upgrade pip
-pip install --upgrade -r requirements.pip.dev.txt
+pip install --upgrade 'cryptography<40' -r requirements.pip.dev.txt
 doit clean_all
 doit
 cp build/py/dist/*.whl dist

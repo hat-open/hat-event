@@ -1,8 +1,10 @@
 module HatSyncer
 
 MsgReq = Record {
-    lastEventId:  HatEventer.EventId
-    clientName:   String
+    lastEventId:    HatEventer.EventId
+    clientName:     String
+    clientToken:    Optional(String)
+    subscriptions:  Array(HatEventer.EventType)
 }
 
 MsgSynced = None

@@ -30,9 +30,15 @@ async def create_syncer_server(conf: json.Data,
     server = SyncerServer()
     server._backend = backend
 
+    subscriptions = ([tuple(i) for i in conf['subscriptions']]
+                     if 'subscriptions' in conf
+                     else [('*',)])
+
     server._server = await hat.event.syncer.listen(
         address=conf['address'],
-        query_cb=backend.query_flushed)
+        query_cb=backend.query_flushed,
+        subscriptions=subscriptions,
+        token=conf.get('token'))
 
     server.async_group.spawn(server._backend_loop)
 

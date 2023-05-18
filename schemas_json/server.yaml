@@ -89,6 +89,12 @@ definitions:
             address:
                 type: string
                 default: "tcp+sbs://127.0.0.1:23013"
+            token:
+                type:
+                    - "null"
+                    - string
+            subscriptions:
+                "$ref": "hat-event://server.yaml#/definitions/event_types"
     mariner_server:
         type: object
         required:

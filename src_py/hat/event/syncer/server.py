@@ -31,11 +31,15 @@ QueryCb = typing.Callable[[common.EventId],
 
 
 async def listen(address: str,
-                 query_cb: typing.Optional[QueryCb] = None
+                 query_cb: typing.Optional[QueryCb] = None,
+                 subscriptions: typing.List[common.EventType] = [('*',)],
+                 token: typing.Optional[str] = None
                  ) -> 'Server':
     """Create listening syncer server"""
     server = Server()
     server._query_cb = query_cb
+    server._subscription = common.Subscription(subscriptions)
+    server._token = token
     server._state = {}
     server._next_client_ids = itertools.count(1)
     server._state_cbs = util.CallbackRegistry()
@@ -89,8 +93,8 @@ class Server(aio.Resource):
     def _on_connection(self, conn):
         self.async_group.spawn(self._connection_loop, conn)
 
-    def _update_client_info(self, client_id, name, synced):
-        self._state[client_id] = ClientInfo(name, synced)
+    def _update_client_info(self, client_id, client_info):
+        self._state[client_id] = client_info
         self._state_cbs.notify(list(self._state.values()))
 
     def _remove_client_info(self, client_id):
@@ -111,18 +115,27 @@ class Server(aio.Resource):
 
             mlog.debug("received request")
             msg_req = common.syncer_req_from_sbs(msg.data.data)
+
+            if self._token is not None and msg_req.client_token != self._token:
+                raise Exception('invalid client token')
+
             client_id = next(self._next_client_ids)
-            name = msg_req.client_name
             last_event_id = msg_req.last_event_id
-            self._update_client_info(client_id, name, False)
+            subscription = self._subscription.intersection(
+                common.Subscription(msg_req.subscriptions))
+            client_info = ClientInfo(name=msg_req.client_name,
+                                     synced=False)
+
+            self._update_client_info(client_id, client_info)
 
             mlog.debug("creating client")
             synced_cb = functools.partial(self._update_client_info, client_id,
-                                          name, True)
+                                          client_info._replace(synced=True))
             client = _Client(query_cb=self._query_cb,
                              notify_cbs=self._notify_cbs,
                              conn=conn,
                              last_event_id=last_event_id,
+                             subscription=subscription,
                              synced_cb=synced_cb)
 
             self._clients[client_id] = client
@@ -148,7 +161,8 @@ class Server(aio.Resource):
 
 class _Client(aio.Resource):
 
-    def __init__(self, query_cb, notify_cbs, conn, last_event_id, synced_cb):
+    def __init__(self, query_cb, notify_cbs, conn, last_event_id, subscription,
+                 synced_cb):
         self._query_cb = query_cb
         self._notify_cbs = notify_cbs
         self._conn = conn
@@ -159,7 +173,8 @@ class _Client(aio.Resource):
         self.async_group.spawn(aio.call_on_done, self._receiver.wait_closing(),
                                self.close)
 
-        self._sender = _Sender(conn, last_event_id, synced_cb, self._receiver)
+        self._sender = _Sender(conn, last_event_id, subscription, synced_cb,
+                               self._receiver)
         self.async_group.spawn(aio.call_on_done, self._sender.wait_closing(),
                                self.close)
 
@@ -222,9 +237,10 @@ class _Client(aio.Resource):
 
 class _Sender(aio.Resource):
 
-    def __init__(self, conn, last_event_id, synced_cb, receiver):
+    def __init__(self, conn, last_event_id, subscription, synced_cb, receiver):
         self._conn = conn
         self._last_event_id = last_event_id
+        self._subscription = subscription
         self._synced_cb = synced_cb
         self._receiver = receiver
         self._send_queue = aio.Queue()
@@ -323,10 +339,13 @@ class _Sender(aio.Resource):
             return
 
         if events[0].event_id.session == self._last_event_id.session:
-            events = [event for event in events
-                      if event.event_id > self._last_event_id]
-            if not events:
-                return
+            events = (event for event in events
+                      if event.event_id > self._last_event_id)
+
+        events = [event for event in events
+                  if self._subscription.matches(event.event_type)]
+        if not events:
+            return
 
         mlog.debug("sending events")
         data = chatter.Data(module='HatSyncer',

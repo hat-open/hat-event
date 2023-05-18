@@ -50,7 +50,10 @@ async def test_sync_req(address, conn_queue):
     client = await hat.event.syncer.connect(
         address=address,
         client_name='name123',
-        last_event_id=common.EventId(1, 2, 3))
+        last_event_id=common.EventId(1, 2, 3),
+        client_token='token123',
+        subscriptions=[('a', 'b', 'c'),
+                       ('x', 'y', 'z')])
     conn = await conn_queue.get()
 
     msg = await conn.receive()
@@ -61,7 +64,10 @@ async def test_sync_req(address, conn_queue):
     assert msg.data.data == {'lastEventId': {'server': 1,
                                              'session': 2,
                                              'instance': 3},
-                             'clientName': 'name123'}
+                             'clientName': 'name123',
+                             'clientToken': ('value', 'token123'),
+                             'subscriptions': [['a', 'b', 'c'],
+                                               ['x', 'y', 'z']]}
 
     await client.async_close()
     await conn.async_close()

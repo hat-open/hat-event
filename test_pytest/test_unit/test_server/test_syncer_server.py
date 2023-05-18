@@ -94,7 +94,9 @@ async def test_connect(conf):
                            data={'lastEventId': {'server': 1,
                                                  'session': 0,
                                                  'instance': 0},
-                                 'clientName': client_name}))
+                                 'clientName': client_name,
+                                 'clientToken': ('none', None),
+                                 'subscriptions': [['*']]}))
     state = await state_queue.get()
     assert len(state) == 1
     assert state[0].name == client_name
@@ -142,7 +144,9 @@ async def test_sync(conf):
     conn.send(chatter.Data(module='HatSyncer',
                            type='MsgReq',
                            data={'lastEventId': last_event_id._asdict(),
-                                 'clientName': 'abcd'}))
+                                 'clientName': 'abcd',
+                                 'clientToken': ('none', None),
+                                 'subscriptions': [['*']]}))
     state = await state_queue.get()
     assert len(state) == 1
     assert not state[0].synced
@@ -182,7 +186,9 @@ async def test_register(conf):
                            data={'lastEventId': {'server': 1,
                                                  'session': 0,
                                                  'instance': 0},
-                                 'clientName': 'abcd'}))
+                                 'clientName': 'abcd',
+                                 'clientToken': ('none', None),
+                                 'subscriptions': [['*']]}))
 
     msg = await conn.receive()
     assert msg.data.type == 'MsgSynced'
@@ -238,7 +244,9 @@ async def test_register_while_sync(conf):
                            data={'lastEventId': {'server': 1,
                                                  'session': 1,
                                                  'instance': 0},
-                                 'clientName': 'abcd'}))
+                                 'clientName': 'abcd',
+                                 'clientToken': ('none', None),
+                                 'subscriptions': [['*']]}))
 
     state = await state_queue.get()
     assert len(state) == 1
@@ -298,7 +306,9 @@ async def test_multi_clients(conf):
         conn.send(chatter.Data(module='HatSyncer',
                                type='MsgReq',
                                data={'lastEventId': last_event_id._asdict(),
-                                     'clientName': conn.client_name}))
+                                     'clientName': conn.client_name,
+                                     'clientToken': ('none', None),
+                                     'subscriptions': [['*']]}))
 
         state = await state_queue.get()
         assert len(state) == i + 1

@@ -21,7 +21,9 @@ async def connect(address: str,
                   client_name: str,
                   last_event_id: common.EventId,
                   synced_cb: typing.Optional[SyncedCb] = None,
-                  events_cb: typing.Optional[EventsCb] = None
+                  events_cb: typing.Optional[EventsCb] = None,
+                  client_token: typing.Optional[str] = None,
+                  subscriptions: typing.List[common.EventType] = [('*',)]
                   ) -> 'Client':
     """Connect to remote syncer server"""
     client = Client()
@@ -33,7 +35,9 @@ async def connect(address: str,
 
     try:
         req = common.SyncerReq(last_event_id=last_event_id,
-                               client_name=client_name)
+                               client_name=client_name,
+                               client_token=client_token,
+                               subscriptions=subscriptions)
 
         mlog.debug("sending %s", req)
         msg_data = chatter.Data(module='HatSyncer',
