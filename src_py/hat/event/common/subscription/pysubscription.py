@@ -71,8 +71,8 @@ def _isdisjoint(first, second):
     if first.is_leaf and second.is_leaf:
         return False
 
-    if (('*' in first.children and second.children) or
-            ('*' in second.children and first.children)):
+    if (('*' in first.children and (second.children or second.is_leaf)) or
+            ('*' in second.children and (first.children or first.is_leaf))):
         return False
 
     if '?' in first.children:

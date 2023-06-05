@@ -245,6 +245,10 @@ def test_subscription_union(Subscription, query_types, union):
     ([('a', 'b')],
      [('*',)],
      False),
+
+    ([('a', 'b', '*')],
+     [('a', 'b')],
+     False)
 ])
 def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
     first = Subscription(first)
