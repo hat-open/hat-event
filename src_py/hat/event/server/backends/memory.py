@@ -13,6 +13,7 @@ import typing
 from hat import aio
 from hat import json
 from hat import util
+
 from hat.event.server import common
 
 
@@ -35,13 +36,13 @@ class MemoryBackend(common.Backend):
         return self._async_group
 
     def register_registered_events_cb(self,
-                                      cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                      cb: typing.Callable[[list[common.Event]],
                                                           None]
                                       ) -> util.RegisterCallbackHandle:
         return self._registered_events_cbs.register(cb)
 
     def register_flushed_events_cb(self,
-                                   cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                   cb: typing.Callable[[list[common.Event]],
                                                        None]
                                    ) -> util.RegisterCallbackHandle:
         return util.RegisterCallbackHandle(cancel=lambda: None)
@@ -56,15 +57,15 @@ class MemoryBackend(common.Backend):
         return max(event_ids, key=key, default=default)
 
     async def register(self,
-                       events: typing.List[common.Event]
-                       ) -> typing.List[typing.Optional[common.Event]]:
+                       events: list[common.Event]
+                       ) -> list[common.Event | None]:
         self._events.extend(events)
         self._registered_events_cbs.notify(events)
         return events
 
     async def query(self,
                     data: common.QueryData
-                    ) -> typing.List[common.Event]:
+                    ) -> list[common.Event]:
         events = self._events
 
         if data.server_id is not None:
@@ -117,7 +118,7 @@ class MemoryBackend(common.Backend):
 
     async def query_flushed(self,
                             data: common.QueryData
-                            ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
+                            ) -> typing.AsyncIterable[list[common.Event]]:
         for events in []:
             yield events
 

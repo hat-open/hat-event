@@ -4,6 +4,7 @@ import itertools
 import typing
 
 from hat import json
+
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb import environment
@@ -11,7 +12,8 @@ from hat.event.server.backends.lmdb import refdb
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
-Changes = typing.Iterable[typing.Tuple[common.Timestamp, common.Event]]
+Changes: typing.TypeAlias = typing.Iterable[tuple[common.Timestamp,
+                                                  common.Event]]
 
 
 def ext_create(env: environment.Environment,
@@ -19,7 +21,7 @@ def ext_create(env: environment.Environment,
                subscription: common.Subscription,
                conditions: Conditions,
                order_by: common.OrderBy,
-               limit: typing.Optional[json.Data]
+               limit: json.Data | None
                ) -> 'OrderedDb':
     db = OrderedDb()
     db._env = env
@@ -95,17 +97,17 @@ class OrderedDb(common.Flushable):
         return True
 
     async def query(self,
-                    subscription: typing.Optional[common.Subscription],
-                    server_id: typing.Optional[int],
-                    event_ids: typing.Optional[typing.List[common.EventId]],
-                    t_from: typing.Optional[common.Timestamp],
-                    t_to: typing.Optional[common.Timestamp],
-                    source_t_from: typing.Optional[common.Timestamp],
-                    source_t_to: typing.Optional[common.Timestamp],
-                    payload: typing.Optional[common.EventPayload],
+                    subscription: common.Subscription | None,
+                    server_id: int | None,
+                    event_ids: list[common.EventId] | None,
+                    t_from: common.Timestamp | None,
+                    t_to: common.Timestamp | None,
+                    source_t_from: common.Timestamp | None,
+                    source_t_to: common.Timestamp | None,
+                    payload: common.EventPayload | None,
                     order: common.Order,
                     unique_type: bool,
-                    max_results: typing.Optional[int]
+                    max_results: int | None
                     ) -> typing.Iterable[common.Event]:
         unique_types = set() if unique_type else None
         events = collections.deque()
@@ -153,7 +155,7 @@ class OrderedDb(common.Flushable):
 
     def ext_apply_limit(self,
                         now: common.Timestamp,
-                        max_entries_remove: typing.Optional[int] = None,
+                        max_entries_remove: int | None = None,
                         ) -> int:
         if not self._limit:
             return True

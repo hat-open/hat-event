@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import typing
 
 from hat import aio
 from hat import json
@@ -53,7 +52,7 @@ class SyncerServer(aio.Resource):
         return self._server.async_group
 
     @property
-    def state(self) -> typing.List[hat.event.syncer.ClientInfo]:
+    def state(self) -> list[hat.event.syncer.ClientInfo]:
         """State of all active connections"""
         return self._server.state
 

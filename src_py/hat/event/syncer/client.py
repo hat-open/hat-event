@@ -10,20 +10,20 @@ from hat.event.syncer import common
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
-SyncedCb = aio.AsyncCallable[[], None]
+SyncedCb: typing.TypeAlias = aio.AsyncCallable[[], None]
 """Synced callback"""
 
-EventsCb = aio.AsyncCallable[[typing.List[common.Event]], None]
+EventsCb: typing.TypeAlias = aio.AsyncCallable[[list[common.Event]], None]
 """Events callback"""
 
 
 async def connect(address: str,
                   client_name: str,
                   last_event_id: common.EventId,
-                  synced_cb: typing.Optional[SyncedCb] = None,
-                  events_cb: typing.Optional[EventsCb] = None,
-                  client_token: typing.Optional[str] = None,
-                  subscriptions: typing.List[common.EventType] = [('*',)]
+                  synced_cb: SyncedCb | None = None,
+                  events_cb: EventsCb | None = None,
+                  client_token: str | None = None,
+                  subscriptions: list[common.EventType] = [('*',)]
                   ) -> 'Client':
     """Connect to remote syncer server"""
     client = Client()

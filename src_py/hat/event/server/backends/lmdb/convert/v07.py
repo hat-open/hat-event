@@ -1,12 +1,13 @@
 from pathlib import Path
 import platform
-import typing
 
 import lmdb
 
 from hat import json
+
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import encoder
+
 
 EventType = common.EventType
 EventId = common.EventId
@@ -23,7 +24,7 @@ OrderedEventRef = common.OrderedEventRef
 EventRef = common.EventRef
 
 SystemDbKey = ServerId
-SystemDbValue = typing.Tuple[EventId, Timestamp]
+SystemDbValue = tuple[EventId, Timestamp]
 
 LatestDataDbKey = EventTypeRef
 LatestDataDbValue = Event
@@ -31,7 +32,7 @@ LatestDataDbValue = Event
 LatestTypeDbKey = EventTypeRef
 LatestTypeDbValue = EventType
 
-OrderedDataDbKey = typing.Tuple[PartitionId, Timestamp, EventId]
+OrderedDataDbKey = tuple[PartitionId, Timestamp, EventId]
 OrderedDataDbValue = Event
 
 OrderedPartitionDbKey = PartitionId
@@ -41,7 +42,7 @@ OrderedCountDbKey = PartitionId
 OrderedCountDbValue = int
 
 RefDbKey = EventId
-RefDbValue = typing.Set[EventRef]
+RefDbValue = set[EventRef]
 
 encode_system_db_key = encoder.encode_system_db_key
 encode_system_db_value = encoder.encode_system_db_value

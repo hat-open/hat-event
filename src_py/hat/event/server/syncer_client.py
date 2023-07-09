@@ -26,13 +26,15 @@ class SyncerClientState(enum.Enum):
     DISCONNECTED = 2
 
 
-ServerId = int
+ServerId: typing.TypeAlias = int
 """Server identifier"""
 
-StateCb = typing.Callable[[ServerId, SyncerClientState], None]
+StateCb: typing.TypeAlias = typing.Callable[[ServerId, SyncerClientState],
+                                            None]
 """Connection state callback"""
 
-EventsCb = typing.Callable[[ServerId, typing.List[common.Event]], None]
+EventsCb: typing.TypeAlias = typing.Callable[[ServerId, list[common.Event]],
+                                             None]
 """Events callback"""
 
 
@@ -40,7 +42,7 @@ async def create_syncer_client(backend: common.Backend,
                                monitor_client: hat.monitor.client.Client,
                                monitor_group: str,
                                name: str,
-                               syncer_token: typing.Optional[str] = None,
+                               syncer_token: str | None = None,
                                **kwargs
                                ) -> 'SyncerClient':
     """Create syncer client

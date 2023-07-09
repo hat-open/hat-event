@@ -15,7 +15,7 @@ mlog: logging.Logger = logging.getLogger(__name__)
 
 
 async def connect(address: str,
-                  subscriptions: typing.List[common.EventType] = [],
+                  subscriptions: list[common.EventType] = [],
                   **kwargs
                   ) -> 'Client':
     """Connect to eventer server
@@ -65,7 +65,7 @@ class Client(aio.Resource):
         """Async group"""
         return self._conn.async_group
 
-    async def receive(self) -> typing.List[common.Event]:
+    async def receive(self) -> list[common.Event]:
         """Receive subscribed event notifications
 
         Raises:
@@ -78,7 +78,7 @@ class Client(aio.Resource):
         except aio.QueueClosedError:
             raise ConnectionError()
 
-    def register(self, events: typing.List[common.RegisterEvent]):
+    def register(self, events: list[common.RegisterEvent]):
         """Register events
 
         Raises:
@@ -92,8 +92,8 @@ class Client(aio.Resource):
         self._conn.send(msg_data)
 
     async def register_with_response(self,
-                                     events: typing.List[common.RegisterEvent]
-                                     ) -> typing.List[typing.Optional[common.Event]]:  # NOQA
+                                     events: list[common.RegisterEvent]
+                                     ) -> list[common.Event | None]:
         """Register events
 
         Each `common.RegisterEvent` from `events` is paired with results
@@ -113,7 +113,7 @@ class Client(aio.Resource):
 
     async def query(self,
                     data: common.QueryData
-                    ) -> typing.List[common.Event]:
+                    ) -> list[common.Event]:
         """Query events from server
 
         Raises:
@@ -194,10 +194,10 @@ class Client(aio.Resource):
         f.set_result(events)
 
 
-Runner = aio.Resource
+Runner: typing.TypeAlias = aio.Resource
 """Component runner"""
 
-ComponentCb = typing.Callable[[Client], Runner]
+ComponentCb: typing.TypeAlias = typing.Callable[[Client], Runner]
 """Component callback"""
 
 
@@ -241,7 +241,7 @@ class Component(aio.Resource):
                  monitor_client: hat.monitor.client.Client,
                  server_group: str,
                  component_cb: ComponentCb,
-                 subscriptions: typing.List[common.EventType] = [],
+                 subscriptions: list[common.EventType] = [],
                  reconnect_delay: float = 0.5):
         self._monitor_client = monitor_client
         self._server_group = server_group

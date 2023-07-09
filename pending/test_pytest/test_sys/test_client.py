@@ -2,7 +2,10 @@ import asyncio
 import pytest
 
 from hat.event import common
-import hat.event.client
+# import hat.event.client
+
+
+pytestmark = pytest.mark.sys
 
 
 async def test_connect(create_event_server):

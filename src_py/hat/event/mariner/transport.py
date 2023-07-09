@@ -21,7 +21,7 @@ class Transport(aio.Resource):
     async def drain(self):
         await self._conn.drain()
 
-    def send(self, msg: common.Msg):
+    async def send(self, msg: common.Msg):
         msg_json = encoder.encode_msg(msg)
         msg_bytes = json.encode(msg_json).encode('utf-8')
         msg_len = len(msg_bytes)
@@ -33,7 +33,7 @@ class Transport(aio.Resource):
         data = bytes(itertools.chain([len_size],
                                      msg_len.to_bytes(len_size, 'big'),
                                      msg_bytes))
-        self._conn.write(data)
+        await self._conn.write(data)
 
     async def receive(self) -> common.Msg:
         len_size_bytes = await self._conn.readexactly(1)

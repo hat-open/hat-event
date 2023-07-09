@@ -42,10 +42,10 @@ async def test_connect(address):
 
     assert srv_conn_queue.empty()
 
-    conn.send(common.InitMsg(client_id=client_id,
-                             client_token=client_token,
-                             last_event_id=last_event_id,
-                             subscriptions=subscriptions))
+    await conn.send(common.InitMsg(client_id=client_id,
+                                   client_token=client_token,
+                                   last_event_id=last_event_id,
+                                   subscriptions=subscriptions))
     await conn.drain()
 
     srv_conn = await srv_conn_queue.get()
@@ -83,12 +83,12 @@ async def test_events(address, events):
 
     assert srv_conn_queue.empty()
 
-    conn.send(common.InitMsg(client_id, None, None, []))
+    await conn.send(common.InitMsg(client_id, None, None, []))
     await conn.drain()
 
     srv_conn = await srv_conn_queue.get()
 
-    srv_conn.send_events(events)
+    await srv_conn.send_events(events)
 
     msg = await conn.receive()
     assert msg == common.EventsMsg(events)
@@ -110,7 +110,7 @@ async def test_ping(address):
 
     assert srv_conn_queue.empty()
 
-    conn.send(common.InitMsg(client_id, None, None, []))
+    await conn.send(common.InitMsg(client_id, None, None, []))
     await conn.drain()
 
     srv_conn = await srv_conn_queue.get()
@@ -119,7 +119,7 @@ async def test_ping(address):
         msg = await conn.receive()
         assert msg == common.PingMsg()
 
-        conn.send(common.PongMsg())
+        await conn.send(common.PongMsg())
         await conn.drain()
 
     await conn.async_close()
@@ -138,12 +138,12 @@ async def test_pong(address):
 
     assert srv_conn_queue.empty()
 
-    conn.send(common.InitMsg(client_id, None, None, []))
+    await conn.send(common.InitMsg(client_id, None, None, []))
     await conn.drain()
 
     srv_conn = await srv_conn_queue.get()
 
-    conn.send(common.PingMsg())
+    await conn.send(common.PingMsg())
     await conn.drain()
 
     msg = await conn.receive()

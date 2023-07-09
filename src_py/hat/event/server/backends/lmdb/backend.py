@@ -7,6 +7,7 @@ import typing
 from hat import aio
 from hat import json
 from hat import util
+
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import environment
 from hat.event.server.backends.lmdb import latestdb
@@ -84,13 +85,13 @@ class LmdbBackend(common.Backend):
         return self._async_group
 
     def register_registered_events_cb(self,
-                                      cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                      cb: typing.Callable[[list[common.Event]],
                                                           None]
                                       ) -> util.RegisterCallbackHandle:
         return self._registered_events_cbs.register(cb)
 
     def register_flushed_events_cb(self,
-                                   cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                   cb: typing.Callable[[list[common.Event]],
                                                        None]
                                    ) -> util.RegisterCallbackHandle:
         return self._flushed_events_cbs.register(cb)
@@ -102,8 +103,8 @@ class LmdbBackend(common.Backend):
         return event_id
 
     async def register(self,
-                       events: typing.List[common.Event]
-                       ) -> typing.List[common.Event]:
+                       events: list[common.Event]
+                       ) -> list[common.Event]:
         for event in events:
             last_event_id, last_timestamp = \
                 self._sys_db.get_last_event_id_timestamp(event.event_id.server)
@@ -140,7 +141,7 @@ class LmdbBackend(common.Backend):
 
     async def query(self,
                     data: common.QueryData
-                    ) -> typing.List[common.Event]:
+                    ) -> list[common.Event]:
         if (data.server_id is None and
                 data.event_ids is None and
                 data.t_to is None and
@@ -191,7 +192,7 @@ class LmdbBackend(common.Backend):
 
     async def query_flushed(self,
                             event_id: common.EventId
-                            ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
+                            ) -> typing.AsyncIterable[list[common.Event]]:
         async for events in self._ref_db.query(event_id):
             yield events
 

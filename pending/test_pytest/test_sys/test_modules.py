@@ -2,10 +2,13 @@ import asyncio
 
 import pytest
 
-import hat.event.client
+# import hat.event.client
 import hat.event.common
 
 from test_sys.modules import remote
+
+
+pytestmark = pytest.mark.sys
 
 
 @pytest.fixture

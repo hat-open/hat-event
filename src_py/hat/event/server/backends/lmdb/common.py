@@ -1,3 +1,5 @@
+from hat.event.server.common import *  # NOQA
+
 from pathlib import Path
 import abc
 import enum
@@ -7,8 +9,8 @@ import typing
 import lmdb
 
 from hat import json
+
 from hat.event.server.common import Event, EventId, EventType, Timestamp
-from hat.event.server.common import *  # NOQA
 
 
 default_max_size = (512 * 1024 * 1024 * 1024
@@ -26,30 +28,30 @@ class DbType(enum.Enum):
     REF = 6
 
 
-ServerId = int
-EventTypeRef = int
-PartitionId = int
+ServerId: typing.TypeAlias = int
+EventTypeRef: typing.TypeAlias = int
+PartitionId: typing.TypeAlias = int
 
-SystemDbKey = ServerId
-SystemDbValue = typing.Tuple[EventId, Timestamp]
+SystemDbKey: typing.TypeAlias = ServerId
+SystemDbValue: typing.TypeAlias = tuple[EventId, Timestamp]
 
-LatestDataDbKey = EventTypeRef
-LatestDataDbValue = Event
+LatestDataDbKey: typing.TypeAlias = EventTypeRef
+LatestDataDbValue: typing.TypeAlias = Event
 
-LatestTypeDbKey = EventTypeRef
-LatestTypeDbValue = EventType
+LatestTypeDbKey: typing.TypeAlias = EventTypeRef
+LatestTypeDbValue: typing.TypeAlias = EventType
 
-OrderedDataDbKey = typing.Tuple[PartitionId, Timestamp, EventId]
-OrderedDataDbValue = Event
+OrderedDataDbKey: typing.TypeAlias = tuple[PartitionId, Timestamp, EventId]
+OrderedDataDbValue: typing.TypeAlias = Event
 
-OrderedPartitionDbKey = PartitionId
-OrderedPartitionDbValue = json.Data
+OrderedPartitionDbKey: typing.TypeAlias = PartitionId
+OrderedPartitionDbValue: typing.TypeAlias = json.Data
 
-OrderedCountDbKey = PartitionId
-OrderedCountDbValue = int
+OrderedCountDbKey: typing.TypeAlias = PartitionId
+OrderedCountDbValue: typing.TypeAlias = int
 
-RefDbKey = EventId
-RefDbValue = typing.Set['EventRef']
+RefDbKey: typing.TypeAlias = EventId
+RefDbValue: typing.TypeAlias = typing.Set['EventRef']
 
 
 class LatestEventRef(typing.NamedTuple):
@@ -60,17 +62,17 @@ class OrderedEventRef(typing.NamedTuple):
     key: OrderedDataDbKey
 
 
-EventRef = typing.Union[LatestEventRef,
-                        OrderedEventRef]
+EventRef: typing.TypeAlias = LatestEventRef | OrderedEventRef
 
 
 class EventRefChange(typing.NamedTuple):
     event_id: EventId
-    added: typing.Set[EventRef]
-    removed: typing.Set[EventRef]
+    added: set[EventRef]
+    removed: set[EventRef]
 
 
-ExtFlushCb = typing.Callable[[lmdb.Transaction], typing.Iterable[Event]]
+ExtFlushCb: typing.TypeAlias = typing.Callable[[lmdb.Transaction],
+                                               typing.Iterable[Event]]
 
 
 class Flushable(abc.ABC):

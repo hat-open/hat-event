@@ -90,11 +90,11 @@ class _Connection(aio.Resource):
                 for last_event_id in self._last_event_ids.values():
                     async for events in self._backend.query_flushed(
                             last_event_id):
-                        self._send_events(events)
+                        await self._send_events(events)
 
                 while True:
                     events = await events_queue.get()
-                    self._send_events(events)
+                    await self._send_events(events)
 
         except ConnectionError:
             pass
@@ -106,7 +106,7 @@ class _Connection(aio.Resource):
             mlog.debug("stopping connection loop")
             self.close()
 
-    def _send_events(self, events):
+    async def _send_events(self, events):
         if not events:
             return
 
@@ -125,7 +125,7 @@ class _Connection(aio.Resource):
             return
 
         mlog.debug("sending events")
-        self._conn.send_events(events)
+        await self._conn.send_events(events)
 
         last_event_id = events[-1].event_id
         self._last_event_ids[last_event_id.server] = last_event_id

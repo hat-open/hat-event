@@ -1,5 +1,7 @@
 """Common event server structures and functionality"""
 
+from hat.event.common import *  # NOQA
+
 import abc
 import enum
 import typing
@@ -7,12 +9,12 @@ import typing
 from hat import aio
 from hat import json
 from hat import util
+
 from hat.event.common import (EventId,
                               Event,
                               QueryData,
                               Subscription,
                               RegisterEvent)
-from hat.event.common import *  # NOQA
 
 
 SourceType = enum.Enum('SourceType', [
@@ -27,10 +29,37 @@ class Source(typing.NamedTuple):
     id: int
 
 
-BackendConf = json.Data
+EventsCb: typing.TypeAlias = typing.Callable[[list[Event]], None]
+"""Events callback"""
+
+
+class Engine(aio.Resource):
+    """Engine ABC"""
+
+    @abc.abstractmethod
+    def register_events_cb(self,
+                           cb: EventsCb
+                           ) -> util.RegisterCallbackHandle:
+        """Register events callback"""
+
+    @abc.abstractmethod
+    async def register(self,
+                       source: Source,
+                       events: list[RegisterEvent]
+                       ) -> list[Event | None]:
+        """Register events"""
+
+    @abc.abstractmethod
+    async def query(self,
+                    data: QueryData
+                    ) -> list[Event]:
+        """Query events"""
+
+
+BackendConf: typing.TypeAlias = json.Data
 """Backend configuration"""
 
-CreateBackend = aio.AsyncCallable[[BackendConf], 'Backend']
+CreateBackend: typing.TypeAlias = aio.AsyncCallable[[BackendConf], 'Backend']
 """Create backend callable"""
 
 
@@ -97,11 +126,11 @@ class Backend(aio.Resource):
         """Flush internal buffers and permanently persist events"""
 
 
-ModuleConf = json.Data
+ModuleConf: typing.TypeAlias = json.Data
 
-CreateModule = aio.AsyncCallable[
-    [ModuleConf, 'hat.event.engine.Engine', Source],
-    'Module']
+CreateModule: typing.TypeAlias = aio.AsyncCallable[[ModuleConf, Engine,
+                                                    Source],
+                                                   'Module']
 
 
 class Module(aio.Resource):

@@ -4,6 +4,9 @@ import time
 from hat import util
 
 
+pytestmark = pytest.mark.sys
+
+
 def test_run_single(create_event_server):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}
     modules_conf = []

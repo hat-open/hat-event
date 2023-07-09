@@ -22,18 +22,18 @@ class ClientInfo(typing.NamedTuple):
     synced: bool
 
 
-StateCb = typing.Callable[[typing.List[ClientInfo]], None]
+StateCb: typing.TypeAlias = typing.Callable[[list[ClientInfo]], None]
 """Syncer state change callback"""
 
-QueryCb = typing.Callable[[common.EventId],
-                          typing.AsyncIterable[typing.List[common.Event]]]
+QueryCb: typing.TypeAlias = typing.Callable[[common.EventId],
+                                            typing.AsyncIterable[list[common.Event]]]  # NOQA
 """Query callback"""
 
 
 async def listen(address: str,
-                 query_cb: typing.Optional[QueryCb] = None,
-                 subscriptions: typing.List[common.EventType] = [('*',)],
-                 token: typing.Optional[str] = None
+                 query_cb: QueryCb | None = None,
+                 subscriptions: list[common.EventType] = [('*',)],
+                 token: str | None = None
                  ) -> 'Server':
     """Create listening syncer server"""
     server = Server()
@@ -64,7 +64,7 @@ class Server(aio.Resource):
         return self._server.async_group
 
     @property
-    def state(self) -> typing.List[ClientInfo]:
+    def state(self) -> list[ClientInfo]:
         """State of all active connections"""
         return list(self._state.values())
 
@@ -74,7 +74,7 @@ class Server(aio.Resource):
         """Register state change callback"""
         return self._state_cbs.register(cb)
 
-    def notify(self, events: typing.List[common.Event]):
+    def notify(self, events: list[common.Event]):
         """Notify clients of new events"""
         self._notify_cbs.notify(events)
 

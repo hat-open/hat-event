@@ -76,7 +76,7 @@ async def test_events(address, events):
     msg = await conn.receive()
     assert msg == common.InitMsg(client_id, None, None, [])
 
-    conn.send(common.EventsMsg(events))
+    await conn.send(common.EventsMsg(events))
     await conn.drain()
 
     result = await events_queue.get()
@@ -108,7 +108,7 @@ async def test_ping(address):
         msg = await conn.receive()
         assert msg == common.PingMsg()
 
-        conn.send(common.PongMsg())
+        await conn.send(common.PongMsg())
         await conn.drain()
 
     await conn.async_close()
@@ -132,7 +132,7 @@ async def test_pong(address):
     msg = await conn.receive()
     assert msg == common.InitMsg(client_id, None, None, [])
 
-    conn.send(common.PingMsg())
+    await conn.send(common.PingMsg())
     await conn.drain()
 
     msg = await conn.receive()

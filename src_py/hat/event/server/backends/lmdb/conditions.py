@@ -1,4 +1,5 @@
 from hat import json
+
 from hat.event.server.backends.lmdb import common
 
 

@@ -4,6 +4,7 @@ import typing
 import lmdb
 
 from hat import aio
+
 from hat.event.server.backends.lmdb import common
 
 
@@ -52,5 +53,5 @@ class Environment(aio.Resource):
     def ext_stat(self,
                  txn: lmdb.Transaction,
                  db_type: common.DbType
-                 ) -> typing.Dict[str, int]:
+                 ) -> dict[str, int]:
         return txn.stat(self._dbs[db_type])

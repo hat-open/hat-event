@@ -6,6 +6,7 @@ import lmdb
 
 from hat import aio
 from hat import util
+
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb import environment
@@ -21,7 +22,7 @@ class RefDb:
 
     async def query(self,
                     event_id: common.EventId
-                    ) -> typing.AsyncIterable[typing.List[common.Event]]:
+                    ) -> typing.AsyncIterable[list[common.Event]]:
 
         # TODO use other executor to prevent blocking of other query and flush
         #      operations

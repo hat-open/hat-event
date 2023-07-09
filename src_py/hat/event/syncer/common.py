@@ -10,8 +10,8 @@ from hat.event.common import EventId, EventType
 class SyncerReq(typing.NamedTuple):
     last_event_id: EventId
     client_name: str
-    client_token: typing.Optional[str]
-    subscriptions: typing.List[EventType]
+    client_token: str | None
+    subscriptions: list[EventType]
 
 
 def syncer_req_to_sbs(syncer_req: SyncerReq) -> sbs.Data:

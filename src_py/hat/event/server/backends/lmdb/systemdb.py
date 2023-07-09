@@ -6,7 +6,7 @@ from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb import environment
 
 
-Changes = typing.Dict[common.SystemDbKey, common.SystemDbValue]
+Changes: typing.TypeAlias = dict[common.SystemDbKey, common.SystemDbValue]
 
 
 def ext_create(env: environment.Environment) -> 'SystemDb':
@@ -29,8 +29,8 @@ class SystemDb(common.Flushable):
 
     def get_last_event_id_timestamp(self,
                                     server_id: common.ServerId
-                                    ) -> typing.Tuple[common.EventId,
-                                                      common.Timestamp]:
+                                    ) -> tuple[common.EventId,
+                                               common.Timestamp]:
         value = self._cache.get(server_id)
         if value:
             return value

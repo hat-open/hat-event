@@ -4,42 +4,23 @@ set -e
 
 . $(dirname -- "$0")/env.sh
 
-TARGETS="linux_gnu_x86_64:cp38
-         linux_gnu_x86_64:cp39
-         linux_gnu_x86_64:cp310
-         linux_gnu_x86_64:cp311
-         linux_musl_x86_64:cp38
-         linux_musl_x86_64:cp39
-         linux_musl_x86_64:cp310
-         linux_musl_x86_64:cp311
-         linux_gnu_aarch64:cp39
-         linux_gnu_aarch64:cp38
-         linux_gnu_aarch64:cp310
-         linux_gnu_aarch64:cp311
-         windows_amd64:cp38
-         windows_amd64:cp39
-         windows_amd64:cp310
-         windows_amd64:cp311"
-# TARGETS=""
+TARGET_PLATFORMS="linux_gnu_x86_64
+                  linux_gnu_aarch64
+                  linux_musl_x86_64
+                  windows_amd64"
 
 cd $ROOT_PATH
 rm -rf $DIST_PATH
 mkdir -p $DIST_PATH
 
-for TARGET in $TARGETS; do
-    export TARGET_PLATFORM=$(echo $TARGET | cut -d ':' -f 1)
-    export TARGET_PY_VERSION=$(echo $TARGET | cut -d ':' -f 2)
+for TARGET_PLATFORM in $TARGET_PLATFORMS; do
+    export TARGET_PLATFORM
     $PYTHON -m doit clean_all
     $PYTHON -m doit
     cp $ROOT_PATH/build/py/dist/*.whl $DIST_PATH
 done
 
-IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.8
-        linux/arm/v7/build-hat-event:debian11-cpy3.9
-        linux/arm/v7/build-hat-event:debian11-cpy3.10
-        linux/arm/v7/build-hat-event:debian11-cpy3.11"
-IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.10"
-# IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.11"
+IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.11"
 
 for IMAGE in $IMAGES; do
     $PYTHON -m doit clean_all

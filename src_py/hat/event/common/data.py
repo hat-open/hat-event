@@ -5,30 +5,33 @@ import typing
 from hat import chatter
 from hat import json
 from hat import sbs
+import hat.monitor.common
+
 from hat.event.common.timestamp import (Timestamp,
                                         timestamp_to_sbs,
                                         timestamp_from_sbs)
-import hat.monitor.common
 
 
-with importlib.resources.path(__package__, 'json_schema_repo.json') as _path:
+with importlib.resources.as_file(importlib.resources.files(__package__) /
+                                 'json_schema_repo.json') as _path:
     json_schema_repo: json.SchemaRepository = json.SchemaRepository(
         json.json_schema_repo,
         hat.monitor.common.json_schema_repo,
         json.SchemaRepository.from_json(_path))
     """JSON schema repository"""
 
-with importlib.resources.path(__package__, 'sbs_repo.json') as _path:
+with importlib.resources.as_file(importlib.resources.files(__package__) /
+                                 'sbs_repo.json') as _path:
     sbs_repo: sbs.Repository = sbs.Repository(chatter.sbs_repo,
                                               sbs.Repository.from_json(_path))
     """SBS schema repository"""
 
 
-EventTypeSegment = str
+EventTypeSegment: typing.TypeAlias = str
 """Event type segment"""
 
 
-EventType: typing.Type = typing.Tuple[EventTypeSegment, ...]
+EventType: typing.TypeAlias = typing.Tuple[EventTypeSegment, ...]
 """Event type"""
 
 
@@ -63,7 +66,7 @@ class EventPayload(typing.NamedTuple):
 
 
 class SbsData(typing.NamedTuple):
-    module: typing.Optional[str]
+    module: str | None
     """SBS module name"""
     type: str
     """SBS type name"""
@@ -73,30 +76,30 @@ class SbsData(typing.NamedTuple):
 class Event(typing.NamedTuple):
     event_id: EventId
     event_type: EventType
-    timestamp: 'Timestamp'
-    source_timestamp: typing.Optional['Timestamp']
-    payload: typing.Optional[EventPayload]
+    timestamp: Timestamp
+    source_timestamp: Timestamp | None
+    payload: EventPayload | None
 
 
 class RegisterEvent(typing.NamedTuple):
     event_type: EventType
-    source_timestamp: typing.Optional['Timestamp']
-    payload: typing.Optional[EventPayload]
+    source_timestamp: Timestamp | None
+    payload: EventPayload | None
 
 
 class QueryData(typing.NamedTuple):
-    server_id: typing.Optional[int] = None
-    event_ids: typing.Optional[typing.List[EventId]] = None
-    event_types: typing.Optional[typing.List[EventType]] = None
-    t_from: typing.Optional['Timestamp'] = None
-    t_to: typing.Optional['Timestamp'] = None
-    source_t_from: typing.Optional['Timestamp'] = None
-    source_t_to: typing.Optional['Timestamp'] = None
-    payload: typing.Optional[EventPayload] = None
+    server_id: int | None = None
+    event_ids: list[EventId] | None = None
+    event_types: list[EventType] | None = None
+    t_from: Timestamp | None = None
+    t_to: Timestamp | None = None
+    source_t_from: Timestamp | None = None
+    source_t_to: Timestamp | None = None
+    payload: EventPayload | None = None
     order: Order = Order.DESCENDING
     order_by: OrderBy = OrderBy.TIMESTAMP
     unique_type: bool = False
-    max_results: typing.Optional[int] = None
+    max_results: int | None = None
 
 
 def event_to_sbs(event: Event) -> sbs.Data:

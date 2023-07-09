@@ -15,8 +15,7 @@ __all__ = ['task_pymodules',
            'task_pymodules_subscription_cleanup']
 
 
-py_limited_api = None
-# py_limited_api = common.PyVersion.CP310  # PyUnicode_AsUTF8AndSize
+py_limited_api = next(iter(common.PyVersion))
 py_ext_suffix = get_py_ext_suffix(py_limited_api=py_limited_api)
 
 build_dir = Path('build')

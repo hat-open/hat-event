@@ -4,6 +4,9 @@ from hat.event import common
 import hat.event.client
 
 
+pytestmark = pytest.mark.sys
+
+
 @pytest.fixture
 def server(create_event_server):
     backend_conf = {'module': 'hat.event.server.backends.dummy'}

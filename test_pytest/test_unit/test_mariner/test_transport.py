@@ -36,7 +36,7 @@ async def test_send_receive(address, msg):
     conn1 = Transport(conn1)
     conn2 = Transport(conn2)
 
-    conn1.send(msg)
+    await conn1.send(msg)
     await conn1.drain()
 
     received = await conn2.receive()

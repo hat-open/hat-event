@@ -4,19 +4,16 @@ import asyncio
 import collections
 import importlib
 import logging
-import typing
 
 from hat import aio
 from hat import json
 from hat import util
+
 from hat.event.server import common
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
-
-EventsCb = typing.Callable[[typing.List[common.Event]], None]
-"""Events callback"""
 
 
 async def create_engine(conf: json.Data,
@@ -67,7 +64,7 @@ async def create_engine(conf: json.Data,
     return engine
 
 
-class Engine(aio.Resource):
+class Engine(common.Engine):
 
     @property
     def async_group(self) -> aio.Group:
@@ -75,15 +72,15 @@ class Engine(aio.Resource):
         return self._async_group
 
     def register_events_cb(self,
-                           cb: EventsCb
+                           cb: common.EventsCb
                            ) -> util.RegisterCallbackHandle:
         """Register events callback"""
         return self._register_cbs.register(cb)
 
     async def register(self,
                        source: common.Source,
-                       events: typing.List[common.RegisterEvent]
-                       ) -> typing.List[typing.Optional[common.Event]]:
+                       events: list[common.RegisterEvent]
+                       ) -> list[common.Event | None]:
         """Register events"""
         if not events:
             return []
@@ -94,7 +91,7 @@ class Engine(aio.Resource):
 
     async def query(self,
                     data: common.QueryData
-                    ) -> typing.List[common.Event]:
+                    ) -> list[common.Event]:
         """Query events"""
         return await self._backend.query(data)
 

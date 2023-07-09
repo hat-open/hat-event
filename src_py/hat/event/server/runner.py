@@ -2,7 +2,6 @@ import asyncio
 import contextlib
 import importlib
 import logging
-import typing
 
 from hat import aio
 from hat import json
@@ -176,8 +175,8 @@ class EngineRunner(aio.Resource):
     def __init__(self,
                  conf: json.Data,
                  backend: common.Backend,
-                 syncer_server: typing.Optional[SyncerServer],
-                 syncer_client: typing.Optional[SyncerClient]):
+                 syncer_server: SyncerServer | None,
+                 syncer_client: SyncerClient | None):
         self._conf = conf
         self._backend = backend
         self._syncer_server = syncer_server

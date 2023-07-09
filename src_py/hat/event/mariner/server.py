@@ -13,7 +13,8 @@ from hat.event.mariner.transport import Transport
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
-ServerConnectionCb = aio.AsyncCallable[['ServerConnection'], None]
+ServerConnectionCb: typing.TypeAlias = aio.AsyncCallable[['ServerConnection'],
+                                                         None]
 """Server connection callback"""
 
 
@@ -21,10 +22,16 @@ async def listen(address: tcp.Address,
                  connection_cb: ServerConnectionCb,
                  ping_delay: int = 30,
                  ping_timeout: int = 10,
-                 subscriptions: typing.List[common.EventType] = [('*')],
+                 subscriptions: list[common.EventType] = [('*')],
+                 *,
+                 bind_connections: bool = True,
                  **kwargs
                  ) -> 'Server':
-    """Create listening server"""
+    """Create listening server
+
+    Additional arguments are passed directly to `hat.drivers.tcp.listen`.
+
+    """
     server = Server()
     server._connection_cb = connection_cb
     server._ping_delay = ping_delay
@@ -32,7 +39,8 @@ async def listen(address: tcp.Address,
     server._subscription = common.Subscription(subscriptions)
 
     server._server = await tcp.listen(server._on_connection, address,
-                                      bind_connections=True)
+                                      bind_connections=bind_connections,
+                                      **kwargs)
 
     mlog.debug('listening on %s', address)
     return server
@@ -92,12 +100,12 @@ class ServerConnection(aio.Resource):
         return self._client_id
 
     @property
-    def client_token(self) -> typing.Optional[str]:
+    def client_token(self) -> str | None:
         """Client token"""
         return self._client_token
 
     @property
-    def last_event_id(self) -> typing.Optional[common.EventId]:
+    def last_event_id(self) -> common.EventId | None:
         """Laste event id"""
         return self._last_event_id
 
@@ -106,9 +114,9 @@ class ServerConnection(aio.Resource):
         """Subscription"""
         return self._subscription
 
-    def send_events(self, events: typing.List[common.Event]):
+    async def send_events(self, events: list[common.Event]):
         """Send events"""
-        self._transport.send(common.EventsMsg(events=events))
+        await self._transport.send(common.EventsMsg(events=events))
 
     async def _receive_loop(self):
         try:
@@ -119,7 +127,7 @@ class ServerConnection(aio.Resource):
                 self._ping_event.set()
 
                 if isinstance(msg, common.PingMsg):
-                    self._transport.send(common.PongMsg())
+                    await self._transport.send(common.PongMsg())
 
                 elif isinstance(msg, common.PongMsg):
                     pass
@@ -149,7 +157,7 @@ class ServerConnection(aio.Resource):
                                        self._ping_delay)
                     continue
 
-                self._transport.send(common.PingMsg())
+                await self._transport.send(common.PingMsg())
 
                 await aio.wait_for(self._ping_event.wait(),
                                    self._ping_timeout)

@@ -12,26 +12,28 @@ from hat.event import common
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
-ClientId = int
+ClientId: typing.TypeAlias = int
 """Client identifier"""
 
-ClientCb = aio.AsyncCallable[[ClientId], None]
+ClientCb: typing.TypeAlias = aio.AsyncCallable[[ClientId], None]
 """Client connected/disconnected callback"""
 
-RegisterCb = aio.AsyncCallable[[ClientId, typing.List[common.RegisterEvent]],
-                               typing.List[common.Event]]
+RegisterCb: typing.TypeAlias = aio.AsyncCallable[[ClientId,
+                                                  list[common.RegisterEvent]],
+                                                 list[common.Event]]
 """Register callback"""
 
-QueryCb = aio.AsyncCallable[[ClientId, typing.List[common.QueryData]],
-                            typing.List[common.Event]]
+QueryCb: typing.TypeAlias = aio.AsyncCallable[[ClientId,
+                                               list[common.QueryData]],
+                                              list[common.Event]]
 """Query callback"""
 
 
 async def listen(address: str,
-                 connected_cb: typing.Optional[ClientCb] = None,
-                 disconnected_cb: typing.Optional[ClientCb] = None,
-                 register_cb: typing.Optional[RegisterCb] = None,
-                 query_cb: typing.Optional[QueryCb] = None
+                 connected_cb: ClientCb | None = None,
+                 disconnected_cb: ClientCb | None = None,
+                 register_cb: RegisterCb | None = None,
+                 query_cb: QueryCb | None = None
                  ) -> 'Server':
     """Create eventer server instance"""
     server = Server()
@@ -57,7 +59,7 @@ class Server(aio.Resource):
         """Async group"""
         return self._srv.async_group
 
-    def notify(self, events: typing.List[common.Event]):
+    def notify(self, events: list[common.Event]):
         """Notify events to subscribed clients"""
         for conn in self._conns.values():
             conn.notify(events)
@@ -92,8 +94,8 @@ class _Connection(aio.Resource):
     def __init__(self,
                  conn: chatter.Connection,
                  client_id: int,
-                 register_cb: typing.Optional[RegisterCb],
-                 query_cb: typing.Optional[QueryCb]):
+                 register_cb: RegisterCb | None,
+                 query_cb: QueryCb | None):
         self._conn = conn
         self._client_id = client_id
         self._register_cb = register_cb
@@ -106,7 +108,7 @@ class _Connection(aio.Resource):
     def async_group(self) -> aio.Group:
         return self._conn.async_group
 
-    def notify(self, events: typing.List[common.Event]):
+    def notify(self, events: list[common.Event]):
         if not self.is_open or not self._subscription:
             return
 

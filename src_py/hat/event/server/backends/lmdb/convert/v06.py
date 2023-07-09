@@ -11,7 +11,7 @@ from hat import json
 from hat import sbs
 
 
-EventType: typing.Type = typing.Tuple[str, ...]
+EventType: typing.TypeAlias = typing.Tuple[str, ...]
 """Event type"""
 
 
@@ -29,7 +29,7 @@ class EventId(typing.NamedTuple):
 
 
 class SbsData(typing.NamedTuple):
-    module: typing.Optional[str]
+    module: str | None
     """SBS module name"""
     type: str
     """SBS type name"""
@@ -38,7 +38,7 @@ class SbsData(typing.NamedTuple):
 
 class EventPayload(typing.NamedTuple):
     type: EventPayloadType
-    data: typing.Union[bytes, json.Data, SbsData]
+    data: bytes | json.Data | SbsData
 
 
 class Timestamp(typing.NamedTuple):
@@ -79,8 +79,8 @@ class Event(typing.NamedTuple):
     event_id: EventId
     event_type: EventType
     timestamp: Timestamp
-    source_timestamp: typing.Optional[Timestamp]
-    payload: typing.Optional[EventPayload]
+    source_timestamp: Timestamp | None
+    payload: EventPayload | None
 
 
 def decode_uint(x: bytes) -> int:
@@ -101,7 +101,7 @@ def decode_json(x: bytes) -> json.Data:
 
 
 def decode_uint_timestamp_uint(x: bytes
-                               ) -> typing.Tuple[int, Timestamp, int]:
+                               ) -> tuple[int, Timestamp, int]:
     res = struct.unpack(">QQIQ", x)
     return res[0], Timestamp(res[1] - (1 << 63), res[2]), res[3]
 
@@ -243,5 +243,5 @@ def _sbs_data_from_sbs(data: sbs.Data) -> SbsData:
 
 def _optional_from_sbs(data: sbs.Data,
                        fn=lambda i: i
-                       ) -> typing.Optional[typing.Any]:
+                       ) -> typing.Any | None:
     return fn(data[1]) if data[0] == 'value' else None

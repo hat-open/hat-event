@@ -16,6 +16,7 @@ import typing
 from hat import aio
 from hat import json
 from hat import util
+
 from hat.event.server import common
 
 
@@ -36,13 +37,13 @@ class DummyBackend(common.Backend):
         return self._async_group
 
     def register_registered_events_cb(self,
-                                      cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                      cb: typing.Callable[[list[common.Event]],
                                                           None]
                                       ) -> util.RegisterCallbackHandle:
         return util.RegisterCallbackHandle(cancel=lambda: None)
 
     def register_flushed_events_cb(self,
-                                   cb: typing.Callable[[typing.List[common.Event]],  # NOQA
+                                   cb: typing.Callable[[list[common.Event]],
                                                        None]
                                    ) -> util.RegisterCallbackHandle:
         return util.RegisterCallbackHandle(cancel=lambda: None)
@@ -53,18 +54,18 @@ class DummyBackend(common.Backend):
         return common.EventId(server_id, 0, 0)
 
     async def register(self,
-                       events: typing.List[common.Event]
-                       ) -> typing.List[typing.Optional[common.Event]]:
+                       events: list[common.Event]
+                       ) -> list[common.Event | None]:
         return events
 
     async def query(self,
                     data: common.QueryData
-                    ) -> typing.List[common.Event]:
+                    ) -> list[common.Event]:
         return []
 
     async def query_flushed(self,
                             data: common.QueryData
-                            ) -> typing.AsyncIterable[typing.List[common.Event]]:  # NOQA
+                            ) -> typing.AsyncIterable[list[common.Event]]:
         for events in []:
             yield events
 

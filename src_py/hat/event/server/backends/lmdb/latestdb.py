@@ -8,10 +8,10 @@ from hat.event.server.backends.lmdb import refdb
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
-Changes = typing.Tuple[typing.Dict[common.LatestDataDbKey,
-                                   common.LatestDataDbValue],
-                       typing.Dict[common.LatestTypeDbKey,
-                                   common.LatestTypeDbValue]]
+Changes: typing.TypeAlias = tuple[dict[common.LatestDataDbKey,
+                                       common.LatestDataDbValue],
+                                  dict[common.LatestTypeDbKey,
+                                       common.LatestTypeDbValue]]
 
 
 def ext_create(env: environment.Environment,
@@ -69,7 +69,7 @@ class LatestDb(common.Flushable):
         return True
 
     def query(self,
-              event_types: typing.Optional[typing.List[common.EventType]]
+              event_types: list[common.EventType] | None
               ) -> typing.Iterable[common.Event]:
         if event_types is None:
             yield from self._events.values()
