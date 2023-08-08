@@ -9,8 +9,9 @@ from hat.doit import common
 from hat.doit.c import get_task_clang_format
 from hat.doit.docs import (build_sphinx,
                            build_pdoc)
-from hat.doit.py import (build_wheel,
-                         run_pytest,
+from hat.doit.py import (get_task_build_wheel,
+                         get_task_run_pytest,
+                         get_task_run_pip_compile,
                          run_flake8,
                          get_py_versions)
 
@@ -28,6 +29,7 @@ __all__ = ['task_clean_all',
            'task_sbs_repo',
            'task_peru',
            'task_format',
+           'task_pip_compile',
            *pymodules.__all__]
 
 
@@ -59,27 +61,19 @@ def task_clean_all():
 
 def task_build():
     """Build"""
-
-    def build():
-        build_wheel(
-            src_dir=src_py_dir,
-            dst_dir=build_py_dir,
-            name='hat-event',
-            description='Hat event',
-            url='https://github.com/hat-open/hat-event',
-            license=common.License.APACHE2,
-            console_scripts=[
-                'hat-event-server = hat.event.server.main:main',
-                'hat-event-lmdb-manager = hat.event.server.backends.lmdb.manager.main:main'],  # NOQA
-            py_versions=get_py_versions(py_limited_api),
-            py_limited_api=py_limited_api,
-            platform=common.target_platform,
-            has_ext_modules=True)
-
-    return {'actions': [build],
-            'task_dep': ['json_schema_repo',
-                         'sbs_repo',
-                         'pymodules']}
+    return get_task_build_wheel(
+        src_dir=src_py_dir,
+        build_dir=build_py_dir,
+        scripts={
+            'hat-event-server': 'hat.event.server.main:main',
+            'hat-event-lmdb-manager': 'hat.event.server.backends.lmdb.manager.main:main'},  # NOQA
+        py_versions=get_py_versions(py_limited_api),
+        py_limited_api=py_limited_api,
+        platform=common.target_platform,
+        has_ext_modules=True,
+        task_dep=['json_schema_repo',
+                  'sbs_repo',
+                  'pymodules'])
 
 
 def task_check():
@@ -90,11 +84,9 @@ def task_check():
 
 def task_test():
     """Test"""
-    return {'actions': [lambda args: run_pytest(pytest_dir, *(args or []))],
-            'pos_arg': 'args',
-            'task_dep': ['json_schema_repo',
-                         'sbs_repo',
-                         'pymodules']}
+    return get_task_run_pytest(task_dep=['json_schema_repo',
+                                         'sbs_repo',
+                                         'pymodules'])
 
 
 def task_docs():
@@ -153,3 +145,8 @@ def task_format():
     """Format"""
     yield from get_task_clang_format([*src_c_dir.rglob('*.c'),
                                       *src_c_dir.rglob('*.h')])
+
+
+def task_pip_compile():
+    """Run pip-compile"""
+    return get_task_run_pip_compile()
