@@ -201,8 +201,8 @@ class _Connection(aio.Resource):
                     synced_cb=self._on_synced,
                     events_cb=self._backend.register)
 
-            except Exception:
-                mlog.debug("can not connect to syncer server")
+            except Exception as e:
+                mlog.debug("can not connect to syncer server: %s", e)
                 await asyncio.sleep(reconnect_delay)
                 continue
 

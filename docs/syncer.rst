@@ -20,7 +20,9 @@ module (see `Chatter messages`_), are the following:
     | Message            +-------+------+-------+ Direction |
     |                    | First | Last | Token |           |
     +====================+=======+======+=======+===========+
-    | MsgReq             | T     | T    | T     | c |arr| s |
+    | MsgInitReq         | T     | F    | T     | c |arr| s |
+    +--------------------+-------+------+-------+-----------+
+    | MsgInitRes         | F     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
     | MsgSynced          | T     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
@@ -31,32 +33,39 @@ module (see `Chatter messages`_), are the following:
     | MsgFlushRes        | F     | T    | T     | c |arr| s |
     +--------------------+-------+------+-------+-----------+
 
-Communication between Syncer Client and server starts with synchronization
-request initiated by the client with `MsgReq` message. The connection between
-server and client is considered established when `MsgReq` message is received
-on the server side. With this message, client requests for server events in
-order to get "synchronized". More specifically, by `MsgReq` client represents
-itself by `clientName` and requests all the events that have `EventId` such
-that `session` is same or greater and `instance` is greater (ie. newer) than
-`lastEventId` and `server` corresponds to Syncer Server's Event Server.
+Communication between Syncer Client and server starts with initialization
+request initiated by the client with `MsgInitReq` message. When Syncer Server
+receives `MsgInitReq`, it must immediately respond with `MsgInitRes` message.
+The connection between server and client is considered established when
+client receives `MsgInitRes` success message. If `MsgInitRes` error is
+received, chatter connection should be closed. With `MsgInitReq` message,
+client requests for server events in order to get "synchronized". More
+specifically, by `MsgInitReq` client represents itself by `clientName` and
+requests all the events that have `EventId` such that `session` is same or
+greater and `instance` is greater (ie. newer) than `lastEventId` and `server`
+corresponds to Syncer Server's Event Server.
 
-Upon receiving `MsgReq`, server communicates back the requested events by
-`MsgEvents` message. Events are grouped in `MsgEvents` such that all events in
-the message are from the same session (`session` of `EventId`). Once all of
-these events are sent, server sends `MsgSynced` message in order to signalize
-the client that synchronization phase ended.
+Upon receiving `MsgInitReq` and responding with `MsgInitRes`, server
+communicates back the requested events by `MsgEvents` message. Events are
+grouped in `MsgEvents` such that all events in the message are from the same
+session (`session` of `EventId`). Once all of these events are sent, server
+sends `MsgSynced` message in order to signalize the client that synchronization
+phase ended.
 
 All events created (by the Event Server with running Syncer Server) after the
-`MsgReq` (and before `MsgSynced`) are not included in the synchronization phase.
-They are buffered on the server side and sent to client only after the
+`MsgInitReq` (and before `MsgSynced`) are not included in the synchronization
+phase. They are buffered on the server side and sent to client only after the
 `MsgSynced` message, using the same `MsgEvents` message. In the remaining life
 of the connection between Syncer Server and client, only `MsgEvents` messages
 are sent from server to a client in order to notify client with the new events.
 All events in one `MsgEvents` message always belong to the same session.
 
-.. todo::
-
-    add `subscription` to `MsgReq`.
+In addition to `lastEventId`, `MsgInitReq` contains `subscriptions` and
+optional `clientToken`. `subscription` is used as additional filter for
+reporting only events that satisfy specified event types. `clientToken`, if
+configured by server, is used for identifying clients which are allowed to
+communicate to server. This parameter is usually used for checking
+configuration synchronization between client and server.
 
 
 Implementation

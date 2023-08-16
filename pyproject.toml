@@ -1,6 +1,6 @@
 [project]
 name = "hat-event"
-version = "0.8.8"
+version = "0.8.9"
 description = "Hat event"
 readme = "README.rst"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ Documentation = "http://hat-event.hat-open.com"
 
 [project.optional-dependencies]
 dev = [
-    "hat-doit ~=0.14.5",
+    "hat-doit ~=0.14.6",
     "peru >= 1.3.1",
     "psutil >= 5.9.5",
     "sphinxcontrib-plantuml >= 0.23",
@@ -32,7 +32,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["hat-doit ~=0.14.5"]
+requires = ["hat-doit ~=0.14.6"]
 build-backend = "hat.doit.pep517"
 
 [tool.hat-doit]

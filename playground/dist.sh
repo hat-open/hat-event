@@ -42,8 +42,10 @@ set -e
 python3 -m venv venv
 . venv/bin/activate
 export CARGO_NET_GIT_FETCH_WITH_CLI=true  # cryptography
-pip install --upgrade pip
-pip install --upgrade -r requirements.pip.dev.txt 'cryptography==3.3.2'
+pip install --upgrade pip hat-json
+./playground/requirements.sh > requirements.pip.txt
+echo 'cryptography==3.3.2' >> requirements.pip.txt
+pip install --upgrade -r requirements.pip.txt
 doit clean_all
 doit
 cp build/py/dist/*.whl dist

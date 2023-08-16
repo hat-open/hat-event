@@ -73,7 +73,7 @@ hat-chatter==0.5.11
     # via
     #   hat-event (pyproject.toml)
     #   hat-monitor
-hat-doit==0.14.5
+hat-doit==0.14.6
     # via hat-event (pyproject.toml)
 hat-drivers==0.7.5
     # via hat-event (pyproject.toml)

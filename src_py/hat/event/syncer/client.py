@@ -34,16 +34,28 @@ async def connect(address: str,
     mlog.debug("connected to %s", address)
 
     try:
-        req = common.SyncerReq(last_event_id=last_event_id,
-                               client_name=client_name,
-                               client_token=client_token,
-                               subscriptions=subscriptions)
+        req = common.SyncerInitReq(last_event_id=last_event_id,
+                                   client_name=client_name,
+                                   client_token=client_token,
+                                   subscriptions=subscriptions)
 
         mlog.debug("sending %s", req)
-        msg_data = chatter.Data(module='HatSyncer',
-                                type='MsgReq',
-                                data=common.syncer_req_to_sbs(req))
-        client._conn.send(msg_data)
+        req_msg_data = chatter.Data(module='HatSyncer',
+                                    type='MsgInitReq',
+                                    data=common.syncer_init_req_to_sbs(req))
+        client._conn.send(req_msg_data, last=False)
+
+        res_msg = await client._conn.receive()
+        res_msg_type = res_msg.data.module, res_msg.data.type
+
+        if res_msg_type != ('HatSyncer', 'MsgInitRes'):
+            raise Exception('unsupported message type')
+
+        mlog.debug("received init response")
+        res = common.syncer_init_res_from_sbs(res_msg.data.data)
+
+        if res is not None:
+            raise Exception(f"init error - {res}")
 
         client.async_group.spawn(client._receive_loop)
 

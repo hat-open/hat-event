@@ -154,11 +154,16 @@ async def test_connect(server_address_factory, syncer_token):
 
     conn = await syncer_server.get_connection()
     msg = await conn.receive()
-    assert msg.data.type == 'MsgReq'
+    assert msg.data.type == 'MsgInitReq'
     assert msg.data.data['lastEventId']['server'] == server_id
     assert msg.data.data['lastEventId']['session'] == last_session_id
     assert msg.data.data['lastEventId']['instance'] == last_instance_id
     assert msg.data.data['clientName'] == client_name
+
+    conn.send(chatter.Data(module='HatSyncer',
+                           type='MsgInitRes',
+                           data=('success', None)),
+              conv=msg.conv)
 
     events = [common.Event(
         event_id=common.EventId(server=server_id,
@@ -257,7 +262,7 @@ async def test_connect_multiple(server_address_factory):
     for _, srv_id, srv in servers:
         conn = await srv.get_connection()
         msg = await conn.receive()
-        assert msg.data.type == 'MsgReq'
+        assert msg.data.type == 'MsgInitReq'
         assert msg.data.data['lastEventId']['server'] == srv_id
 
     for _, _, srv in servers:

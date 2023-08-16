@@ -90,13 +90,19 @@ async def test_connect(conf):
     assert state_queue.empty()
 
     conn.send(chatter.Data(module='HatSyncer',
-                           type='MsgReq',
+                           type='MsgInitReq',
                            data={'lastEventId': {'server': 1,
                                                  'session': 0,
                                                  'instance': 0},
                                  'clientName': client_name,
                                  'clientToken': ('none', None),
-                                 'subscriptions': [['*']]}))
+                                 'subscriptions': [['*']]}),
+              last=False)
+
+    msg = await conn.receive()
+    assert msg.data.type == 'MsgInitRes'
+    assert msg.data.data == ('success', None)
+
     state = await state_queue.get()
     assert len(state) == 1
     assert state[0].name == client_name
@@ -142,11 +148,17 @@ async def test_sync(conf):
 
     last_event_id = common.EventId(server=1, session=1, instance=456)
     conn.send(chatter.Data(module='HatSyncer',
-                           type='MsgReq',
+                           type='MsgInitReq',
                            data={'lastEventId': last_event_id._asdict(),
                                  'clientName': 'abcd',
                                  'clientToken': ('none', None),
-                                 'subscriptions': [['*']]}))
+                                 'subscriptions': [['*']]}),
+              last=False)
+
+    msg = await conn.receive()
+    assert msg.data.type == 'MsgInitRes'
+    assert msg.data.data == ('success', None)
+
     state = await state_queue.get()
     assert len(state) == 1
     assert not state[0].synced
@@ -182,13 +194,18 @@ async def test_register(conf):
     assert state_queue.empty()
 
     conn.send(chatter.Data(module='HatSyncer',
-                           type='MsgReq',
+                           type='MsgInitReq',
                            data={'lastEventId': {'server': 1,
                                                  'session': 0,
                                                  'instance': 0},
                                  'clientName': 'abcd',
                                  'clientToken': ('none', None),
-                                 'subscriptions': [['*']]}))
+                                 'subscriptions': [['*']]}),
+              last=False)
+
+    msg = await conn.receive()
+    assert msg.data.type == 'MsgInitRes'
+    assert msg.data.data == ('success', None)
 
     msg = await conn.receive()
     assert msg.data.type == 'MsgSynced'
@@ -240,13 +257,18 @@ async def test_register_while_sync(conf):
     assert state_queue.empty()
 
     conn.send(chatter.Data(module='HatSyncer',
-                           type='MsgReq',
+                           type='MsgInitReq',
                            data={'lastEventId': {'server': 1,
                                                  'session': 1,
                                                  'instance': 0},
                                  'clientName': 'abcd',
                                  'clientToken': ('none', None),
-                                 'subscriptions': [['*']]}))
+                                 'subscriptions': [['*']]}),
+              last=False)
+
+    msg = await conn.receive()
+    assert msg.data.type == 'MsgInitRes'
+    assert msg.data.data == ('success', None)
 
     state = await state_queue.get()
     assert len(state) == 1
@@ -304,11 +326,16 @@ async def test_multi_clients(conf):
                                     id=i + 1)
         conns.append(conn)
         conn.send(chatter.Data(module='HatSyncer',
-                               type='MsgReq',
+                               type='MsgInitReq',
                                data={'lastEventId': last_event_id._asdict(),
                                      'clientName': conn.client_name,
                                      'clientToken': ('none', None),
-                                     'subscriptions': [['*']]}))
+                                     'subscriptions': [['*']]}),
+                  last=False)
+
+        msg = await conn.receive()
+        assert msg.data.type == 'MsgInitRes'
+        assert msg.data.data == ('success', None)
 
         state = await state_queue.get()
         assert len(state) == i + 1

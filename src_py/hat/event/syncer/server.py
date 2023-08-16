@@ -107,23 +107,37 @@ class Server(aio.Resource):
         client_id = None
         try:
             mlog.debug("waiting for incomming message")
-            msg = await conn.receive()
-            msg_type = msg.data.module, msg.data.type
+            req_msg = await conn.receive()
+            req_msg_type = req_msg.data.module, req_msg.data.type
 
-            if msg_type != ('HatSyncer', 'MsgReq'):
+            if req_msg_type != ('HatSyncer', 'MsgInitReq'):
                 raise Exception('unsupported message type')
 
-            mlog.debug("received request")
-            msg_req = common.syncer_req_from_sbs(msg.data.data)
+            mlog.debug("received init request")
+            req = common.syncer_init_req_from_sbs(req_msg.data.data)
 
-            if self._token is not None and msg_req.client_token != self._token:
-                raise Exception('invalid client token')
+            if self._token is not None and req.client_token != self._token:
+                res = 'invalid client token'
+
+            else:
+                res = None
+
+            mlog.debug("sending init response")
+            res_msg_data = chatter.Data(
+                module='HatSyncer',
+                type='MsgInitRes',
+                data=common.syncer_init_res_to_sbs(res))
+            conn.send(res_msg_data, conv=req_msg.conv)
+
+            if res is not None:
+                await conn.drain()
+                raise Exception(res)
 
             client_id = next(self._next_client_ids)
-            last_event_id = msg_req.last_event_id
+            last_event_id = req.last_event_id
             subscription = self._subscription.intersection(
-                common.Subscription(msg_req.subscriptions))
-            client_info = ClientInfo(name=msg_req.client_name,
+                common.Subscription(req.subscriptions))
+            client_info = ClientInfo(name=req.client_name,
                                      synced=False)
 
             self._update_client_info(client_id, client_info)

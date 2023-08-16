@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from hat import aio
@@ -31,13 +33,39 @@ async def conn_queue(address):
         await server.async_close()
 
 
-async def test_connect(address, conn_queue):
-    client = await hat.event.syncer.connect(
-        address=address,
-        client_name='name123',
-        last_event_id=common.EventId(1, 2, 3))
+async def test_init(address, conn_queue):
+    client_task = asyncio.create_task(
+        hat.event.syncer.connect(
+            address=address,
+            client_name='name123',
+            last_event_id=common.EventId(1, 2, 3),
+            client_token='token123',
+            subscriptions=[('a', 'b', 'c'),
+                           ('x', 'y', 'z')]))
 
     conn = await conn_queue.get()
+
+    req_msg = await conn.receive()
+    assert req_msg.first is True
+    assert req_msg.last is False
+    assert req_msg.data.module == 'HatSyncer'
+    assert req_msg.data.type == 'MsgInitReq'
+    assert req_msg.data.data == {'lastEventId': {'server': 1,
+                                                 'session': 2,
+                                                 'instance': 3},
+                                 'clientName': 'name123',
+                                 'clientToken': ('value', 'token123'),
+                                 'subscriptions': [['a', 'b', 'c'],
+                                                   ['x', 'y', 'z']]}
+
+    assert not client_task.done()
+
+    res_msg_data = chatter.Data(module='HatSyncer',
+                                type='MsgInitRes',
+                                data=('success', None))
+    conn.send(res_msg_data, conv=req_msg.conv)
+
+    client = await client_task
 
     assert client.is_open
     assert conn.is_open
@@ -46,43 +74,23 @@ async def test_connect(address, conn_queue):
     await conn.async_close()
 
 
-async def test_sync_req(address, conn_queue):
-    client = await hat.event.syncer.connect(
-        address=address,
-        client_name='name123',
-        last_event_id=common.EventId(1, 2, 3),
-        client_token='token123',
-        subscriptions=[('a', 'b', 'c'),
-                       ('x', 'y', 'z')])
-    conn = await conn_queue.get()
-
-    msg = await conn.receive()
-    assert msg.first is True
-    assert msg.last is True
-    assert msg.data.module == 'HatSyncer'
-    assert msg.data.type == 'MsgReq'
-    assert msg.data.data == {'lastEventId': {'server': 1,
-                                             'session': 2,
-                                             'instance': 3},
-                             'clientName': 'name123',
-                             'clientToken': ('value', 'token123'),
-                             'subscriptions': [['a', 'b', 'c'],
-                                               ['x', 'y', 'z']]}
-
-    await client.async_close()
-    await conn.async_close()
-
-
 async def test_flush(address, conn_queue):
-    client = await hat.event.syncer.connect(
-        address=address,
-        client_name='name123',
-        last_event_id=common.EventId(1, 2, 3))
+    client_task = asyncio.create_task(
+        hat.event.syncer.connect(
+            address=address,
+            client_name='name123',
+            last_event_id=common.EventId(1, 2, 3)))
     conn = await conn_queue.get()
 
-    msg = await conn.receive()
-    assert msg.data.module == 'HatSyncer'
-    assert msg.data.type == 'MsgReq'
+    req_msg = await conn.receive()
+    assert req_msg.data.module == 'HatSyncer'
+    assert req_msg.data.type == 'MsgInitReq'
+
+    res_msg_data = chatter.Data(module='HatSyncer',
+                                type='MsgInitRes',
+                                data=('success', None))
+    conn.send(res_msg_data, conv=req_msg.conv)
+    client = await client_task
 
     conv = conn.send(chatter.Data('HatSyncer', 'MsgFlushReq', None),
                      last=False)
@@ -101,16 +109,23 @@ async def test_flush(address, conn_queue):
 
 async def test_synced(address, conn_queue):
     synced_queue = aio.Queue()
-    client = await hat.event.syncer.connect(
-        address=address,
-        client_name='name123',
-        last_event_id=common.EventId(1, 2, 3),
-        synced_cb=lambda: synced_queue.put_nowait(None))
+    client_task = asyncio.create_task(
+        hat.event.syncer.connect(
+            address=address,
+            client_name='name123',
+            last_event_id=common.EventId(1, 2, 3),
+            synced_cb=lambda: synced_queue.put_nowait(None)))
     conn = await conn_queue.get()
 
-    msg = await conn.receive()
-    assert msg.data.module == 'HatSyncer'
-    assert msg.data.type == 'MsgReq'
+    req_msg = await conn.receive()
+    assert req_msg.data.module == 'HatSyncer'
+    assert req_msg.data.type == 'MsgInitReq'
+
+    res_msg_data = chatter.Data(module='HatSyncer',
+                                type='MsgInitRes',
+                                data=('success', None))
+    conn.send(res_msg_data, conv=req_msg.conv)
+    client = await client_task
 
     assert synced_queue.empty()
 
@@ -131,16 +146,23 @@ async def test_events(address, conn_queue):
               for i in range(10)]
 
     events_queue = aio.Queue()
-    client = await hat.event.syncer.connect(
-        address=address,
-        client_name='name123',
-        last_event_id=common.EventId(1, 2, 3),
-        events_cb=events_queue.put_nowait)
+    client_task = asyncio.create_task(
+        hat.event.syncer.connect(
+            address=address,
+            client_name='name123',
+            last_event_id=common.EventId(1, 2, 3),
+            events_cb=events_queue.put_nowait))
     conn = await conn_queue.get()
 
-    msg = await conn.receive()
-    assert msg.data.module == 'HatSyncer'
-    assert msg.data.type == 'MsgReq'
+    req_msg = await conn.receive()
+    assert req_msg.data.module == 'HatSyncer'
+    assert req_msg.data.type == 'MsgInitReq'
+
+    res_msg_data = chatter.Data(module='HatSyncer',
+                                type='MsgInitRes',
+                                data=('success', None))
+    conn.send(res_msg_data, conv=req_msg.conv)
+    client = await client_task
 
     assert events_queue.empty()
 
