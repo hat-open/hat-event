@@ -1,6 +1,6 @@
 FROM python:3.8-alpine3.17 as base
 RUN apk update && \
-    apk add build-base git
+    apk add build-base git jq
 
 FROM base
 WORKDIR /hat

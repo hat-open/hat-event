@@ -17,6 +17,10 @@ EventsCb: typing.TypeAlias = aio.AsyncCallable[[list[common.Event]], None]
 """Events callback"""
 
 
+class SyncerInitError(Exception):
+    pass
+
+
 async def connect(address: str,
                   client_name: str,
                   last_event_id: common.EventId,
@@ -55,7 +59,7 @@ async def connect(address: str,
         res = common.syncer_init_res_from_sbs(res_msg.data.data)
 
         if res is not None:
-            raise Exception(f"init error - {res}")
+            raise SyncerInitError(res)
 
         client.async_group.spawn(client._receive_loop)
 
