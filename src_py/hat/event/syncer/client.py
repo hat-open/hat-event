@@ -18,7 +18,7 @@ EventsCb: typing.TypeAlias = aio.AsyncCallable[[list[common.Event]], None]
 
 
 class SyncerInitError(Exception):
-    pass
+    """Syncer initialization error"""
 
 
 async def connect(address: str,

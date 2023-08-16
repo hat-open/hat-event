@@ -1,5 +1,6 @@
 from hat.event.syncer.client import (SyncedCb,
                                      EventsCb,
+                                     SyncerInitError,
                                      connect,
                                      Client)
 from hat.event.syncer.server import (ClientInfo,
@@ -11,6 +12,7 @@ from hat.event.syncer.server import (ClientInfo,
 
 __all__ = ['SyncedCb',
            'EventsCb',
+           'SyncerInitError',
            'connect',
            'Client',
            'ClientInfo',
