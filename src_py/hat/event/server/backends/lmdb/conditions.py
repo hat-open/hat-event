@@ -12,10 +12,12 @@ class Conditions:
 
     def matches(self, event: common.Event) -> bool:
         for subscription, condition in self._conditions:
-            if not subscription.matches(event.event_type):
+            if not subscription.matches(event.type):
                 continue
+
             if not condition.matches(event):
                 return False
+
         return True
 
 
@@ -56,9 +58,7 @@ class _JsonCondition:
         self._conf = conf
 
     def matches(self, event):
-        if event.payload is None:
-            return False
-        if event.payload.type != common.EventPayloadType.JSON:
+        if not isinstance(event.payload, common.EventPayloadJson):
             return False
 
         data_path = self._conf.get('data_path', [])

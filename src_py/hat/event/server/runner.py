@@ -2,50 +2,52 @@ import asyncio
 import contextlib
 import importlib
 import logging
+import types
+import typing
 
 from hat import aio
 from hat import json
-import hat.monitor.client
-import hat.monitor.common
+from hat.drivers import tcp
+import hat.monitor.component
 
 from hat.event.server import common
 from hat.event.server.engine import create_engine
-from hat.event.server.eventer_server import create_eventer_server
-from hat.event.server.mariner_server import create_mariner_server
-from hat.event.server.syncer_server import (create_syncer_server,
-                                            SyncerServer)
-from hat.event.server.syncer_client import (create_syncer_client,
-                                            SyncerClientState,
-                                            SyncerClient)
+from hat.event.server.eventer_client import create_eventer_client
+from hat.event.server.eventer_server import (create_eventer_server,
+                                             EventerServer)
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
+class EventerServerData(typing.NamedTuple):
+    server_id: common.ServerId
+    addr: tcp.Address
+
+
 class MainRunner(aio.Resource):
 
     def __init__(self, conf: json.Data):
         self._conf = conf
+        self._loop = asyncio.get_running_loop()
         self._async_group = aio.Group()
         self._backend = None
-        self._syncer_server = None
-        self._mariner_server = None
-        self._monitor_client = None
-        self._syncer_client = None
+        self._eventer_server = None
         self._monitor_component = None
+        self._eventer_client_runner = None
         self._engine_runner = None
 
         self.async_group.spawn(self._run)
 
     @property
-    def async_group(self):
+    def async_group(self) -> aio.Group:
         return self._async_group
 
     async def _run(self):
         try:
             await self._start()
-            await asyncio.Future()
+            await self._loop.create_future()
 
         except Exception as e:
             mlog.error("main runner loop error: %s", e, exc_info=e)
@@ -55,119 +57,175 @@ class MainRunner(aio.Resource):
             await aio.uncancellable(self._stop())
 
     async def _start(self):
-        await self._start_backend()
-
-        if 'syncer_server' in self._conf:
-            await self._start_syncer_server()
-
-        if 'mariner_server' in self._conf:
-            await self._start_mariner_server()
-
-        if 'monitor' in self._conf:
-            await self._start_monitor_client()
-            await self._start_syncer_client()
-            await self._start_monitor_component()
-
-        else:
-            await self._start_engine_runner()
-
-    async def _start_backend(self):
         py_module = importlib.import_module(self._conf['backend']['module'])
-        self._backend = await aio.call(py_module.create, self._conf['backend'])
-
+        self._backend = await aio.call(py_module.create, self._conf['backend'],
+                                       self._on_backend_registered_events,
+                                       self._on_backend_flushed_events)
         _bind_resource(self.async_group, self._backend)
 
-    async def _start_syncer_server(self):
-        self._syncer_server = await create_syncer_server(
-            self._conf['syncer_server'],
-            self._backend)
-
+        self._eventer_server = await create_eventer_server(
+            addr=tcp.Address(self._conf['eventer_server']['host'],
+                             self._conf['eventer_server']['port']),
+            backend=self._backend,
+            server_token=self._conf['server_token'])
         _bind_resource(self.async_group, self._syncer_server)
 
-    async def _start_mariner_server(self):
-        self._mariner_server = await create_mariner_server(
-            self._conf['mariner_server'],
-            self._backend)
+        if 'monitor_component' in self._conf:
+            self._monitor_component = await hat.monitor.component.connect(
+                addr=tcp.Address(self._conf['monitor_component']['host'],
+                                 self._conf['monitor_component']['port']),
+                name=self._conf['monitor_component']['name'],
+                group=self._conf['monitor_component']['group'],
+                runner_cb=self._create_monitor_runner,
+                data={'server_id': self._conf['server_id'],
+                      'eventer_server': self._conf['eventer_server'],
+                      'server_token': self._conf['server_token']},
+                state_cb=self._on_monitor_state)
+            _bind_resource(self.async_group, self._monitor_component)
 
-        _bind_resource(self.async_group, self._mariner_server)
+            self._eventer_client_runner = EventerClientRunner(
+                conf=self._conf,
+                backend=self._backend,
+                synced_cb=self._on_eventer_client_synced)
+            _bind_resource(self.async_group, self._eventer_client_runner)
 
-    async def _start_monitor_client(self):
-        data = {
-            'server_id': self._conf['engine']['server_id'],
-            'eventer_server_address': self._conf['eventer_server']['address']}
+            await self._eventer_client_runner.set_monitor_state(
+                self._monitor_component.state)
 
-        if 'syncer_server' in self._conf:
-            data['syncer_server_address'] = \
-                self._conf['syncer_server']['address']
+            await self._monitor_component.set_ready(True)
 
-        if 'syncer_token' in self._conf:
-            data['syncer_token'] = self._conf['syncer_token']
-
-        self._monitor_client = await hat.monitor.client.connect(
-            self._conf['monitor'], data)
-
-        _bind_resource(self.async_group, self._monitor_client)
-
-    async def _start_syncer_client(self):
-        self._syncer_client = await create_syncer_client(
-            backend=self._backend,
-            monitor_client=self._monitor_client,
-            monitor_group=self._conf['monitor']['group'],
-            name=str(self._conf['engine']['server_id']),
-            syncer_token=self._conf.get('syncer_token'))
-
-        _bind_resource(self.async_group, self._syncer_client)
-
-    async def _start_monitor_component(self):
-
-        async def on_run(monitor_component):
-            engine_runner = EngineRunner(self._conf, self._backend,
-                                         self._syncer_server,
-                                         self._syncer_client)
-
-            try:
-                await engine_runner.wait_closing()
-
-            finally:
-                await aio.uncancellable(engine_runner.async_close())
-
-        self._monitor_component = hat.monitor.client.Component(
-            self._monitor_client, on_run)
-        self._monitor_component.set_ready(True)
-
-        _bind_resource(self.async_group, self._monitor_component)
-
-    async def _start_engine_runner(self):
-        self._engine_runner = EngineRunner(self._conf, self._backend,
-                                           self._syncer_server,
-                                           self._syncer_client)
-
-        _bind_resource(self.async_group, self._engine_runner)
+        else:
+            self._engine_runner = EngineRunner(
+                conf=self._conf,
+                backend=self._backend,
+                eventer_server=self._eventer_server)
+            _bind_resource(self.async_group, self._engine_runner)
 
     async def _stop(self):
-        if self._engine_runner:
+        if self._engine_runner and not self._monitor_component:
             await self._engine_runner.async_close()
+
+        if self._eventer_client_runner:
+            await self._eventer_client_runner.async_close()
 
         if self._monitor_component:
             await self._monitor_component.async_close()
 
-        if self._syncer_client:
-            await self._syncer_client.async_close()
-
-        if self._monitor_client:
-            await self._monitor_client.async_close()
-
-        if self._mariner_server:
-            await self._mariner_server.async_close()
-
-        if self._syncer_server:
+        if self._eventer_server:
             with contextlib.suppress(Exception):
                 await self._backend.flush()
 
-            await self._syncer_server.async_close()
+            await self._eventer_server.async_close()
 
         if self._backend:
             await self._backend.async_close()
+
+    async def _create_monitor_runner(self, monitor_component):
+        self._engine_runner = EngineRunner(conf=self._conf,
+                                           backend=self._backend,
+                                           eventer_server=self._eventer_server)
+        return self._engine_runner
+
+    async def _on_backend_registered_events(self, events):
+        if not self._eventer_server:
+            return
+
+        await self._eventer_server.notify_events(events, False)
+
+    async def _on_backend_flushed_events(self, events):
+        if not self._eventer_server:
+            return
+
+        await self._eventer_server.notify_events(events, True)
+
+    async def _on_monitor_state(self, monitor_component, state):
+        if not self._eventer_client_runner:
+            return
+
+        await self._eventer_client_runner.set_monitor_state(state)
+
+    async def _on_eventer_client_synced(self, server_id, synced, counter):
+        if not self._engine_runner:
+            return
+
+        await self._engine_runner.set_synced(server_id, synced, counter)
+
+
+class EventerClientRunner(aio.Resource):
+
+    def __init__(self,
+                 conf: json.Data,
+                 backend: common.Backend,
+                 synced_cb: aio.AsyncCallable[[common.ServerId, bool, int],
+                                              None],
+                 reconnect_delay: float = 5):
+        self._conf = conf
+        self._backend = backend
+        self._synced_cb = synced_cb
+        self._reconnect_delay = reconnect_delay
+        self._async_group = aio.Group()
+        self._client_subgroups = {}
+
+    @property
+    def async_group(self) -> aio.Group:
+        return self._async_group
+
+    async def set_monitor_state(self, state: hat.monitor.component.State):
+        valid_server_data = set(_get_eventer_server_data(
+            group=self._conf['monitor_component']['group'],
+            server_token=self._conf['server_token'],
+            state=state))
+
+        for server_data in list(self._client_subgroups.keys()):
+            if server_data in valid_server_data:
+                continue
+
+            subgroup = self._client_subgroups.pop(server_data)
+            subgroup.close()
+
+        for server_data in valid_server_data:
+            subgroup = self._client_subgroups.get(server_data)
+            if subgroup and subgroup.is_open:
+                continue
+
+            subgroup = self.async_group.create_subgroup()
+            subgroup.spawn(self._client_loop, subgroup, server_data)
+            self._client_subgroups[server_data] = subgroup
+
+    async def _clent_loop(self, async_group, server_data):
+        try:
+            while True:
+                try:
+                    eventer_client = await create_eventer_client(
+                        addr=server_data.addr,
+                        client_name=self._conf['monitor_component']['name'],
+                        server_id=server_data.server_id,
+                        backend=self._backend,
+                        client_token=self._conf['server_token'],
+                        synced_cb=self._on_synced)
+
+                except Exception:
+                    await asyncio.sleep(self._reconnect_delay)
+                    continue
+
+                try:
+                    await aio.call(self._synced_cb, server_data.server_id,
+                                   False, 0)
+
+                    await eventer_client.wait_closing()
+
+                finally:
+                    await aio.uncancellable(eventer_client.async_close())
+
+        except Exception as e:
+            mlog.error("eventer client runner loop error: %s", e, exc_info=e)
+            self.close()
+
+        finally:
+            async_group.close()
+
+    async def _on_synced(self, server_id, counter):
+        await aio.call(self._synced_cb, server_id, True, counter)
 
 
 class EngineRunner(aio.Resource):
@@ -175,145 +233,92 @@ class EngineRunner(aio.Resource):
     def __init__(self,
                  conf: json.Data,
                  backend: common.Backend,
-                 syncer_server: SyncerServer | None,
-                 syncer_client: SyncerClient | None):
+                 eventer_server: EventerServer):
         self._conf = conf
         self._backend = backend
-        self._syncer_server = syncer_server
-        self._syncer_client = syncer_client
+        self._eventer_server = eventer_server
         self._async_group = aio.Group()
-        self._syncer_client_states = {}
         self._engine = None
-        self._eventer_server = None
-        self._restart_future = None
-        self._synced = True
-
-        self.async_group.spawn(self._run)
+        self._restart = aio.Event()
 
     @property
-    def async_group(self):
+    def async_group(self) -> aio.Group:
         return self._async_group
+
+    async def set_synced(self,
+                         server_id: common.ServerId,
+                         synced: bool,
+                         counter: int):
+        if self._engine and self._engine.is_open:
+            source = common.Source(type=common.SourceType.SERVER, id=0)
+            event = common.RegisterEvent(
+                event_type=('event', 'synced', str(server_id)),
+                source_timestamp=None,
+                payload=common.EventPayloadJson(synced))
+
+            await self._engine.register(source, [event])
+
+        if synced and counter and self._conf.get('synced_restart_engine'):
+            self._restart.set()
 
     async def _run(self):
         try:
             while True:
-                subgroup = self.async_group.create_subgroup()
+                self._restart.clear()
 
-                try:
-                    await self._run_engine(subgroup)
+                self._engine = await create_engine(
+                    backend=self._backend,
+                    module_confs=self._conf['modules'],
+                    server_id=self._conf['server_id'])
+                await self._eventer_server.set_engine(self._engine)
 
-                finally:
-                    await self._eventer_server.async_close()
-                    await self._engine.async_close()
+                async with self._async_group.create_subgroup() as subgroup:
+                    await asyncio.wait(
+                        [subgroup.spawn(self._engine.wait_closing),
+                         subgroup.spawn(self._restart.wait)],
+                        return_when=asyncio.FIRST_COMPLETED)
 
-                    await subgroup.async_close()
+                if not self._engine.is_open:
+                    break
+
+                await self._close()
 
         except Exception as e:
             mlog.error("engine runner loop error: %s", e, exc_info=e)
 
         finally:
             self.close()
-            await aio.uncancellable(self._stop())
+            await aio.uncancellable(self._close())
 
-    async def _run_engine(self, subgroup):
-        self._engine = await create_engine(self._conf['engine'],
-                                           self._backend)
-        _bind_resource(subgroup, self._engine)
-
-        with contextlib.ExitStack() as exit_stack:
-            if self._syncer_server:
-                exit_stack.enter_context(
-                    self._syncer_server.register_state_cb(
-                        self._on_syncer_server_state))
-                self._on_syncer_server_state(self._syncer_server.state)
-
-            self._restart_future = asyncio.Future()
-            self._synced = True
-
-            if self._syncer_client:
-                exit_stack.enter_context(
-                    self._syncer_client.register_state_cb(
-                        self._on_syncer_client_state))
-                exit_stack.enter_context(
-                    self._syncer_client.register_events_cb(
-                        self._on_syncer_client_events))
-
-            self._eventer_server = await create_eventer_server(
-                self._conf['eventer_server'], self._engine)
-            _bind_resource(subgroup, self._eventer_server)
-
-            await subgroup.wrap(self._restart_future)
-
-    async def _stop(self):
-        if self._eventer_server:
-            await self._eventer_server.async_close()
-
+    async def _close(self):
         if self._engine:
             await self._engine.async_close()
 
-        with contextlib.suppress(Exception):
-            await self._backend.flush()
-
-        if self._syncer_server:
-            with contextlib.suppress(Exception):
-                await self._syncer_server.flush()
-
-    def _on_syncer_server_state(self, client_infos):
-        event = common.RegisterEvent(
-            event_type=('event', 'syncer', 'server'),
-            source_timestamp=None,
-            payload=common.EventPayload(
-                type=common.EventPayloadType.JSON,
-                data=[{'client_name': client_info.name,
-                       'synced': client_info.synced}
-                      for client_info in client_infos]))
-
-        self.async_group.spawn(self._engine.register, _syncer_source, [event])
-
-    def _on_syncer_client_state(self, server_id, state):
-        self._syncer_client_states[server_id] = state
-        if state != SyncerClientState.SYNCED:
-            return
-
-        async def register_with_restart(events):
-            await self._engine.register(_syncer_source, events)
-            if self._restart_future and not self._restart_future.done():
-                self._restart_future.set_result(None)
-
-        event = common.RegisterEvent(
-            event_type=('event', 'syncer', 'client', str(server_id), 'synced'),
-            source_timestamp=None,
-            payload=common.EventPayload(
-                type=common.EventPayloadType.JSON,
-                data=True))
-
-        if self._conf.get('synced_restart_engine') and not self._synced:
-            self.async_group.spawn(register_with_restart, [event])
-
-        else:
-            self.async_group.spawn(self._engine.register, _syncer_source,
-                                   [event])
-
-    def _on_syncer_client_events(self, server_id, events):
-        state = self._syncer_client_states.pop(server_id, None)
-        if state != SyncerClientState.CONNECTED:
-            return
-
-        event = common.RegisterEvent(
-            event_type=('event', 'syncer', 'client', str(server_id), 'synced'),
-            source_timestamp=None,
-            payload=common.EventPayload(
-                type=common.EventPayloadType.JSON,
-                data=False))
-
-        self.async_group.spawn(self._engine.register, _syncer_source, [event])
-        self._synced = False
-
-
-_syncer_source = common.Source(type=common.SourceType.SYNCER,
-                               id=0)
+        await self._eventer_server.set_engine(None)
 
 
 def _bind_resource(async_group, resource):
     async_group.spawn(aio.call_on_done, resource.wait_closing(),
                       async_group.close)
+
+
+def _get_eventer_server_data(group, server_token, state):
+    for info in state.components:
+        if info == state.info or info.group != group:
+            continue
+
+        server_id = json.get(info.data, 'server_id')
+        host = json.get(info.data, ['eventer_server', 'host'])
+        port = json.get(info.data, ['eventer_server', 'port'])
+        token = json.get(info.data, 'server_token')
+        if (not isinstance(server_id, int) or
+                not isinstance(host, str) or
+                not isinstance(port, int) or
+                not isinstance(token, (str, types.NoneType))):
+            continue
+
+        if server_token is not None and token != server_token:
+            continue
+
+        yield EventerServerData(server_id=server_id,
+                                addr=tcp.Address(host, port))

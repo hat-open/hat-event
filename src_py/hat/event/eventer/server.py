@@ -1,53 +1,71 @@
 import contextlib
 import itertools
 import logging
+import asyncio
 import typing
 
 from hat import aio
-from hat import chatter
+from hat.drivers import chatter
+from hat.drivers import tcp
 
-from hat.event import common
+from hat.event.eventer import common
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
-ClientId: typing.TypeAlias = int
-"""Client identifier"""
+ConnectionId: typing.TypeAlias = int
+"""Connection identifier"""
 
-ClientCb: typing.TypeAlias = aio.AsyncCallable[[ClientId], None]
-"""Client connected/disconnected callback"""
 
-RegisterCb: typing.TypeAlias = aio.AsyncCallable[[ClientId,
+class ConnectionInfo(typing.NamedTuple):
+    id: ConnectionId
+    client_name: str
+    client_token: str | None
+    subscription: common.Subscription
+    server_id: int | None
+    persisted: bool
+
+
+ConnectionCb: typing.TypeAlias = aio.AsyncCallable[[ConnectionInfo], None]
+"""Connected/disconnected callback"""
+
+RegisterCb: typing.TypeAlias = aio.AsyncCallable[[ConnectionInfo,
                                                   list[common.RegisterEvent]],
-                                                 list[common.Event]]
+                                                 list[common.Event] | None]
 """Register callback"""
 
-QueryCb: typing.TypeAlias = aio.AsyncCallable[[ClientId,
-                                               list[common.QueryData]],
-                                              list[common.Event]]
+QueryCb: typing.TypeAlias = aio.AsyncCallable[[ConnectionInfo,
+                                               common.QueryParams],
+                                              common.QueryResult]
 """Query callback"""
 
 
-async def listen(address: str,
-                 connected_cb: ClientCb | None = None,
-                 disconnected_cb: ClientCb | None = None,
+async def listen(addr: tcp.Address,
+                 *,
+                 status: common.Status = common.Status.STANDBY,
+                 connected_cb: ConnectionCb | None = None,
+                 disconnected_cb: ConnectionCb | None = None,
                  register_cb: RegisterCb | None = None,
-                 query_cb: QueryCb | None = None
+                 query_cb: QueryCb | None = None,
+                 close_timeout: float = 0.5,
+                 **kwargs
                  ) -> 'Server':
-    """Create eventer server instance"""
+    """Create listening Eventer Server instance"""
     server = Server()
+    server._status = status
     server._connected_cb = connected_cb
     server._disconnected_cb = disconnected_cb
     server._register_cb = register_cb
     server._query_cb = query_cb
-    server._next_client_ids = itertools.count(1)
-    server._conns = {}
+    server._close_timeout = close_timeout
+    server._loop = asyncio.get_running_loop()
+    server._next_conn_ids = itertools.count(1)
+    server._conn_infos = {}
+    server._conn_conv_futures = {}
 
-    server._srv = await chatter.listen(sbs_repo=common.sbs_repo,
-                                       address=address,
-                                       connection_cb=server._on_connection)
-    mlog.debug("listening on %s", address)
+    server._srv = await chatter.listen(server._connection_loop, addr, **kwargs)
+    mlog.debug("listening on %s", addr)
 
     return server
 
@@ -59,89 +77,93 @@ class Server(aio.Resource):
         """Async group"""
         return self._srv.async_group
 
-    def notify(self, events: list[common.Event]):
-        """Notify events to subscribed clients"""
-        for conn in self._conns.values():
-            conn.notify(events)
-
-    async def _on_connection(self, conn):
-        client_id = next(self._next_client_ids)
-
-        try:
-            if self._connected_cb:
-                await aio.call(self._connected_cb, client_id)
-
-            self._conns[client_id] = _Connection(conn=conn,
-                                                 client_id=client_id,
-                                                 register_cb=self._register_cb,
-                                                 query_cb=self._query_cb)
-
-            await self._conns[client_id].wait_closing()
-
-        except Exception as e:
-            mlog.error("on connection error: %s", e, exc_info=e)
-
-        finally:
-            conn.close()
-
-            if self._disconnected_cb:
-                with contextlib.suppress(Exception):
-                    await aio.call(self._disconnected_cb, client_id)
-
-
-class _Connection(aio.Resource):
-
-    def __init__(self,
-                 conn: chatter.Connection,
-                 client_id: int,
-                 register_cb: RegisterCb | None,
-                 query_cb: QueryCb | None):
-        self._conn = conn
-        self._client_id = client_id
-        self._register_cb = register_cb
-        self._query_cb = query_cb
-        self._subscription = None
-
-        self.async_group.spawn(self._connection_loop)
-
-    @property
-    def async_group(self) -> aio.Group:
-        return self._conn.async_group
-
-    def notify(self, events: list[common.Event]):
-        if not self.is_open or not self._subscription:
+    async def set_status(self, status: common.Status):
+        """Set status and wait for acks"""
+        if self._status == status:
             return
 
-        events = [event for event in events
-                  if self._subscription.matches(event.event_type)]
-
-        if not events:
+        self._status = status
+        tasks = [self.async_group.spawn(self._notify_status, conn, status)
+                 for conn in self._conn_infos.keys()]
+        if not tasks:
             return
 
-        data = chatter.Data('HatEventer', 'MsgNotify',
-                            [common.event_to_sbs(e) for e in events])
-        with contextlib.suppress(ConnectionError):
-            self._conn.send(data)
+        await asyncio.wait(tasks)
 
-    async def _connection_loop(self):
+    async def notify_events(self,
+                            events: list[common.Event],
+                            persisted: bool):
+        """Notify events to clients"""
+        for conn, info in list(self._conn_infos.items()):
+            if info.persisted != persisted:
+                continue
+
+            filtered_events = [event for event in events
+                               if info.subscription.matches(event.type)
+                               and (info.server_id is None or
+                                    info.server_id == event.id.server)]
+            if not filtered_events:
+                continue
+
+            await self._notify_events(conn, filtered_events)
+
+    async def _connection_loop(self, conn):
         mlog.debug("starting connection loop")
+        conn_id = next(self._next_conn_ids)
+        info = None
+
         try:
+            req, req_type, req_data = await common.receive_msg(conn)
+            if req_type != 'HatEventer.MsgInitReq':
+                raise Exception('invalid init request type')
+
+            try:
+                info = ConnectionInfo(
+                    id=conn_id,
+                    client_name=req_data['clientName'],
+                    client_token=_optional_from_sbs(req_data['clientToken']),
+                    subscription=common.Subscription(
+                        tuple(i) for i in req_data['subscriptions']),
+                    server_id=_optional_from_sbs(req_data['serverId']),
+                    persisted=req_data['persisted'])
+
+                if self._connected_cb:
+                    await aio.call(self._connected_cb, info)
+
+                res_data = 'success', common.status_to_sbs(self._status)
+                self._conn_infos[conn] = info
+
+            except Exception as e:
+                info = None
+                res_data = 'error', str(e)
+
+            mlog.debug("sending init response %s", res_data[0])
+            await common.send_msg(conn, 'HatEventer.MsgInitRes', res_data,
+                                  conv=req.conv)
+
+            if res_data[0] != 'success':
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await aio.wait_for(conn.wait_closing(),
+                                       self._close_timeout)
+                return
+
             while True:
                 mlog.debug("waiting for incomming messages")
-                msg = await self._conn.receive()
-                msg_type = msg.data.module, msg.data.type
+                msg, msg_type, msg_data = await common.receive_msg(conn)
 
-                if msg_type == ('HatEventer', 'MsgSubscribe'):
-                    mlog.debug("received subscribe message")
-                    await self._process_msg_subscribe(msg)
+                if msg_type == 'HatEventer.MsgStatusAck':
+                    mlog.debug("received status ack")
+                    future = self._conn_conv_futures.get((conn, msg.conv))
+                    if future and not future.done():
+                        future.set_result(None)
 
-                elif msg_type == ('HatEventer', 'MsgRegisterReq'):
+                elif msg_type == 'HatEventer.MsgRegisterReq':
                     mlog.debug("received register request")
-                    await self._process_msg_register(msg)
+                    await self._process_msg_register(conn, info, msg, msg_data)
 
-                elif msg_type == ('HatEventer', 'MsgQueryReq'):
+                elif msg_type == 'HatEventer.MsgQueryReq':
                     mlog.debug("received query request")
-                    await self._process_msg_query(msg)
+                    await self._process_msg_query(conn, info, msg, msg_data)
 
                 else:
                     raise Exception('unsupported message type')
@@ -150,48 +172,90 @@ class _Connection(aio.Resource):
             pass
 
         except Exception as e:
-            mlog.error("connection loop error: %s", e, exc_info=e)
+            mlog.error("on connection error: %s", e, exc_info=e)
 
         finally:
-            mlog.debug("closing connection loop")
-            self._conn.close()
+            mlog.debug("stopping connection loop")
+            conn.close()
+            self._conn_infos.pop(conn, None)
 
-    async def _process_msg_subscribe(self, msg):
-        self._subscription = common.Subscription([tuple(i)
-                                                  for i in msg.data.data])
+            for future in self._conn_conv_futures.values():
+                if not future.done():
+                    future.set_exception(ConnectionError())
 
-    async def _process_msg_register(self, msg):
+            if self._disconnected_cb and info:
+                with contextlib.suppress(Exception):
+                    await aio.call(self._disconnected_cb, info)
+
+    async def _process_msg_register(self, conn, info, req, req_data):
         register_events = [common.register_event_from_sbs(i)
-                           for i in msg.data.data]
+                           for i in req_data]
 
         if self._register_cb:
-            events = await aio.call(self._register_cb, self._client_id,
-                                    register_events)
+            events = await aio.call(self._register_cb, info, register_events)
 
         else:
-            events = [None for _ in register_events]
+            events = None
 
-        if msg.last:
+        if req.last:
             return
 
-        data = chatter.Data(module='HatEventer',
-                            type='MsgRegisterRes',
-                            data=[(('event', common.event_to_sbs(e))
-                                   if e is not None else ('failure', None))
-                                  for e in events])
-        self._conn.send(data, conv=msg.conv)
-
-    async def _process_msg_query(self, msg):
-        query_data = common.query_from_sbs(msg.data.data)
-
-        if self._query_cb:
-            events = await aio.call(self._query_cb, self._client_id,
-                                    query_data)
+        if events is not None:
+            res_data = 'events', [common.event_to_sbs(event)
+                                  for event in events]
 
         else:
-            events = []
+            res_data = 'failure', None
 
-        data = chatter.Data(module='HatEventer',
-                            type='MsgQueryRes',
-                            data=[common.event_to_sbs(e) for e in events])
-        self._conn.send(data, conv=msg.conv)
+        await common.send_msg(conn, 'HatEventer.MsgRegisterRes', res_data,
+                              conv=req.conv)
+
+    async def _process_msg_query(self, conn, info, req, req_data):
+        params = common.query_params_from_sbs(req_data)
+
+        if self._query_cb:
+            result = await aio.call(self._query_cb, info, params)
+
+        else:
+            result = common.QueryResult(events=[],
+                                        more_follows=False)
+
+        res_data = common.query_result_to_sbs(result)
+        await common.send_msg(conn, 'HatEventer.MsgQueryRes', res_data,
+                              conv=req.conv)
+
+    async def _notify_status(self, conn, status):
+        try:
+            req_data = common.status_to_sbs(self._status)
+            conv = await common.send_msg(conn, 'HatEventer.MsgStatusNotify',
+                                         req_data)
+
+            future = self._loop.create_future()
+            self._conn_conv_futures[(conn, conv)] = future
+
+            try:
+                await future
+
+            finally:
+                self._conn_conv_futures.pop((conn, conv))
+
+        except ConnectionError:
+            pass
+
+        except Exception as e:
+            mlog.error("notify status error: %s", e, exc_info=e)
+
+    async def _notify_events(self, conn, events):
+        try:
+            msg_data = [common.event_to_sbs(event) for event in events]
+            await common.send_msg(conn, 'HatEventer.MsgEventsNotify', msg_data)
+
+        except ConnectionError:
+            pass
+
+        except Exception as e:
+            mlog.error("notify events error: %s", e, exc_info=e)
+
+
+def _optional_from_sbs(data):
+    return data[1] if data[0] == 'value' else None

@@ -5,16 +5,24 @@ title: monitor data
 description: data property of monitor component info 
 type: object
 required:
-    - eventer_server_address
-    - syncer_server_address
     - server_id
+    - eventer_server
+    - server_token
 properties:
-    eventer_server_address:
-        type: string
-    syncer_server_address:
-        type: string
     server_id:
         type: integer
-    syncer_token:
-        type: string
+    eventer_server:
+        type: object
+        required:
+            - host
+            - port
+        properties:
+            host:
+                type: string
+            port:
+                type: integer
+    server_token:
+        type:
+            - string
+            - 'null'
 ...

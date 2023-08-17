@@ -13,9 +13,15 @@ Eventer Client (in the remainder of this document, mostly referred only as
     | Message            +-------+------+-------+ Direction |
     |                    | First | Last | Token |           |
     +====================+=======+======+=======+===========+
-    | MsgSubscribe       | T     | T    | T     | c |arr| s |
+    | MsgInitReq         | T     | F    | T     | c |arr| s |
     +--------------------+-------+------+-------+-----------+
-    | MsgNotify          | T     | T    | T     | s |arr| c |
+    | MsgInitRes         | F     | T    | T     | s |arr| c |
+    +--------------------+-------+------+-------+-----------+
+    | MsgStatusNotify    | T     | F    | T     | s |arr| c |
+    +--------------------+-------+------+-------+-----------+
+    | MsgStatusAck       | F     | T    | T     | c |arr| s |
+    +--------------------+-------+------+-------+-----------+
+    | MsgEventsNotify    | T     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
     | MsgRegisterReq     | T     | T/F  | T     | c |arr| s |
     +--------------------+-------+------+-------+-----------+
@@ -26,122 +32,225 @@ Eventer Client (in the remainder of this document, mostly referred only as
     | MsgQueryRes        | F     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
 
-Actions available to clients which are directly mapped to exchange of
-communication messages:
 
-    * subscribe
+Initialization
+--------------
 
-        A client can, at any time, subscribe to events of certain types by
-        sending a subscribe message (`MsgSubscribe`) to the server. After
-        server receives subscribe message, it will spontaneously notify the
-        client (by sending `MsgNotify`) whenever an event occurs with the
-        `type` matched to any `type` in the subscription message. Matching
-        is done as described in event's type property including the ``?`` and
-        ``*`` options. A client can send as many subscribe messages as it
-        wants, each new subscription message implicitly invalidates previous
-        subscriptions. Initially, after new connection between server and
-        client is established, client isn't subscribed to any events. Both
-        subscribe and notify messages can be sent at any time independently
-        of other communication messages. Events that are notified by single
-        `MsgNotify` are part of same event processing session.
+Immediately after chatter connection is established, client must send
+`MsgInitReq` message. This message contains:
 
-    * register event
+* client name
 
-        A client can, at any time, send new request for event registration.
-        Those register requests are sent as part of `MsgRegisterReq` message.
-        Single `MsgRegisterReq` may contain an arbitrary number of registration
-        requests which are all registered at the same time (as part of single
-        processing session). Single register event contains event type; and
-        optional source timestamp and payload. Upon receiving `MsgRegisterReq`,
-        it is responsibility of a server to create new event for each register
-        event. All events created based on a single `MsgRegisterReq` have the
-        same timestamp and same session identifier. If a client doesn't
-        end Chatter conversation (`MsgRegisterReq` last flag is ``false``),
-        once associated events are created, server will respond with
-        `MsgRegisterRes` and end conversation. For each register event in
-        `MsgRegisterReq`, associated `MsgRegisterRes` contains newly created
-        event, or information about event registration failure.
+  Label used as client identification.
 
-    * query events
+* client token
 
-        At any time, client can initiate new event query by sending
-        `MsgQueryReq` message. Upon receiving query request, server will
-        provide all available events that match query criteria as part
-        of single `MsgQueryRes`. Single query request can contain multiple
-        filter conditions which ALL must be met for all events provided to
-        client as query result. Query request contains:
+  Optional client token. Additional client identification which can be used
+  for authentication or state synchronization between client and server.
 
-        * `server_id` - optional filter condition
+* subscriptions
 
-            If set, only events with `event_id.server` equal to `server_id`
-            are matched.
+  List of event types (including query subtypes) which is used as filter
+  for future event notifications. Only events with types satisfying
+  subscriptions will be notified to client.
 
-        * `event_ids` - optional filter condition
+* server id
 
-            If set, only events with ids which are defined as part of filter
-            condition are matched.
+  Optional identification of server used for filtering of notified events.
+  Only events originating from specified server will be notified to client.
+  If server id is not specified, all events (that satisfy subscription) are
+  notified to client.
 
-        * `event_types` - optional filter condition
+* persisted
 
-            List of event types. If set, event type has to match at least one
-            type from the list. Matching is done as defined in event's **type**
-            property description - including the ``?`` and ``*`` options.
+  Flag indicating when should server send event notifications to client.
+  If this property is ``true``, server should send notifications after
+  events are persisted. If this property is ``false``, server should send
+  notifications immediately after event registration.
 
-        * `t_from` - from timestamp, optional filter condition
+When server receives `MsgInitReq`, server responds with `MsgInitRes` message.
+If server declines establishment of new connection, it will respond with
+``error`` response containing appropriate error description. In case of
+successful connection establishment, server responds with ``success``
+message containing current server's status. Eventer connection is considered
+established only after `MsgInitRes` ``success`` is sent. In case of
+`MsgInitRes` ``error``, server should wait for client to receive message and
+initiate closing of chatter connection (this waiting should be constrained
+with timeout period after which server closes chatter connection regardless
+of client behavior).
 
-            If set, only events with `timestamp` greater than or equal are
-            matched.
+Initiation token recommendations for Event Server implementation:
 
-        * `t_to` - to timestamp, optional filter condition
+* When server receives `MsgInitReq` without client token, it should
+  accept connection.
 
-            If set, only events with `timestamp` lower than or equal are
-            matched.
+* When server receives `MsgInitReq` with client token, it should compare
+  client token to server token specified by server configuration. Only if this
+  tokens match, connection should be accepted.
 
-        * `source_t_from` - from source timestamp, optional filter condition
 
-            If set, only events with `source timestamp` defined, and greater
-            than or equal, are matched.
+Server status
+-------------
 
-        * `source_t_to` - to source timestamp, optional filter condition
+Event Server execution status can be classified as ``standby`` and
+``operational``. Difference between these two statuses doesn't impact
+Eventer communication. Only difference that client can expect is that
+event registration during ``standby`` status will usually fail.
 
-            If set, only events with `source timestamp` defined, and lower
-            than or equal, are matched.
+As part of successful Eventer connection establishment, server notifies it's
+current status to client. During Eventer communication, server can at any time
+send `MsgStatusNotify` message and thus notify client of it's status change.
+When client receives `MsgStatusNotify` message, it should confirm
+that notification was received by sending `MsgStatusAck` message.
 
-        * `payload` - optional filter condition
 
-            If set, only events with `payload` defined and whose `payload`
-            is the same as the query's `payload` are matched.
+Events notification
+-------------------
 
-        * `order`
+After Eventer connection is established, server can at any time send
+`MsgEventsNotify` message. Events in single `MsgEventsNotify` contain only
+events from same session (single session's events should not be split into
+multiple `MsgEventsNotify` messages). Before events are sent to specific
+client, they are additionally filtered using properties negotiated during
+client's connection initialization.
 
-            Can be set to ``ascending`` or ``descending``. If set to
-            ``ascending``, matched events will be returned ordered from the
-            earliest to the latest dependent on their `timestamp` or
-            `source timestamp` (this choice is determined by the `order by`
-            property of the query). Earliest meaning lower timestamp, latest
-            meaning greater timestamp. If set to descending the same logic
-            applies, but the order is reversed.
 
-        * `order_by`
+Event registration
+------------------
 
-            Can be set to ``timestamp`` or ``source timestamp``. Ordering events
-            by ``source timestamp`` has events with `source timestamp` undefined
-            returned last in an arbitrary order.
+After Eventer connection is established, client can at any time send
+`MsgRegisterReq` message, requesting event registration. When server
+receives registration request, it should create new events. If
+`MsgRegisterReq` is not marked as last message in chatter conversation,
+server should send `MsgRegisterRes` message reporting registration status.
+If event registration is successful, `MsgRegisterRes` will contain
+newly created events associated with ones from register request
+(association is based on event's index in event list).
 
-        * `unique_type`
 
-            If set to ``true``, it determines whether the matched events will
-            contain only one event instance of the same type. With the query
-            `order` set to ``descending``, only one event with the greatest
-            `timestamp` or `source timestamp` will be matched. Setting the
-            `order` to ``ascending`` will match the event with the lowest
-            `timestamp` or `source timestamp`.
+Event querying
+--------------
 
-        * `max_results`
+After Eventer connection is established, client can at any time send
+`MsgQueryReq` message. When server receives `MsgQueryReq`, it should respond
+with `MsgQueryRes` message containing query results.
 
-            If set, limits the number of matched events to this number. Matched
-            events are dependent on the query `order` the same way as in
-            `unique_type`.
+Supported query types:
+
+* latest
+
+  Query single latest events of each specified event type. Latest event
+  is considered greatest event by event natural ordering (see
+  :ref:`event-ordering`). This query includes:
+
+  * event types
+
+    List of queried event types include wild-char subtypes (see
+    :ref:`event-type`). If this property is not set, all event types are
+    queried (same as ``*``).
+
+* timeseries
+
+  Query sequence of events ordered by timestamp or source timestamp.
+  If multiple events have same timestamp or source timestamp, event natural
+  ordering is used as secondary order (see :ref:`event-ordering`). This query
+  includes:
+
+  * event types
+
+    List of queried event types include wild-char subtypes (see
+    :ref:`event-type`). If this property is not set, all event types are
+    queried (same as ``*``).
+
+  * from timestamp
+
+    Inclusive lower limit for event timestamp (query events which have
+    timestamp greater or equal to specified value). If this property is not
+    set, lower limit is not set.
+
+  * to timestamp
+
+    Inclusive upper limit for event timestamp (query events which have
+    timestamp less or equal to specified value). If this property is not
+    set, upper limit is not set.
+
+  * from source timestamp
+
+    Inclusive lower limit for event source timestamp (query events which have
+    source timestamp greater or equal to specified value). If this property is
+    not set, lower limit is not set.
+
+  * to source timestamp
+
+    Inclusive upper limit for event source timestamp (query events which have
+    source timestamp less or equal to specified value). If this property is not
+    set, upper limit is not set.
+
+  * order
+
+    Property specifying choice between ascending or descending ordering.
+
+  * order by
+
+    Property specifying which property is used as primary ordering value -
+    timestamp or source timestamp.
+
+  * max results
+
+    Maximum number events in query result. This value is optionally defined by
+    client. Server should include it's own restriction on maximum number of
+    resulting events (real maximum number of events could be smaller than one
+    requested by client).
+
+  * last event id
+
+    Optional event identifier. If provided, this event is used as sentinel
+    value for discarding events from query result. When server filters and
+    orders events which should be included in query result, it should
+    sequentially discard events until event id with provided value occurs.
+    Once specified value is found, rest of events are reported as query result
+    with application of `max results` constraint. Event with specified last
+    event id is not part of query result. This property, together with
+    `max results`, enables client driven query pagination.
+
+* server
+
+  Query events associated with specific `server id` in ascending natural
+  order (see :ref:`event-ordering`). This query includes:
+
+  * server id
+
+    Identification of server which registered queried events.
+
+  * persisted
+
+    If this property is set to ``true``, only events that are successfully
+    persisted are returned. Otherwise, all registered events are returned.
+
+  * max results
+
+    Maximum number events in query result. This value is optionally defined by
+    client. Server should include it's own restriction on maximum number of
+    resulting events (real maximum number of events could be smaller than one
+    requested by client).
+
+  * last event id
+
+    Optional event identifier. If provided, only events greater by definition
+    of natural ordering are returned (see :ref:`event-ordering`). Event with
+    specified last event id is not part of query result. This property,
+    together with `max results`, enables client driven query pagination.
+
+All queries result with:
+
+* events
+
+  List of events satisfing query filters.
+
+* more follows
+
+  Flag indicating existence of more events that could be included as
+  part of query result but were omitted due to `max results` constraint.
 
 
 Implementation

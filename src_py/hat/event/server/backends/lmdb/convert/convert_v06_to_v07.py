@@ -1,20 +1,8 @@
 from pathlib import Path
 import itertools
-import sys
 
 from hat.event.server.backends.lmdb.convert import v06
 from hat.event.server.backends.lmdb.convert import v07
-
-
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: %s SRC_DB_PATH DST_DB_PATH", file=sys.stderr)
-        sys.exit(1)
-
-    src_path = Path(sys.argv[1])
-    dst_path = Path(sys.argv[2])
-
-    convert(src_path, dst_path)
 
 
 def convert(src_path: Path,
@@ -219,7 +207,3 @@ def _convert_event_payload(src_event_payload):
 def _convert_timestamp(src_timestamp):
     return v07.Timestamp(s=src_timestamp.s,
                          us=src_timestamp.us)
-
-
-if __name__ == '__main__':
-    main()

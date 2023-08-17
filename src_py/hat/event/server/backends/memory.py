@@ -2,16 +2,11 @@
 
 All registered events are stored in single unsorted continuous event list.
 
-`query_flushed` returns empty iterable and registered flushed events callback
-is never notified.
-
 """
 
 import collections
-import typing
 
 from hat import aio
-from hat import json
 from hat import util
 
 from hat.event.server import common
@@ -21,7 +16,8 @@ json_schema_id = None
 json_schema_repo = None
 
 
-async def create(conf: json.Data) -> 'MemoryBackend':
+async def create(conf, register_events_cb, flushed_events_cb):
+    return MemoryBackend(register_events_cb, flushed_events_cb)
     backend = MemoryBackend()
     backend._async_group = aio.Group()
     backend._events = collections.deque()
@@ -31,111 +27,129 @@ async def create(conf: json.Data) -> 'MemoryBackend':
 
 class MemoryBackend(common.Backend):
 
+    def __init__(self, register_events_cb, flushed_events_cb):
+        self._register_events_cb = register_events_cb
+        self._flushed_events_cb = flushed_events_cb
+        self._async_group = aio.Group()
+        self._events = collections.deque()
+
     @property
-    def async_group(self) -> aio.Group:
+    def async_group(self):
         return self._async_group
 
-    def register_registered_events_cb(self,
-                                      cb: typing.Callable[[list[common.Event]],
-                                                          None]
-                                      ) -> util.RegisterCallbackHandle:
-        return self._registered_events_cbs.register(cb)
-
-    def register_flushed_events_cb(self,
-                                   cb: typing.Callable[[list[common.Event]],
-                                                       None]
-                                   ) -> util.RegisterCallbackHandle:
-        return util.RegisterCallbackHandle(cancel=lambda: None)
-
-    async def get_last_event_id(self,
-                                server_id: int
-                                ) -> common.EventId:
+    async def get_last_event_id(self, server_id):
         event_ids = (e.event_id for e in self._events
                      if e.server == server_id)
-        key = lambda event_id: event_id.instance  # NOQA
         default = common.EventId(server=server_id, session=0, instance=0)
-        return max(event_ids, key=key, default=default)
+        return max(event_ids, default=default)
 
-    async def register(self,
-                       events: list[common.Event]
-                       ) -> list[common.Event | None]:
+    async def register(self, events):
         self._events.extend(events)
-        self._registered_events_cbs.notify(events)
+
+        if self._registered_events_cbs:
+            await aio.call(self._registered_events_cbs, events)
+
+        if self._flushed_events_cbs:
+            await aio.call(self._flushed_events_cbs, events)
+
         return events
 
-    async def query(self,
-                    data: common.QueryData
-                    ) -> list[common.Event]:
+    async def query(self, params):
+        if isinstance(params, common.QueryLatestParams):
+            return self._query_latest(params)
+
+        if isinstance(params, common.QueryTimeseriesParams):
+            return self._query_timeseries(params)
+
+        if isinstance(params, common.QueryServerParams):
+            return self._query_server(params)
+
+        raise ValueError('unsupported params type')
+
+    def _query_latest(self, params):
         events = self._events
 
-        if data.server_id is not None:
-            events = _filter_server_id(events, data.server_id)
+        if params.event_types is not None:
+            events = _filter_event_types(events, params.event_types)
 
-        if data.event_ids is not None:
-            events = _filter_events_ids(events, data.event_ids)
+        result = {}
+        for event in events:
+            previous = result.get(event.type)
+            if previous is None or previous < event:
+                result[event.type] = event
 
-        if data.event_types is not None:
-            events = _filter_event_types(events, data.event_types)
+        return common.QueryResult(events=list(result.values()),
+                                  more_follows=False)
 
-        if data.t_from is not None:
-            events = _filter_t_from(events, data.t_from)
+    def _query_timeseries(self, params):
+        events = self._events
 
-        if data.t_to is not None:
-            events = _filter_t_to(events, data.t_to)
+        if params.event_types is not None:
+            events = _filter_event_types(events, params.event_types)
 
-        if data.source_t_from is not None:
-            events = _filter_source_t_from(events, data.source_t_from)
+        if params.t_from is not None:
+            events = _filter_t_from(events, params.t_from)
 
-        if data.source_t_to is not None:
-            events = _filter_source_t_to(events, data.source_t_to)
+        if params.t_to is not None:
+            events = _filter_t_to(events, params.t_to)
 
-        if data.payload is not None:
-            events = _filter_payload(events, data.payload)
+        if params.source_t_from is not None:
+            events = _filter_source_t_from(events, params.source_t_from)
 
-        if data.order_by == common.OrderBy.TIMESTAMP:
-            sort_key = lambda event: event.timestamp  # NOQA
-        elif data.order_by == common.OrderBy.SOURCE_TIMESTAMP:
-            sort_key = lambda event: event.source_timestamp  # NOQA
+        if params.source_t_to is not None:
+            events = _filter_source_t_to(events, params.source_t_to)
+
+        if params.order_by == common.OrderBy.TIMESTAMP:
+            sort_key = lambda event: event.timestamp, event  # NOQA
+        elif params.order_by == common.OrderBy.SOURCE_TIMESTAMP:
+            sort_key = lambda event: event.source_timestamp, event  # NOQA
         else:
             raise ValueError('invalid order by')
 
-        if data.order == common.Order.ASCENDING:
+        if params.order == common.Order.ASCENDING:
             sort_reverse = False
-        elif data.order == common.Order.DESCENDING:
+        elif params.order == common.Order.DESCENDING:
             sort_reverse = True
         else:
             raise ValueError('invalid order by')
 
         events = sorted(events, key=sort_key, reverse=sort_reverse)
 
-        if data.unique_type:
-            events = _filter_unique_type(events)
+        if params.last_event_id and events:
+            for i, event in enumerate(events):
+                if event.id == params.last_event_id:
+                    break
+            events = events[i+1:]
 
-        if data.max_results is not None:
-            events = _filter_max_results(events, data.max_results)
+        if params.max_results is not None and len(events) > params.max_results:
+            more_follows = True
+            events = events[:params.max_results]
+        else:
+            more_follows = False
 
-        return list(events)
+        return common.QueryResult(events=events,
+                                  more_follows=more_follows)
 
-    async def query_flushed(self,
-                            data: common.QueryData
-                            ) -> typing.AsyncIterable[list[common.Event]]:
-        for events in []:
-            yield events
+    def _query_server(self, params):
+        events = sorted(_filter_server_id(self._events, params.server_id))
+
+        if params.last_event_id and events:
+            for i, event in enumerate(events):
+                if event.id > params.last_event_id:
+                    break
+            events = events[i:]
+
+        if params.max_results is not None and len(events) > params.max_results:
+            more_follows = True
+            events = events[:params.max_results]
+        else:
+            more_follows = False
+
+        return common.QueryResult(events=events,
+                                  more_follows=more_follows)
 
     async def flush(self):
         pass
-
-
-def _filter_server_id(events, server_id):
-    for event in events:
-        if event.event_id.server == server_id:
-            yield event
-
-
-def _filter_events_ids(events, event_ids):
-    for event in events:
-        if event.event_id in event_ids:
-            yield event
 
 
 def _filter_event_types(events, event_types):
@@ -169,24 +183,7 @@ def _filter_source_t_to(events, source_t_to):
             yield event
 
 
-def _filter_payload(events, payload):
+def _filter_server_id(events, server_id):
     for event in events:
-        if event.payload == payload:
+        if event.event_id.server == server_id:
             yield event
-
-
-def _filter_unique_type(events):
-    event_types = set()
-    for event in events:
-        event_type = tuple(event.event_type)
-        if event_type in event_types:
-            continue
-        event_types.add(event_type)
-        yield event
-
-
-def _filter_max_results(events, max_results):
-    for i, event in enumerate(events):
-        if i >= max_results:
-            break
-        yield events

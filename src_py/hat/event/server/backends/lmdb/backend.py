@@ -1,81 +1,112 @@
 from pathlib import Path
 import asyncio
 import collections
+import contextlib
 import logging
 import typing
 
 from hat import aio
 from hat import json
-from hat import util
 
 from hat.event.server.backends.lmdb import common
 from hat.event.server.backends.lmdb import environment
 from hat.event.server.backends.lmdb import latestdb
-from hat.event.server.backends.lmdb import ordereddb
 from hat.event.server.backends.lmdb import refdb
 from hat.event.server.backends.lmdb import systemdb
+from hat.event.server.backends.lmdb import timeseriesdb
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
 mlog = logging.getLogger(__name__)
 
-cleanup_max_entries_remove = 100
+cleanup_max_results = 1024
+
+flush_queue_size = 4096
+
+max_registered_count = 1024 * 256
+
+version = '0.9'
 
 
-async def create(conf: json.Data
+class Databases(typing.NamedTuple):
+    system: systemdb.SystemDb
+    latest: latestdb.LatestDb
+    timeseries: timeseriesdb.TimeseriesDb
+    ref: refdb.RefDb
+
+
+class Changes(typing.NamedTuple):
+    system: systemdb.Changes
+    latest: latestdb.Changes
+    timeseries: timeseriesdb.Changes
+    ref: refdb.Changes
+
+
+async def create(conf: json.Data,
+                 registered_events_cb: common.BackendRegisteredEventsCb | None,
+                 flushed_events_cb: common.BackendFlushedEventsCb | None
                  ) -> 'LmdbBackend':
     backend = LmdbBackend()
-    backend._flush_lock = asyncio.Lock()
-    backend._flush_period = conf['flush_period']
-    backend._flushed_events_cbs = util.CallbackRegistry()
-    backend._registered_events_cbs = util.CallbackRegistry()
+    backend._registered_events_cb = registered_events_cb
+    backend._flushed_events_cb = flushed_events_cb
     backend._conditions = Conditions(conf['conditions'])
+    backend._loop = asyncio.get_running_loop()
+    backend._flush_queue = aio.Queue(flush_queue_size)
+    backend._registered_count = 0
+    backend._registered_queue = collections.deque()
     backend._async_group = aio.Group()
 
-    backend._env = await environment.create(db_path=Path(conf['db_path']),
-                                            max_db_size=conf['max_db_size'])
+    backend._env = await environment.create(Path(conf['db_path']))
+    backend.async_group.spawn(aio.call_on_done, backend._env.wait_closing(),
+                              backend.close)
 
     try:
-        await backend._env.execute(_ext_init, backend, conf)
+        latest_subscription = common.Subscription(
+            tuple(i) for i in conf['latest']['subscriptions'])
+
+        timeseries_partitions = (
+            timeseriesdb.Partition(
+                order_by=common.OrderBy[i['order_by']],
+                subscription=common.Subscription(
+                    tuple(event_type) for event_type in i['subscriptions']),
+                limit=(
+                    timeseriesdb.Limit(
+                        min_entries=i['limit'].get('min_entries'),
+                        max_entries=i['limit'].get('max_entries'),
+                        duration=i['limit'].get('duration'),
+                        size=i['limit'].get('size'))
+                    if 'limit' in i else None))
+            for i in conf['timeseries'])
+
+        backend._dbs = await backend._env.execute(
+            _ext_create_dbs, backend._env, conf['identifier'],
+            backend._conditions, latest_subscription, timeseries_partitions)
+
+        backend.async_group.spawn(backend._flush_loop, conf['flush_period'])
+        backend.async_group.spawn(backend._cleanup_loop,
+                                  conf['cleanup_period'])
 
     except BaseException:
         await aio.uncancellable(backend._env.async_close())
         raise
 
-    backend.async_group.spawn(aio.call_on_done, backend._env.wait_closing(),
-                              backend.close)
-    backend.async_group.spawn(backend._flush_loop)
-    backend.async_group.spawn(backend._cleanup_loop)
-
     return backend
 
 
-def _ext_init(backend, conf):
-    backend._ref_db = refdb.RefDb(backend._env)
+def _ext_create_dbs(env, identifier, conditions, latest_subscription,
+                    timeseries_partitions):
+    with env.ext_begin(write=True) as txn:
+        system_db = systemdb.ext_create(env, txn, version, identifier)
+        latest_db = latestdb.ext_create(env, txn, conditions,
+                                        latest_subscription)
+        timeseries_db = timeseriesdb.ext_create(env, txn, conditions,
+                                                timeseries_partitions)
+        ref_db = refdb.RefDb(env)
 
-    backend._sys_db = systemdb.ext_create(backend._env)
-
-    backend._latest_db = latestdb.ext_create(
-        env=backend._env,
-        ref_db=backend._ref_db,
-        subscription=common.Subscription(
-            tuple(i) for i in conf['latest']['subscriptions']),
-        conditions=backend._conditions)
-
-    backend._ordered_dbs = [
-        ordereddb.ext_create(
-            env=backend._env,
-            ref_db=backend._ref_db,
-            subscription=common.Subscription(
-                tuple(et) for et in i['subscriptions']),
-            conditions=backend._conditions,
-            order_by=common.OrderBy[i['order_by']],
-            limit=i.get('limit'))
-        for i in conf['ordered']]
-
-    # TODO: maybe cleanup unused ordered partitions
-    # ordereddb.cleanup(
-    #     {ordered_db.partition_id for ordered_db in backend._ordered_dbs})
+    return Databases(system=system_db,
+                     latest=latest_db,
+                     timeseries=timeseries_db,
+                     ref=ref_db)
 
 
 class LmdbBackend(common.Backend):
@@ -84,32 +115,27 @@ class LmdbBackend(common.Backend):
     def async_group(self) -> aio.Group:
         return self._async_group
 
-    def register_registered_events_cb(self,
-                                      cb: typing.Callable[[list[common.Event]],
-                                                          None]
-                                      ) -> util.RegisterCallbackHandle:
-        return self._registered_events_cbs.register(cb)
-
-    def register_flushed_events_cb(self,
-                                   cb: typing.Callable[[list[common.Event]],
-                                                       None]
-                                   ) -> util.RegisterCallbackHandle:
-        return self._flushed_events_cbs.register(cb)
-
     async def get_last_event_id(self,
                                 server_id: int
                                 ) -> common.EventId:
-        event_id, _ = self._sys_db.get_last_event_id_timestamp(server_id)
-        return event_id
+        if not self.is_open:
+            raise common.BackendClosedError()
+
+        return self._dbs.system.get_last_event_id(server_id)
 
     async def register(self,
                        events: list[common.Event]
-                       ) -> list[common.Event]:
-        for event in events:
-            last_event_id, last_timestamp = \
-                self._sys_db.get_last_event_id_timestamp(event.event_id.server)
+                       ) -> list[common.Event] | None:
+        if not self.is_open:
+            raise common.BackendClosedError()
 
-            if last_event_id >= event.event_id:
+        for event in events:
+            server_id = event.id.server
+
+            last_event_id = self._dbs.system.get_last_event_id(server_id)
+            last_timestamp = self._dbs.system.get_last_timestamp(server_id)
+
+            if last_event_id >= event.id:
                 mlog.warning("event registration skipped: invalid event id")
                 continue
 
@@ -121,128 +147,115 @@ class LmdbBackend(common.Backend):
                 mlog.warning("event registration skipped: invalid conditions")
                 continue
 
-            registered = False
+            refs = collections.deque()
 
-            if self._latest_db.add(event):
-                registered = True
+            latest_result = self._dbs.latest.add(event)
 
-            for db in self._ordered_dbs:
-                if db.add(event):
-                    registered = True
+            if latest_result.added_ref:
+                refs.append(latest_result.added_ref)
 
-            if not registered:
+            if latest_result.removed_ref:
+                self._dbs.ref.remove(*latest_result.removed_ref)
+
+            refs.extend(self._db.timeseries.add(event))
+
+            if not refs:
                 continue
 
-            self._sys_db.set_last_event_id_timestamp(event.event_id,
-                                                     event.timestamp)
+            self._dbs.ref.add(event, refs)
+            self._dbs.system.set_last_event_id(event.id)
+            self._dbs.system.set_last_timestamp(server_id, event.timestamp)
 
-        self._registered_events_cbs.notify(events)
+        self._registered_queue.append(events)
+        self._registered_count += len(events)
+
+        if self._registered_count > max_registered_count:
+            await self._flush_queue.put(self._loop.create_future())
+
+        if self._registered_events_cb:
+            await aio.call(self._registered_events_cb, events)
+
         return events
 
     async def query(self,
-                    data: common.QueryData
-                    ) -> list[common.Event]:
-        if (data.server_id is None and
-                data.event_ids is None and
-                data.t_to is None and
-                data.source_t_from is None and
-                data.source_t_to is None and
-                data.payload is None and
-                data.order == common.Order.DESCENDING and
-                data.order_by == common.OrderBy.TIMESTAMP and
-                data.unique_type):
-            events = self._latest_db.query(event_types=data.event_types)
+                    params: common.QueryParams
+                    ) -> common.QueryResult:
+        if not self.is_open:
+            raise common.BackendClosedError()
 
-            if data.t_from is not None:
-                events = (event for event in events
-                          if data.t_from <= event.timestamp)
+        if isinstance(params, common.QueryLatestParams):
+            return self._dbs.latest.query(params)
 
-            events = sorted(events,
-                            key=lambda i: (i.timestamp, i.event_id),
-                            reverse=True)
+        if isinstance(params, common.QueryTimeseriesParams):
+            return await self._dbs.timeseries.query(params)
 
-            if data.max_results is not None:
-                events = events[:data.max_results]
+        if isinstance(params, common.QueryServerParams):
+            return await self._dbs.ref.query(params)
 
-            return events
-
-        subscription = (common.Subscription(data.event_types)
-                        if data.event_types is not None else None)
-
-        for db in self._ordered_dbs:
-            if db.order_by != data.order_by:
-                continue
-            if subscription and subscription.isdisjoint(db.subscription):
-                continue
-
-            events = await db.query(subscription=subscription,
-                                    server_id=data.server_id,
-                                    event_ids=data.event_ids,
-                                    t_from=data.t_from,
-                                    t_to=data.t_to,
-                                    source_t_from=data.source_t_from,
-                                    source_t_to=data.source_t_to,
-                                    payload=data.payload,
-                                    order=data.order,
-                                    unique_type=data.unique_type,
-                                    max_results=data.max_results)
-            return list(events)
-
-        return []
-
-    async def query_flushed(self,
-                            event_id: common.EventId
-                            ) -> typing.AsyncIterable[list[common.Event]]:
-        async for events in self._ref_db.query(event_id):
-            yield events
+        raise ValueError('unsupported params type')
 
     async def flush(self):
-        async with self._flush_lock:
-            if not self._env.is_open:
-                return
+        try:
+            future = self._loop.create_future()
+            await self._flush_queue.put(future)
+            await future
 
-            dbs = [self._sys_db,
-                   self._latest_db,
-                   *self._ordered_dbs]
-            ext_flush_fns = [db.create_ext_flush() for db in dbs]
-            sessions = await self._env.execute(_ext_flush, self._env,
-                                               ext_flush_fns)
+        except aio.QueueClosedError:
+            raise common.BackendClosedError()
 
-            for session in sessions:
-                self._flushed_events_cbs.notify(session)
+    async def _close_env(self):
+        with contextlib.suppress(Exception):
+            await self._flush()
 
-    async def _flush_loop(self):
+        await self._env.async_close()
+
+    async def _flush_loop(self, flush_period):
+        futures = collections.deque()
+
         try:
             while True:
-                await asyncio.sleep(self._flush_period)
-                await aio.uncancellable(self.flush())
+                future = await aio.wait_for(self._flush_queue.get(),
+                                            flush_period)
+                while True:
+                    futures.append(future)
+                    if self._futures_queue.empty():
+                        break
+                    future = self._futures_queue.get_nowait()
+
+                await aio.uncancellable(self._flush())
+
+                while futures:
+                    future = futures.popleft()
+                    if not future.done():
+                        future.set_result(None)
 
         except Exception as e:
             mlog.error('backend flush error: %s', e, exc_info=e)
 
         finally:
             self.close()
-            await aio.uncancellable(self._close())
+            self._flush_queue.close()
 
-    async def _cleanup_loop(self):
+            while not self._futures_queue.empty():
+                futures.append(self._futures_queue.get_nowait())
+
+            for future in futures:
+                if not future.done():
+                    future.set_exception(common.BackendClosedError())
+
+            await aio.uncancellable(self._close_env())
+
+    async def _cleanup_loop(self, cleanup_period):
         try:
             while True:
-                repeat = True
-                while repeat:
-                    repeat = False
+                await asyncio.sleep(0)
 
-                    for ordered_db in self._ordered_dbs:
-                        await asyncio.sleep(0)
+                repeat = await self._env.execute(_ext_cleanup, self._env,
+                                                 self._dbs, common.now())
+                if repeat:
+                    continue
 
-                        entries_removed = await aio.uncancellable(
-                            self._env.execute(ordered_db.ext_apply_limit,
-                                              common.now(),
-                                              cleanup_max_entries_remove))
-
-                        if entries_removed >= cleanup_max_entries_remove:
-                            repeat = True
-
-                await asyncio.sleep(self._flush_period)
+                await asyncio.sleep(cleanup_period)
 
         except Exception as e:
             mlog.error('backend cleanup error: %s', e, exc_info=e)
@@ -250,29 +263,47 @@ class LmdbBackend(common.Backend):
         finally:
             self.close()
 
-    async def _close(self):
-        await self.flush()
-        await self._env.async_close()
+    async def _flush(self):
+        if not self._env.is_open:
+            return
+
+        self._registered_count = 0
+        registered_queue, self._registered_queue = (self._registered_queue,
+                                                    collections.deque())
+
+        changes = Changes(system=self._dbs.system.create_changes(),
+                          latest=self._dbs.latest.create_changes(),
+                          timeseries=self._dbs.timeseries.create_changes(),
+                          ref=self._dbs.ref.create_changes())
+
+        # TODO lock period between create_changes and locking executor
+        #      (timeseries and ref must write changes before new queries are
+        #      allowed)
+
+        await self._env.execute(_ext_flush, self._env, self._dbs, changes)
+
+        if not self._flushed_events_cb:
+            return
+
+        while registered_queue:
+            events = registered_queue.popleft()
+            await aio.call(self._flushed_events_cb, events)
 
 
-def _ext_flush(env, flush_fns):
-    events = {}
-
+def _ext_flush(env, dbs, changes):
     with env.ext_begin(write=True) as txn:
-        for flush_fn in flush_fns:
-            for event in flush_fn(txn):
-                events[event.event_id] = event
+        dbs.system.ext_write(txn, changes.system)
+        dbs.latest.ext_write(txn, changes.latest)
+        dbs.timeseries.ext_write(txn, changes.timeseries)
+        dbs.ref.ext_write(txn, changes.ref)
 
-    sessions = collections.deque()
-    session = collections.deque()
 
-    for event_id in sorted(events.keys()):
-        if session and session[0].event_id.session != event_id.session:
-            sessions.append(list(session))
-            session = collections.deque()
-        session.append(events[event_id])
+def _ext_cleanup(env, dbs, now):
+    with env.ext_begin(write=True) as txn:
+        result = dbs.timeseries.ext_cleanup(txn, now, cleanup_max_results)
+        if not result:
+            return False
 
-    if session:
-        sessions.append(list(session))
+        dbs.ref.ext_cleanup(txn, result)
 
-    return sessions
+    return len(result) >= cleanup_max_results

@@ -7,7 +7,6 @@ import logging
 
 from hat import aio
 from hat import json
-from hat import util
 
 from hat.event.server import common
 
@@ -16,32 +15,28 @@ mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
-async def create_engine(conf: json.Data,
-                        backend: common.Backend
+async def create_engine(backend: common.Backend,
+                        module_confs: list[json.Data],
+                        server_id: int,
+                        register_queue_size: int = 1024
                         ) -> 'Engine':
-    """Create engine
-
-    Args:
-        conf: configuration defined by
-            ``hat-event://main.yaml#/definitions/engine``
-        backend: backend
-
-    """
+    """Create engine"""
     engine = Engine()
     engine._backend = backend
+    engine._loop = asyncio.get_running_loop()
     engine._async_group = aio.Group()
-    engine._register_queue = aio.Queue()
-    engine._register_cbs = util.CallbackRegistry()
+    engine._register_queue = aio.Queue(register_queue_size)
     engine._source_modules = collections.deque()
 
-    engine._last_event_id = await backend.get_last_event_id(conf['server_id'])
+    engine._last_event_id = await backend.get_last_event_id(server_id)
 
-    future = asyncio.Future()
+    future = engine._loop.create_future()
     source = common.Source(type=common.SourceType.ENGINE, id=0)
     events = [engine._create_status_reg_event('STARTED')]
     engine._register_queue.put_nowait((future, source, events))
+
     try:
-        for source_id, module_conf in enumerate(conf['modules']):
+        for source_id, module_conf in enumerate(module_confs):
             py_module = importlib.import_module(module_conf['module'])
 
             source = common.Source(type=common.SourceType.MODULE,
@@ -71,12 +66,6 @@ class Engine(common.Engine):
         """Async group"""
         return self._async_group
 
-    def register_events_cb(self,
-                           cb: common.EventsCb
-                           ) -> util.RegisterCallbackHandle:
-        """Register events callback"""
-        return self._register_cbs.register(cb)
-
     async def register(self,
                        source: common.Source,
                        events: list[common.RegisterEvent]
@@ -85,15 +74,21 @@ class Engine(common.Engine):
         if not events:
             return []
 
-        future = asyncio.Future()
-        self._register_queue.put_nowait((future, source, events))
+        future = self._loop.create_future()
+
+        try:
+            await self._register_queue.put((future, source, events))
+
+        except aio.QueueClosedError:
+            raise Exception('engine closed')
+
         return await future
 
     async def query(self,
-                    data: common.QueryData
+                    params: common.QueryParams
                     ) -> list[common.Event]:
         """Query events"""
-        return await self._backend.query(data)
+        return await self._backend.query(params)
 
     async def _register_loop(self):
         future = None
@@ -104,18 +99,19 @@ class Engine(common.Engine):
                 mlog.debug("waiting for register requests")
                 future, source, register_events = \
                     await self._register_queue.get()
+
                 mlog.debug("processing session")
                 events = await self._process_sessions(source, register_events)
 
                 mlog.debug("registering to backend")
                 events = await self._backend.register(events)
-                if not future.done():
-                    result = events[:len(register_events)]
-                    future.set_result(result)
 
-                events = [event for event in events if event]
-                if events:
-                    self._register_cbs.notify(events)
+                if future.done():
+                    continue
+
+                result = (events[:len(register_events)]
+                          if events is not None else None)
+                future.set_result(result)
 
         except Exception as e:
             mlog.error("register loop error: %s", e, exc_info=e)
@@ -127,22 +123,22 @@ class Engine(common.Engine):
 
             while True:
                 if future and not future.done():
-                    future.set_exception(Exception('module engine closed'))
+                    future.set_exception(Exception('engine closed'))
                 if self._register_queue.empty():
                     break
                 future, _, __ = self._register_queue.get_nowait()
 
+            timestamp = self._create_session()
             status_reg_event = self._create_status_reg_event('STOPPED')
-            events = [self._create_event(common.now(), status_reg_event)]
+            events = [self._create_event(timestamp, status_reg_event)]
             await self._backend.register(events)
 
     async def _process_sessions(self, source, register_events):
-        timestamp = common.now()
-        self._last_event_id = self._last_event_id._replace(
-            session=self._last_event_id.session + 1)
+        timestamp = self._create_session()
 
         for _, module in self._source_modules:
-            await module.on_session_start(self._last_event_id.session)
+            await aio.call(module.on_session_start,
+                           self._last_event_id.session)
 
         events = collections.deque(
             self._create_event(timestamp, register_event)
@@ -154,38 +150,47 @@ class Engine(common.Engine):
 
             for output_source, module in self._source_modules:
                 for input_source, input_event in input_source_events:
-                    if not module.subscription.matches(input_event.event_type):
+                    if not module.subscription.matches(input_event.type):
                         continue
 
-                    async for register_event in module.process(input_source,
-                                                               input_event):
-                        output_event = self._create_event(timestamp,
-                                                          register_event)
-                        output_source_events.append((output_source,
-                                                     output_event))
+                    output_register_events = await aio.call(
+                        module.process, input_source, input_event)
+
+                    if not output_register_events:
+                        continue
+
+                    for output_register_event in output_register_events:
+                        output_event = self._create_event(
+                            timestamp, output_register_event)
+                        output_source_events.append(
+                            (output_source, output_event))
                         events.append(output_event)
 
             input_source_events = output_source_events
 
         for _, module in self._source_modules:
-            await module.on_session_stop(self._last_event_id.session)
+            await aio.call(module.on_session_stop, self._last_event_id.session)
 
         return list(events)
 
     def _create_status_reg_event(self, status):
-        return common.RegisterEvent(
-            event_type=('event', 'engine'),
-            source_timestamp=None,
-            payload=common.EventPayload(
-                type=common.EventPayloadType.JSON,
-                data=status))
+        return common.RegisterEvent(type=('event', 'engine'),
+                                    source_timestamp=None,
+                                    payload=common.EventPayloadJson(status))
+
+    def _create_session(self):
+        self._last_event_id = self._last_event_id._replace(
+            session=self._last_event_id.session + 1,
+            instance=0)
+
+        return common.now()
 
     def _create_event(self, timestamp, register_event):
         self._last_event_id = self._last_event_id._replace(
             instance=self._last_event_id.instance + 1)
 
-        return common.Event(event_id=self._last_event_id,
-                            event_type=register_event.event_type,
+        return common.Event(id=self._last_event_id,
+                            type=register_event.type,
                             timestamp=timestamp,
                             source_timestamp=register_event.source_timestamp,
                             payload=register_event.payload)

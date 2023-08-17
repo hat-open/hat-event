@@ -1,119 +1,116 @@
-import functools
+import itertools
 import typing
 
+import lmdb
+
 from hat.event.server.backends.lmdb import common
-from hat.event.server.backends.lmdb import encoder
 from hat.event.server.backends.lmdb import environment
-from hat.event.server.backends.lmdb import refdb
 from hat.event.server.backends.lmdb.conditions import Conditions
 
 
-Changes: typing.TypeAlias = tuple[dict[common.LatestDataDbKey,
-                                       common.LatestDataDbValue],
-                                  dict[common.LatestTypeDbKey,
-                                       common.LatestTypeDbValue]]
+class Changes(typing.NamedTuple):
+    data: dict[common.EventTypeRef, common.Event]
+    types: dict[common.EventTypeRef, common.EventId]
+
+
+class AddResult(typing.NamedTuple):
+    added_ref: common.EventRef | None
+    removed_ref: tuple[common.EventId, common.EventRef] | None
 
 
 def ext_create(env: environment.Environment,
-               ref_db: refdb.RefDb,
-               subscription: common.Subscription,
-               conditions: Conditions
+               txn: lmdb.Transaction,
+               conditions: Conditions,
+               subscription: common.Subscription
                ) -> 'LatestDb':
     db = LatestDb()
     db._env = env
-    db._ref_db = ref_db
     db._subscription = subscription
-    db._conditions = conditions
-    db._changes = {}, {}
-    db._events = {}
-    db._type_refs = {}
+    db._changes = Changes({}, {})
 
-    with env.ext_begin() as txn:
-        with env.ext_cursor(txn, common.DbType.LATEST_DATA) as cursor:
-            for _, encoded_value in cursor:
-                event = encoder.decode_latest_data_db_value(encoded_value)
-                if not subscription.matches(event.event_type):
-                    continue
-                if not conditions.matches(event):
-                    continue
-                db._events[event.event_type] = event
+    db._event_type_refs = {
+        event_type: ref
+        for ref, event_type in env.ext_read(txn, common.DbType.LATEST_TYPE)}
 
-        with env.ext_cursor(txn, common.DbType.LATEST_TYPE) as cursor:
-            for encoded_key, encoded_value in cursor:
-                ref = encoder.decode_latest_type_db_key(encoded_key)
-                event_type = encoder.decode_latest_type_db_value(encoded_value)
-                db._type_refs[event_type] = ref
+    db._events = {
+        event.type: event
+        for ref, event in env.ext_read(txn, common.DbType.LATEST_DATA)
+        if conditions.matches(event) and
+        subscription.matches(event.type) and
+        db._event_type_refs.get(event.type) == ref}
+
+    db._next_event_type_refs = itertools.count(
+        max(db._event_type_refs.values(), default=0) + 1)
 
     return db
 
 
-class LatestDb(common.Flushable):
+class LatestDb:
 
-    @property
-    def subscription(self) -> common.Subscription:
-        return self._subscription
+    def add(self,
+            event: common.Event
+            ) -> AddResult:
+        if not self._subscription.matches(event.type):
+            return AddResult(added_ref=None,
+                             removed_ref=None)
 
-    def add(self, event: common.Event) -> bool:
-        if not self._subscription.matches(event.event_type):
-            return False
+        previous_event = self._events.get(event.type)
+        if previous_event and previous_event > event:
+            return AddResult(added_ref=None,
+                             removed_ref=None)
 
-        ref = self._type_refs.get(event.event_type)
-        if ref is None:
-            ref = len(self._type_refs) + 1
-            self._type_refs[event.event_type] = ref
-            self._changes[1][ref] = event.event_type
+        event_type_ref = self._event_type_refs.get(event.type)
+        if event_type_ref is None:
+            event_type_ref = next(self._next_event_type_refs)
+            self._changes.types[event_type_ref] = event.type
+            self._event_type_refs[event.type] = event_type_ref
 
-        self._events[event.event_type] = event
-        self._changes[0][ref] = event
+        self._changes.data[event_type_ref] = event
+        self._events[event.type] = event
 
-        return True
+        added_ref = common.LatestEventRef(event_type_ref)
+        removed_ref = ((previous_event.id, added_ref)
+                       if previous_event else None)
+        return AddResult(added_ref=added_ref,
+                         removed_ref=removed_ref)
 
     def query(self,
-              event_types: list[common.EventType] | None
-              ) -> typing.Iterable[common.Event]:
-        if event_types is None:
-            yield from self._events.values()
+              params: common.QueryLatestParams
+              ) -> common.QueryResult:
+        event_types = (set(params.event_types)
+                       if params.event_types is not None
+                       else None)
 
-        elif any(any(subtype in ('*', '?')
-                     for subtype in event_type)
+        if event_types is None or ('*', ) in event_types:
+            events = self._events.values()
+
+        elif any('*' in event_type or '?' in event_type
                  for event_type in event_types):
             subscription = common.Subscription(event_types)
-            for event_type, event in self._events.items():
-                if subscription.matches(event_type):
-                    yield event
+            events = (event for event in self._events.values()
+                      if subscription.matches(event.type))
+
+        elif len(event_types) < len(self._events):
+            events = (self._events.get(event_type)
+                      for event_type in event_types)
+            events = (event for event in events if event)
 
         else:
-            for event_type in event_types:
-                event = self._events.get(event_type)
-                if event:
-                    yield event
+            events = (event for event in self._events.values()
+                      if event.type in event_types)
 
-    def create_ext_flush(self) -> common.ExtFlushCb:
-        changes, self._changes = self._changes, ({}, {})
-        return functools.partial(self._ext_flush, changes)
+        return common.QueryResult(events=list(events),
+                                  more_follows=False)
 
-    def _ext_flush(self, changes, txn):
-        with self._env.ext_cursor(txn, common.DbType.LATEST_DATA) as cursor:
-            for key, value in changes[0].items():
-                event_ref = common.LatestEventRef(key)
-                encoded_key = encoder.encode_latest_data_db_key(key)
-                encoded_value = encoder.encode_latest_data_db_value(value)
+    def create_changes(self) -> Changes:
+        changes, self._changes = self._changes, Changes({}, {})
+        return changes
 
-                previous_encoded_value = cursor.get(encoded_key)
-                if previous_encoded_value:
-                    previous_value = encoder.decode_latest_data_db_value(
-                        previous_encoded_value)
-                    self._ref_db.ext_remove_event_ref(
-                        txn, previous_value.event_id, event_ref)
+    def ext_write(self,
+                  txn: lmdb.Transaction,
+                  changes: Changes):
+        self._env.ext_write(txn, common.DbType.LATEST_DATA,
+                            changes.data.items())
 
-                cursor.put(encoded_key, encoded_value)
-                self._ref_db.ext_add_event_ref(txn, value.event_id, event_ref)
-
-        with self._env.ext_cursor(txn, common.DbType.LATEST_TYPE) as cursor:
-            for key, value in changes[1].items():
-                encoded_key = encoder.encode_latest_type_db_key(key)
-                encoded_value = encoder.encode_latest_type_db_value(value)
-
-                cursor.put(encoded_key, encoded_value)
-
-        return changes[0].values()
+        self._env.ext_write(txn, common.DbType.LATEST_TYPE,
+                            changes.types.items())

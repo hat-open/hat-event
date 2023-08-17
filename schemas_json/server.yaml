@@ -6,9 +6,11 @@ description: Event Server's configuration
 type: object
 required:
     - type
+    - server_id
+    - server_token
     - log
     - backend
-    - engine
+    - modules
     - eventer_server
 properties:
     type:
@@ -17,25 +19,52 @@ properties:
     version:
         type: string
         description: component version
-    syncer_token:
-        type: string
-        description: |
-            match of event servers' syncer_token is necessery condition for 
-            their synchronization
-    monitor:
-        "$ref": "hat-monitor://client.yaml#"
+    server_id:
+        type: integer
+        description: server identifier
+    server_token:
+        type:
+            - string
+            - 'null'
+        description: server token
     log:
         "$ref": "hat-json://logging.yaml#"
     backend:
         "$ref": "hat-event://server.yaml#/definitions/backend"
-    engine:
-        "$ref": "hat-event://server.yaml#/definitions/engine"
+    modules:
+        type: array
+        items:
+            "$ref": "hat-event://server.yaml#/definitions/module"
     eventer_server:
-        "$ref": "hat-event://server.yaml#/definitions/eventer_server"
-    syncer_server:
-        "$ref": "hat-event://server.yaml#/definitions/syncer_server"
-    mariner_server:
-        "$ref": "hat-event://server.yaml#/definitions/mariner_server"
+        type: object
+        required:
+            - host
+            - port
+        properties:
+            host:
+                type: string
+                default: "127.0.0.1"
+            port:
+                type: integer
+                default: 23012
+    monitor_component:
+        type: object
+        required:
+            - host
+            - port
+            - name
+            - group
+        properties:
+            host:
+                type: string
+                default: "127.0.0.1"
+            port:
+                type: integer
+                default: 23010
+            name:
+                type: string
+            group:
+                type: string
     synced_restart_engine:
         type: boolean
 definitions:
@@ -48,8 +77,7 @@ definitions:
         properties:
             module:
                 type: string
-                description: |
-                    full python module name that implements backend
+                description: full python module name that implements backend
     module:
         type: object
         description: |
@@ -59,81 +87,5 @@ definitions:
         properties:
             module:
                 type: string
-                description: |
-                    full python module name that implements module
-    engine:
-        type: object
-        required:
-            - server_id
-            - modules
-        properties:
-            server_id:
-                type: integer
-            modules:
-                type: array
-                items:
-                    "$ref": "hat-event://server.yaml#/definitions/module"
-    eventer_server:
-        type: object
-        required:
-            - address
-        properties:
-            address:
-                type: string
-                default: "tcp+sbs://127.0.0.1:23012"
-    syncer_server:
-        type: object
-        required:
-            - address
-        properties:
-            address:
-                type: string
-                default: "tcp+sbs://127.0.0.1:23013"
-            token:
-                type:
-                    - "null"
-                    - string
-            subscriptions:
-                "$ref": "hat-event://server.yaml#/definitions/event_types"
-    mariner_server:
-        type: object
-        required:
-            - address
-            - subscriptions
-        properties:
-            address:
-                type: string
-                default: "tcp://127.0.0.1:23014"
-            subscriptions:
-                "$ref": "hat-event://server.yaml#/definitions/event_types"
-    events:
-        eventer:
-            enum:
-                - CONNECTED
-                - DISCONNECTED
-        syncer:
-            server:
-                type: array
-                items:
-                    type: object
-                    required:
-                        - client_name
-                        - synced
-                    properties:
-                        client_name:
-                            type: string
-                        synced:
-                            type: boolean
-            client:
-                type: boolean
-        engine:
-            enum:
-                - STARTED
-                - STOPPED
-    event_types:
-        type: array
-        items:
-            type: array
-            items:
-                type: string
+                description: full python module name that implements module
 ...

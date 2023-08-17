@@ -3,6 +3,7 @@ import struct
 import typing
 
 from hat import sbs
+from hat import util
 
 
 class Timestamp(typing.NamedTuple):
@@ -10,33 +11,6 @@ class Timestamp(typing.NamedTuple):
     """seconds since 1970-01-01 (can be negative)"""
     us: int
     """microseconds added to timestamp seconds in range [0, 1e6)"""
-
-    def __lt__(self, other):
-        if not isinstance(other, Timestamp):
-            return NotImplemented
-        return self.s * 1000000 + self.us < other.s * 1000000 + other.us
-
-    def __gt__(self, other):
-        if not isinstance(other, Timestamp):
-            return NotImplemented
-        return self.s * 1000000 + self.us > other.s * 1000000 + other.us
-
-    def __eq__(self, other):
-        if not isinstance(other, Timestamp):
-            return NotImplemented
-        return self.s * 1000000 + self.us == other.s * 1000000 + other.us
-
-    def __ne__(self, other):
-        return not self == other
-
-    def __le__(self, other):
-        return self < other or self == other
-
-    def __ge__(self, other):
-        return self > other or self == other
-
-    def __hash__(self):
-        return self.s * 1000000 + self.us
 
     def add(self, s: float) -> 'Timestamp':
         """Create new timestamp by adding seconds to existing timestamp"""
@@ -46,13 +20,20 @@ class Timestamp(typing.NamedTuple):
                          us=us % int(1e6))
 
 
+min_timestamp: Timestamp = Timestamp(s=-(1 << 63), us=0)
+"""Minimal serializable timestamp value"""
+
+max_timestamp: Timestamp = Timestamp(s=(1 << 63) - 1, us=999_999)
+"""Maximal serializable timestamp value"""
+
+
 def now() -> Timestamp:
     """Create new timestamp representing current time"""
     return timestamp_from_datetime(
         datetime.datetime.now(datetime.timezone.utc))
 
 
-def timestamp_to_bytes(t: Timestamp) -> bytes:
+def timestamp_to_bytes(t: Timestamp) -> util.Bytes:
     """Convert timestamp to 12 byte representation
 
     Bytes [0, 8] are big endian unsigned `Timestamp.s` + 2^63 and
@@ -62,7 +43,7 @@ def timestamp_to_bytes(t: Timestamp) -> bytes:
     return struct.pack(">QI", t.s + (1 << 63), t.us)
 
 
-def timestamp_from_bytes(data: bytes) -> Timestamp:
+def timestamp_from_bytes(data: util.Bytes) -> Timestamp:
     """Create new timestamp from 12 byte representation
 
     Bytes representation is same as defined for `timestamp_to_bytes` function.
@@ -90,9 +71,12 @@ def timestamp_from_float(ts: float) -> Timestamp:
     s = int(ts)
     if ts < 0:
         s = s - 1
+
     us = round((ts - s) * 1E6)
-    if us == 1000000:
+
+    if us == 1_000_000:
         return Timestamp(s + 1, 0)
+
     else:
         return Timestamp(s, us)
 
@@ -105,10 +89,12 @@ def timestamp_to_datetime(t: Timestamp) -> datetime.datetime:
     """
     try:
         dt_from_s = datetime.datetime.fromtimestamp(t.s, datetime.timezone.utc)
+
     except OSError:
         dt_from_s = (
             datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc) +
             datetime.timedelta(seconds=t.s))
+
     return datetime.datetime(
         year=dt_from_s.year,
         month=dt_from_s.month,
@@ -131,9 +117,12 @@ def timestamp_from_datetime(dt: datetime.datetime) -> Timestamp:
     """
     if not dt.tzinfo:
         dt = dt.replace(tzinfo=datetime.timezone.utc)
+
     s = int(dt.timestamp())
+
     if dt.timestamp() < 0:
         s = s - 1
+
     return Timestamp(s=s, us=dt.microsecond)
 
 

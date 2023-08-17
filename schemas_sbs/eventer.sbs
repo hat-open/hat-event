@@ -1,19 +1,39 @@
 module HatEventer
 
-MsgSubscribe = Array(EventType)
+MsgInitReq = Record {
+    clientName:      String
+    clientToken:     Optional(String)
+    subscriptions:   Array(EventType)
+    serverId:        Optional(Integer)
+    persisted:       Boolean
+}
 
-MsgNotify = Array(Event)
+MsgInitRes = Choice {
+    success:  Status
+    error:    String
+}
+
+MsgStatusNotify = Status
+
+MsgStatusAck = None
+
+MsgEventsNotify = Array(Event)
 
 MsgRegisterReq = Array(RegisterEvent)
 
-MsgRegisterRes = Array(Choice {
-    event:    Event
+MsgRegisterRes = Choice {
+    events:   Array(Event)
     failure:  None
-})
+}
 
-MsgQueryReq = QueryData
+MsgQueryReq = QueryParams
 
-MsgQueryRes = Array(Event)
+MsgQueryRes = QueryResult
+
+Status = Choice {
+    standby:      None
+    operational:  None
+}
 
 Timestamp = Record {
     s:   Integer
@@ -39,10 +59,16 @@ OrderBy = Choice {
 EventType = Array(String)
 
 EventPayload = Choice {
-    binary:  Bytes
-    json:    String
-    sbs:     Hat.Data
+    binary:  EventPayloadBinary
+    json:    EventPayloadJson
 }
+
+EventPayloadBinary = Record {
+    type:  String
+    data:  Bytes
+}
+
+EventPayloadJson = String
 
 Event = Record {
     id:               EventId
@@ -58,17 +84,36 @@ RegisterEvent = Record {
     payload:          Optional(EventPayload)
 }
 
-QueryData = Record {
-    serverId:           Optional(Integer)
-    ids:                Optional(Array(EventId))
-    types:              Optional(Array(EventType))
-    tFrom:              Optional(Timestamp)
-    tTo:                Optional(Timestamp)
-    sourceTFrom:        Optional(Timestamp)
-    sourceTTo:          Optional(Timestamp)
-    payload:            Optional(EventPayload)
-    order:              Order
-    orderBy:            OrderBy
-    uniqueType:         Boolean
-    maxResults:         Optional(Integer)
+QueryParams = Choice {
+    latest:      QueryLatestParams
+    timeseries:  QueryTimeseriesParams
+    server:      QueryServerParams
+}
+
+QueryLatestParams = Record {
+    eventTypes:  Optional(Array(EventType))
+}
+
+QueryTimeseriesParams = Record {
+    eventTypes:   Optional(Array(EventType))
+    tFrom:        Optional(Timestamp)
+    tTo:          Optional(Timestamp)
+    sourceTFrom:  Optional(Timestamp)
+    sourceTTo:    Optional(Timestamp)
+    order:        Order
+    orderBy:      OrderBy
+    maxResults:   Optional(Integer)
+    lastEventId:  Optional(EventId)
+}
+
+QueryServerParams = Record {
+    serverId:     Integer
+    persisted:    Boolean
+    maxResults:   Optional(Integer)
+    lastEventId:  Optional(EventId)
+}
+
+QueryResult = Record {
+    events:       Array(Event)
+    moreFollows:  Boolean
 }

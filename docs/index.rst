@@ -9,6 +9,4 @@ Content
 
     event
     eventer
-    syncer
-    mariner
-    server
+    server/index

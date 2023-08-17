@@ -8,20 +8,20 @@ import typing
 
 from hat import aio
 from hat import json
-from hat import util
 
 from hat.event.common import (EventId,
                               Event,
-                              QueryData,
+                              QueryParams,
+                              QueryResult,
                               Subscription,
                               RegisterEvent)
 
 
-SourceType = enum.Enum('SourceType', [
-    'SYNCER',
-    'EVENTER',
-    'MODULE',
-    'ENGINE'])
+class SourceType(enum.Enum):
+    EVENTER = 1
+    MODULE = 2
+    ENGINE = 3
+    SERVER = 4
 
 
 class Source(typing.NamedTuple):
@@ -29,37 +29,43 @@ class Source(typing.NamedTuple):
     id: int
 
 
-EventsCb: typing.TypeAlias = typing.Callable[[list[Event]], None]
-"""Events callback"""
-
-
 class Engine(aio.Resource):
     """Engine ABC"""
-
-    @abc.abstractmethod
-    def register_events_cb(self,
-                           cb: EventsCb
-                           ) -> util.RegisterCallbackHandle:
-        """Register events callback"""
 
     @abc.abstractmethod
     async def register(self,
                        source: Source,
                        events: list[RegisterEvent]
-                       ) -> list[Event | None]:
+                       ) -> list[Event] | None:
         """Register events"""
 
     @abc.abstractmethod
     async def query(self,
-                    data: QueryData
-                    ) -> list[Event]:
+                    params: QueryParams
+                    ) -> QueryResult:
         """Query events"""
+
+
+class BackendClosedError(Exception):
+    """Backend closed"""
 
 
 BackendConf: typing.TypeAlias = json.Data
 """Backend configuration"""
 
-CreateBackend: typing.TypeAlias = aio.AsyncCallable[[BackendConf], 'Backend']
+BackendRegisteredEventsCb: typing.TypeAlias = aio.AsyncCallable[[list[Event]],
+                                                                None]
+"""Backend registered events callback"""
+
+BackendFlushedEventsCb: typing.TypeAlias = aio.AsyncCallable[[list[Event]],
+                                                             None]
+"""Backend flushed events callback"""
+
+CreateBackend: typing.TypeAlias = aio.AsyncCallable[
+    [BackendConf,
+     BackendRegisteredEventsCb | None,
+     BackendFlushedEventsCb | None],
+    'Backend']
 """Create backend callable"""
 
 
@@ -69,9 +75,8 @@ class Backend(aio.Resource):
     Backend is implemented as python module which is dynamically imported.
     It is expected that this module implements:
 
-    * json_schema_id (typing.Optional[str]): JSON schema id
-    * json_schema_repo (typing.Optional[json.SchemaRepository]):
-        JSON schema repo
+    * json_schema_id (str | None): JSON schema id
+    * json_schema_repo (json.SchemaRepository | None): JSON schema repo
     * create (CreateBackend): create new backend instance
 
     If module defines JSON schema repository and JSON schema id, JSON schema
@@ -81,20 +86,6 @@ class Backend(aio.Resource):
     """
 
     @abc.abstractmethod
-    def register_registered_events_cb(self,
-                                      cb: typing.Callable[[typing.List[Event]],
-                                                          None]
-                                      ) -> util.RegisterCallbackHandle:
-        """Register registered events callback"""
-
-    @abc.abstractmethod
-    def register_flushed_events_cb(self,
-                                   cb: typing.Callable[[typing.List[Event]],
-                                                       None]
-                                   ) -> util.RegisterCallbackHandle:
-        """Register flushed events callback"""
-
-    @abc.abstractmethod
     async def get_last_event_id(self,
                                 server_id: int
                                 ) -> EventId:
@@ -102,24 +93,15 @@ class Backend(aio.Resource):
 
     @abc.abstractmethod
     async def register(self,
-                       events: typing.List[Event]
-                       ) -> typing.List[typing.Optional[Event]]:
+                       events: list[Event]
+                       ) -> list[Event] | None:
         """Register events"""
 
     @abc.abstractmethod
     async def query(self,
-                    data: QueryData
-                    ) -> typing.List[Event]:
+                    params: QueryParams
+                    ) -> QueryResult:
         """Query events"""
-
-    @abc.abstractmethod
-    async def query_flushed(self,
-                            event_id: EventId
-                            ) -> typing.AsyncIterable[typing.List[Event]]:
-        """Get events with the same event_id.server, and event_id.instance
-        greater than provided. Iterates over lists of Events from the
-        same session. Only permanently persisted events (flushed) are
-        returned."""
 
     @abc.abstractmethod
     async def flush(self):
@@ -127,10 +109,13 @@ class Backend(aio.Resource):
 
 
 ModuleConf: typing.TypeAlias = json.Data
+"""Module configuration"""
 
-CreateModule: typing.TypeAlias = aio.AsyncCallable[[ModuleConf, Engine,
+CreateModule: typing.TypeAlias = aio.AsyncCallable[[ModuleConf,
+                                                    Engine,
                                                     Source],
                                                    'Module']
+"""Create module callable"""
 
 
 class Module(aio.Resource):
@@ -139,9 +124,8 @@ class Module(aio.Resource):
     Module is implemented as python module which is dynamically imported.
     It is expected that this module implements:
 
-        * json_schema_id (typing.Optional[str]): JSON schema id
-        * json_schema_repo (typing.Optional[json.SchemaRepository]):
-            JSON schema repo
+        * json_schema_id (str | None): JSON schema id
+        * json_schema_repo (json.SchemaRepository | None): JSON schema repo
         * create (CreateModule): create new module instance
 
     If module defines JSON schema repository and JSON schema id, JSON schema
@@ -150,6 +134,9 @@ class Module(aio.Resource):
 
     Module's `subscription` is constant during module's lifetime.
 
+    Methods `on_session_start`, `on_session_stop` and `process` can be
+    coroutines or regular functions.
+
     """
 
     @property
@@ -157,19 +144,17 @@ class Module(aio.Resource):
     def subscription(self) -> Subscription:
         """Subscribed event types filter"""
 
-    async def on_session_start(self,
-                               session_id: int):
+    async def on_session_start(self, session_id: int):
         """Called on start of a session, identified by session_id."""
 
-    async def on_session_stop(self,
-                              session_id: int):
+    async def on_session_stop(self, session_id: int):
         """Called on stop of a session, identified by session_id."""
 
     @abc.abstractmethod
     async def process(self,
                       source: Source,
                       event: Event
-                      ) -> typing.AsyncIterable[RegisterEvent]:
+                      ) -> typing.Iterable[RegisterEvent] | None:
         """Process new session event.
 
         Provided event is matched by modules subscription filter.

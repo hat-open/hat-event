@@ -3,10 +3,10 @@
 import logging
 
 from hat import aio
-from hat import json
+from hat.drivers import tcp
 
+from hat.event import eventer
 from hat.event.server import common
-import hat.event.eventer
 import hat.event.server.engine
 
 
@@ -14,61 +14,90 @@ mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
-async def create_eventer_server(conf: json.Data,
-                                engine: hat.event.server.engine.Engine
+async def create_eventer_server(addr: tcp.Address,
+                                backend: common.Backend,
+                                *,
+                                server_token: str | None = None,
+                                **kwargs
                                 ) -> 'EventerServer':
-    """Create eventer server
-
-    Args:
-        conf: configuration defined by
-            ``hat-event://main.yaml#/definitions/eventer_server``
-        engine: engine
-
-    """
-
-    async def on_connected(client_id):
-        await _register_eventer_event(engine, client_id, 'CONNECTED')
-
-    async def on_disconnected(client_id):
-        await _register_eventer_event(engine, client_id, 'DISCONNECTED')
-
-    async def on_register(client_id, register_events):
-        return await engine.register(_get_source(client_id), register_events)
-
-    async def on_query(client_id, query_data):
-        return await engine.query(query_data)
-
+    """Create eventer server"""
     server = EventerServer()
-    server._srv = await hat.event.eventer.listen(
-        address=conf['address'],
-        connected_cb=on_connected,
-        disconnected_cb=on_disconnected,
-        register_cb=on_register,
-        query_cb=on_query)
+    server._backend = backend
+    server._server_token = server_token
+    server._engine = None
 
-    handler = engine.register_events_cb(server._srv.notify)
-    server.async_group.spawn(aio.call_on_cancel, handler.cancel)
+    server._srv = await eventer.listen(addr,
+                                       connected_cb=server._on_connected,
+                                       disconnected_cb=server._on_disconnected,
+                                       register_cb=server._on_register,
+                                       query_cb=server._on_query,
+                                       **kwargs)
 
     return server
 
 
 class EventerServer(aio.Resource):
+    """Eventer server
+
+    For creating new server see `create_eventer_server` coroutine.
+
+    """
 
     @property
     def async_group(self) -> aio.Group:
         """Async group"""
         return self._srv.async_group
 
+    async def set_engine(self, engine: hat.event.server.engine.Engine | None):
+        """Set engine"""
+        self._engine = engine
 
-def _get_source(client_id):
+        status = common.Status.OPERATIONAL if engine else common.Status.STANDBY
+        await self._srv.set_status(status)
+
+    async def notify_events(self,
+                            events: list[common.Event],
+                            persisted: bool):
+        """Notify events"""
+        await self._srv.notify_events(events, persisted)
+
+    async def _on_connected(self, info):
+        if (info.client_token is not None and
+                info.client_token != self._server_token):
+            raise Exception('invalid client token')
+
+        if not self._engine or not self._engine.is_open:
+            return
+
+        source = _get_source(info.id)
+        register_event = _create_eventer_event(info, 'CONNECTED')
+        await self._engine.register(source, [register_event])
+
+    async def _on_disconnected(self, info):
+        if not self._engine or not self._engine.is_open:
+            return
+
+        source = _get_source(info.id)
+        register_event = _create_eventer_event(info, 'DISCONNECTED')
+        await self._engine.register(source, [register_event])
+
+    async def _on_register(self, info, register_events):
+        if not self._engine:
+            return
+
+        source = _get_source(info.id)
+        return await self._engine.register(source, register_events)
+
+    async def _on_query(self, info, params):
+        return await self._backend.query(params)
+
+
+def _create_eventer_event(info, status):
+    return common.RegisterEvent(type=('event', 'eventer', info.client_name),
+                                source_timestamp=None,
+                                payload=common.EventPayloadJson(status))
+
+
+def _get_source(source_id):
     return common.Source(type=common.SourceType.EVENTER,
-                         id=client_id)
-
-
-async def _register_eventer_event(engine, client_id, status):
-    register_event = common.RegisterEvent(
-        event_type=('event', 'eventer'),
-        source_timestamp=None,
-        payload=common.EventPayload(type=common.EventPayloadType.JSON,
-                                    data=status))
-    await engine.register(_get_source(client_id), [register_event])
+                         id=source_id)

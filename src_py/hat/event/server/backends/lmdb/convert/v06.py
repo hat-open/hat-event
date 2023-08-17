@@ -6,13 +6,11 @@ import typing
 
 import lmdb
 
-from hat import chatter
 from hat import json
 from hat import sbs
 
 
 EventType: typing.TypeAlias = typing.Tuple[str, ...]
-"""Event type"""
 
 
 EventPayloadType = enum.Enum('EventPayloadType', [
@@ -23,16 +21,12 @@ EventPayloadType = enum.Enum('EventPayloadType', [
 
 class EventId(typing.NamedTuple):
     server: int
-    """server identifier"""
     instance: int
-    """event instance identifier"""
 
 
 class SbsData(typing.NamedTuple):
     module: str | None
-    """SBS module name"""
     type: str
-    """SBS type name"""
     data: bytes
 
 
@@ -43,36 +37,7 @@ class EventPayload(typing.NamedTuple):
 
 class Timestamp(typing.NamedTuple):
     s: int
-    """seconds since 1970-01-01 (can be negative)"""
     us: int
-    """microseconds added to timestamp seconds in range [0, 1e6)"""
-
-    def __lt__(self, other):
-        if not isinstance(other, Timestamp):
-            return NotImplemented
-        return self.s * 1000000 + self.us < other.s * 1000000 + other.us
-
-    def __gt__(self, other):
-        if not isinstance(other, Timestamp):
-            return NotImplemented
-        return self.s * 1000000 + self.us > other.s * 1000000 + other.us
-
-    def __eq__(self, other):
-        if not isinstance(other, Timestamp):
-            return NotImplemented
-        return self.s * 1000000 + self.us == other.s * 1000000 + other.us
-
-    def __ne__(self, other):
-        return not self == other
-
-    def __le__(self, other):
-        return self < other or self == other
-
-    def __ge__(self, other):
-        return self > other or self == other
-
-    def __hash__(self):
-        return self.s * 1000000 + self.us
 
 
 class Event(typing.NamedTuple):
@@ -107,7 +72,7 @@ def decode_uint_timestamp_uint(x: bytes
 
 
 def decode_event(event_bytes: bytes) -> Event:
-    event_sbs = _sbs_repo.decode('HatEvent', 'Event', event_bytes)
+    event_sbs = _sbs_repo.decode('HatEvent.Event', event_bytes)
     return _event_from_sbs(event_sbs)
 
 
@@ -122,7 +87,7 @@ def create_env(path: Path):
                             max_dbs=max_dbs)
 
 
-_sbs_repo = sbs.Repository(chatter.sbs_repo, r"""
+_sbs_repo = sbs.Repository(r"""
 module HatEvent
 
 MsgSubscribe = Array(EventType)
@@ -165,7 +130,11 @@ EventType = Array(String)
 EventPayload = Choice {
     binary:  Bytes
     json:    String
-    sbs:     Hat.Data
+    sbs:     Record {
+        module:  Optional(String)
+        type:    String
+        data:    Bytes
+    }
 }
 
 Event = Record {

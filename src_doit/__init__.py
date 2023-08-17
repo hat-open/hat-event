@@ -3,15 +3,13 @@ from .pymodules import *  # NOQA
 from pathlib import Path
 import sys
 
-from hat import json
-from hat import sbs
 from hat.doit import common
 from hat.doit.c import get_task_clang_format
 from hat.doit.docs import (build_sphinx,
                            build_pdoc)
 from hat.doit.py import (get_task_build_wheel,
                          get_task_run_pytest,
-                         get_task_run_pip_compile,
+                         get_task_create_pip_requirements,
                          run_flake8,
                          get_py_versions)
 
@@ -29,7 +27,7 @@ __all__ = ['task_clean_all',
            'task_sbs_repo',
            'task_peru',
            'task_format',
-           'task_pip_compile',
+           'task_pip_requirements',
            *pymodules.__all__]
 
 
@@ -64,13 +62,10 @@ def task_build():
     return get_task_build_wheel(
         src_dir=src_py_dir,
         build_dir=build_py_dir,
-        scripts={
-            'hat-event-server': 'hat.event.server.main:main',
-            'hat-event-lmdb-manager': 'hat.event.server.backends.lmdb.manager.main:main'},  # NOQA
         py_versions=get_py_versions(py_limited_api),
         py_limited_api=py_limited_api,
         platform=common.target_platform,
-        has_ext_modules=True,
+        is_purelib=False,
         task_dep=['json_schema_repo',
                   'sbs_repo',
                   'pymodules'])
@@ -110,30 +105,14 @@ def task_docs():
 
 def task_json_schema_repo():
     """Generate JSON Schema Repository"""
-    src_paths = list(schemas_json_dir.rglob('*.yaml'))
-
-    def generate():
-        repo = json.SchemaRepository(*src_paths)
-        data = repo.to_json()
-        json.encode_file(data, json_schema_repo_path, indent=None)
-
-    return {'actions': [generate],
-            'file_dep': src_paths,
-            'targets': [json_schema_repo_path]}
+    return common.get_task_json_schema_repo(schemas_json_dir.rglob('*.yaml'),
+                                            json_schema_repo_path)
 
 
 def task_sbs_repo():
     """Generate SBS repository"""
-    src_paths = list(schemas_sbs_dir.rglob('*.sbs'))
-
-    def generate():
-        repo = sbs.Repository(*src_paths)
-        data = repo.to_json()
-        json.encode_file(data, sbs_repo_path, indent=None)
-
-    return {'actions': [generate],
-            'file_dep': src_paths,
-            'targets': [sbs_repo_path]}
+    return common.get_task_sbs_repo(schemas_sbs_dir.rglob('*.sbs'),
+                                    sbs_repo_path)
 
 
 def task_peru():
@@ -147,6 +126,6 @@ def task_format():
                                       *src_c_dir.rglob('*.h')])
 
 
-def task_pip_compile():
-    """Run pip-compile"""
-    return get_task_run_pip_compile()
+def task_pip_requirements():
+    """Create pip requirements"""
+    return get_task_create_pip_requirements()

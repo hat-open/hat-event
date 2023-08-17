@@ -2,10 +2,9 @@ import enum
 import importlib.resources
 import typing
 
-from hat import chatter
 from hat import json
 from hat import sbs
-import hat.monitor.common
+from hat import util
 
 from hat.event.common.timestamp import (Timestamp,
                                         timestamp_to_sbs,
@@ -16,206 +15,295 @@ with importlib.resources.as_file(importlib.resources.files(__package__) /
                                  'json_schema_repo.json') as _path:
     json_schema_repo: json.SchemaRepository = json.SchemaRepository(
         json.json_schema_repo,
-        hat.monitor.common.json_schema_repo,
         json.SchemaRepository.from_json(_path))
     """JSON schema repository"""
 
 with importlib.resources.as_file(importlib.resources.files(__package__) /
                                  'sbs_repo.json') as _path:
-    sbs_repo: sbs.Repository = sbs.Repository(chatter.sbs_repo,
-                                              sbs.Repository.from_json(_path))
+    sbs_repo: sbs.Repository = sbs.Repository.from_json(_path)
     """SBS schema repository"""
 
+ServerId: typing.TypeAlias = int
+"""Server identifier"""
+
+SessionId: typing.TypeAlias = int
+"""Session identifier"""
+
+InstanceId: typing.TypeAlias = int
+"""Event instance identifier"""
 
 EventTypeSegment: typing.TypeAlias = str
 """Event type segment"""
-
 
 EventType: typing.TypeAlias = typing.Tuple[EventTypeSegment, ...]
 """Event type"""
 
 
-Order = enum.Enum('Order', [
-    'DESCENDING',
-    'ASCENDING'])
+class Status(enum.Enum):
+    STANDBY = 'standby'
+    OPERATIONAL = 'operational'
 
 
-OrderBy = enum.Enum('OrderBy', [
-    'TIMESTAMP',
-    'SOURCE_TIMESTAMP'])
+class Order(enum.Enum):
+    DESCENDING = 'descending'
+    ASCENDING = 'ascending'
 
 
-EventPayloadType = enum.Enum('EventPayloadType', [
-    'BINARY',
-    'JSON',
-    'SBS'])
+class OrderBy(enum.Enum):
+    TIMESTAMP = 'timestamp'
+    SOURCE_TIMESTAMP = 'sourceTimestamp'
 
 
 class EventId(typing.NamedTuple):
-    server: int
-    """server identifier"""
-    session: int
-    """session identifier"""
-    instance: int
-    """event instance identifier"""
+    server: ServerId
+    session: SessionId
+    instance: InstanceId
 
 
-class EventPayload(typing.NamedTuple):
-    type: EventPayloadType
-    data: typing.Union[bytes, json.Data, 'SbsData']
-
-
-class SbsData(typing.NamedTuple):
-    module: str | None
-    """SBS module name"""
+class EventPayloadBinary(typing.NamedTuple):
     type: str
-    """SBS type name"""
-    data: bytes
+    data: util.Bytes
+
+
+class EventPayloadJson(typing.NamedTuple):
+    data: json.Data
+
+
+EventPayload: typing.TypeAlias = EventPayloadBinary | EventPayloadJson
 
 
 class Event(typing.NamedTuple):
-    event_id: EventId
-    event_type: EventType
+    """Event
+
+    Operators `>` and `<` test for natural order where it is assumed that
+    first operand is registered before second operand.
+
+    """
+
+    id: EventId
+    type: EventType
     timestamp: Timestamp
     source_timestamp: Timestamp | None
     payload: EventPayload | None
 
+    def __lt__(self, other):
+        if not isinstance(other, Event):
+            return NotImplemented
+
+        if self.id == other.id:
+            return False
+
+        if self.id.server == other.id.server:
+            return self.id < other.id
+
+        if self.timestamp != other.timestamp:
+            return self.timestamp < other.timestamp
+
+        return True
+
+    def __gt__(self, other):
+        if not isinstance(other, Event):
+            return NotImplemented
+
+        if self.id == other.id:
+            return False
+
+        if self.id.server == other.id.server:
+            return self.id > other.id
+
+        if self.timestamp != other.timestamp:
+            return self.timestamp > other.timestamp
+
+        return False
+
 
 class RegisterEvent(typing.NamedTuple):
-    event_type: EventType
+    type: EventType
     source_timestamp: Timestamp | None
     payload: EventPayload | None
 
 
-class QueryData(typing.NamedTuple):
-    server_id: int | None = None
-    event_ids: list[EventId] | None = None
+class QueryLatestParams(typing.NamedTuple):
+    event_types: list[EventType] | None = None
+
+
+class QueryTimeseriesParams(typing.NamedTuple):
     event_types: list[EventType] | None = None
     t_from: Timestamp | None = None
     t_to: Timestamp | None = None
     source_t_from: Timestamp | None = None
     source_t_to: Timestamp | None = None
-    payload: EventPayload | None = None
     order: Order = Order.DESCENDING
     order_by: OrderBy = OrderBy.TIMESTAMP
-    unique_type: bool = False
     max_results: int | None = None
+    last_event_id: EventId | None = None
+
+
+class QueryServerParams(typing.NamedTuple):
+    server_id: ServerId
+    persisted: bool = False
+    max_results: int | None = None
+    last_event_id: EventId | None = None
+
+
+QueryParams: typing.TypeAlias = (QueryLatestParams |
+                                 QueryTimeseriesParams |
+                                 QueryServerParams)
+
+
+class QueryResult(typing.NamedTuple):
+    events: typing.List[Event]
+    more_follows: bool
+
+
+def status_to_sbs(status: Status) -> sbs.Data:
+    """Convert Status to SBS data"""
+    return status.value, None
+
+
+def status_from_sbs(status: sbs.Data) -> Status:
+    """Create Status based on SBS data"""
+    return Status(status[0])
 
 
 def event_to_sbs(event: Event) -> sbs.Data:
     """Convert Event to SBS data"""
-    return {
-        'id': _event_id_to_sbs(event.event_id),
-        'type': list(event.event_type),
-        'timestamp': timestamp_to_sbs(event.timestamp),
-        'sourceTimestamp': _optional_to_sbs(event.source_timestamp,
-                                            timestamp_to_sbs),
-        'payload': _optional_to_sbs(event.payload, event_payload_to_sbs)}
+    return {'id': _event_id_to_sbs(event.id),
+            'type': list(event.type),
+            'timestamp': timestamp_to_sbs(event.timestamp),
+            'sourceTimestamp': _optional_to_sbs(event.source_timestamp,
+                                                timestamp_to_sbs),
+            'payload': _optional_to_sbs(event.payload, event_payload_to_sbs)}
 
 
 def event_from_sbs(data: sbs.Data) -> Event:
-    """Create new Event based on SBS data"""
-    return Event(
-        event_id=_event_id_from_sbs(data['id']),
-        event_type=tuple(data['type']),
-        timestamp=timestamp_from_sbs(data['timestamp']),
-        source_timestamp=_optional_from_sbs(data['sourceTimestamp'],
-                                            timestamp_from_sbs),
-        payload=_optional_from_sbs(data['payload'], event_payload_from_sbs))
+    """Create Event based on SBS data"""
+    return Event(id=_event_id_from_sbs(data['id']),
+                 type=tuple(data['type']),
+                 timestamp=timestamp_from_sbs(data['timestamp']),
+                 source_timestamp=_optional_from_sbs(data['sourceTimestamp'],
+                                                     timestamp_from_sbs),
+                 payload=_optional_from_sbs(data['payload'],
+                                            event_payload_from_sbs))
 
 
 def register_event_to_sbs(event: RegisterEvent) -> sbs.Data:
     """Convert RegisterEvent to SBS data"""
-    return {
-        'type': list(event.event_type),
-        'sourceTimestamp': _optional_to_sbs(event.source_timestamp,
-                                            timestamp_to_sbs),
-        'payload': _optional_to_sbs(event.payload, event_payload_to_sbs)}
+    return {'type': list(event.type),
+            'sourceTimestamp': _optional_to_sbs(event.source_timestamp,
+                                                timestamp_to_sbs),
+            'payload': _optional_to_sbs(event.payload, event_payload_to_sbs)}
 
 
 def register_event_from_sbs(data: sbs.Data) -> RegisterEvent:
-    """Create new RegisterEvent based on SBS data"""
+    """Create RegisterEvent based on SBS data"""
     return RegisterEvent(
-        event_type=tuple(data['type']),
+        type=tuple(data['type']),
         source_timestamp=_optional_from_sbs(data['sourceTimestamp'],
                                             timestamp_from_sbs),
         payload=_optional_from_sbs(data['payload'], event_payload_from_sbs))
 
 
-def query_to_sbs(query: QueryData) -> sbs.Data:
-    """Convert QueryData to SBS data"""
-    return {
-        'serverId': _optional_to_sbs(query.server_id),
-        'ids': _optional_to_sbs(query.event_ids, lambda ids: [
-            _event_id_to_sbs(i) for i in ids]),
-        'types': _optional_to_sbs(query.event_types, lambda ets: [
-            list(et) for et in ets]),
-        'tFrom': _optional_to_sbs(query.t_from, timestamp_to_sbs),
-        'tTo': _optional_to_sbs(query.t_to, timestamp_to_sbs),
-        'sourceTFrom': _optional_to_sbs(query.source_t_from, timestamp_to_sbs),
-        'sourceTTo': _optional_to_sbs(query.source_t_to, timestamp_to_sbs),
-        'payload': _optional_to_sbs(query.payload, event_payload_to_sbs),
-        'order': {Order.DESCENDING: ('descending', None),
-                  Order.ASCENDING: ('ascending', None)}[query.order],
-        'orderBy': {OrderBy.TIMESTAMP: ('timestamp', None),
-                    OrderBy.SOURCE_TIMESTAMP: ('sourceTimestamp', None)
-                    }[query.order_by],
-        'uniqueType': query.unique_type,
-        'maxResults': _optional_to_sbs(query.max_results)}
+def query_params_to_sbs(params: QueryParams) -> sbs.Data:
+    """Convert QueryParams to SBS data"""
+    if isinstance(params, QueryLatestParams):
+        return 'latest', {
+            'eventTypes': _optional_to_sbs(params.event_types,
+                                           _event_types_to_sbs)}
+
+    if isinstance(params, QueryTimeseriesParams):
+        return 'timeseries', {
+            'eventTypes': _optional_to_sbs(params.event_types,
+                                           _event_types_to_sbs),
+            'tFrom': _optional_to_sbs(params.t_from, timestamp_to_sbs),
+            'tTo': _optional_to_sbs(params.t_to, timestamp_to_sbs),
+            'sourceTFrom': _optional_to_sbs(params.source_t_from,
+                                            timestamp_to_sbs),
+            'sourceTTo': _optional_to_sbs(params.source_t_to,
+                                          timestamp_to_sbs),
+            'order': (params.order.value, None),
+            'orderBy': (params.order_by.value, None),
+            'maxResults': _optional_to_sbs(params.max_results),
+            'lastEventId': _optional_to_sbs(params.last_event_id,
+                                            _event_id_to_sbs)}
+
+    if isinstance(params, QueryServerParams):
+        return 'server', {
+            'serverId': params.server_id,
+            'persisted': params.persisted,
+            'maxResults': _optional_to_sbs(params.max_results),
+            'lastEventId': _optional_to_sbs(params.last_event_id,
+                                            _event_id_to_sbs)}
+
+    raise ValueError('unsupported params type')
 
 
-def query_from_sbs(data: sbs.Data) -> QueryData:
-    """Create new QueryData based on SBS data"""
-    return QueryData(
-        server_id=_optional_from_sbs(data['serverId']),
-        event_ids=_optional_from_sbs(data['ids'], lambda ids: [
-            _event_id_from_sbs(i) for i in ids]),
-        event_types=_optional_from_sbs(data['types'], lambda ets: [
-            tuple(et) for et in ets]),
-        t_from=_optional_from_sbs(data['tFrom'], timestamp_from_sbs),
-        t_to=_optional_from_sbs(data['tTo'], timestamp_from_sbs),
-        source_t_from=_optional_from_sbs(data['sourceTFrom'],
-                                         timestamp_from_sbs),
-        source_t_to=_optional_from_sbs(data['sourceTTo'], timestamp_from_sbs),
-        payload=_optional_from_sbs(data['payload'], event_payload_from_sbs),
-        order={'descending': Order.DESCENDING,
-               'ascending': Order.ASCENDING}[data['order'][0]],
-        order_by={'timestamp': OrderBy.TIMESTAMP,
-                  'sourceTimestamp': OrderBy.SOURCE_TIMESTAMP
-                  }[data['orderBy'][0]],
-        unique_type=data['uniqueType'],
-        max_results=_optional_from_sbs(data['maxResults']))
+def query_params_from_sbs(data: sbs.Data) -> QueryParams:
+    """Create QueryParams based on SBS data"""
+    if data[0] == 'latest':
+        return QueryLatestParams(
+            event_types=_optional_from_sbs(data[1]['eventTypes'],
+                                           _event_types_from_sbs))
+
+    if data[0] == 'timeseries':
+        return QueryTimeseriesParams(
+            event_types=_optional_from_sbs(data[1]['eventTypes'],
+                                           _event_types_from_sbs),
+            t_from=_optional_from_sbs(data[1]['tFrom'], timestamp_from_sbs),
+            t_to=_optional_from_sbs(data[1]['tTo'], timestamp_from_sbs),
+            source_t_from=_optional_from_sbs(data[1]['sourceTFrom'],
+                                             timestamp_from_sbs),
+            source_t_to=_optional_from_sbs(data[1]['sourceTTo'],
+                                           timestamp_from_sbs),
+            order=Order(data[1]['order'][0]),
+            order_by=OrderBy(data[1]['orderBy'][0]),
+            max_results=_optional_from_sbs(data[1]['maxResults']),
+            last_event_id=_optional_from_sbs(data[1]['lastEventId'],
+                                             _event_id_from_sbs))
+
+    if data[0] == 'server':
+        return QueryServerParams(
+            server_id=data[1]['serverId'],
+            persisted=data[1]['persisted'],
+            max_results=_optional_from_sbs(data[1]['maxResults']),
+            last_event_id=_optional_from_sbs(data[1]['lastEventId'],
+                                             _event_id_from_sbs))
+
+    raise ValueError('unsupported params type')
+
+
+def query_result_to_sbs(result: QueryResult) -> sbs.Data:
+    """Convert QueryResult to SBS data"""
+    return {'events': [event_to_sbs(event) for event in result.events],
+            'moreFollows': result.more_follows}
+
+
+def query_result_from_sbs(data: sbs.Data) -> QueryResult:
+    """Create QueryResult based on SBS data"""
+    return QueryResult(events=[event_from_sbs(i) for i in data['events']],
+                       more_follows=data['moreFollows'])
 
 
 def event_payload_to_sbs(payload: EventPayload) -> sbs.Data:
     """Convert EventPayload to SBS data"""
-    if payload.type == EventPayloadType.BINARY:
-        return 'binary', payload.data
+    if isinstance(payload, EventPayloadBinary):
+        return 'binary', {'type': payload.type,
+                          'data': payload.data}
 
-    if payload.type == EventPayloadType.JSON:
+    if isinstance(payload, EventPayloadJson):
         return 'json', json.encode(payload.data)
-
-    if payload.type == EventPayloadType.SBS:
-        return 'sbs', _sbs_data_to_sbs(payload.data)
 
     raise ValueError('unsupported payload type')
 
 
 def event_payload_from_sbs(data: sbs.Data) -> EventPayload:
-    """Create new EventPayload based on SBS data"""
-    data_type, data_data = data
+    """Create EventPayload based on SBS data"""
+    if data[0] == 'binary':
+        return EventPayloadBinary(type=data[1]['type'],
+                                  data=data[1]['data'])
 
-    if data_type == 'binary':
-        return EventPayload(type=EventPayloadType.BINARY,
-                            data=data_data)
-
-    if data_type == 'json':
-        return EventPayload(type=EventPayloadType.JSON,
-                            data=json.decode(data_data))
-
-    if data_type == 'sbs':
-        return EventPayload(type=EventPayloadType.SBS,
-                            data=_sbs_data_from_sbs(data_data))
+    if data[0] == 'json':
+        return EventPayloadJson(data=json.decode(data[1]))
 
     raise ValueError('unsupported payload type')
 
@@ -232,16 +320,12 @@ def _event_id_from_sbs(data):
                    instance=data['instance'])
 
 
-def _sbs_data_to_sbs(data):
-    return {'module': _optional_to_sbs(data.module),
-            'type': data.type,
-            'data': data.data}
+def _event_types_to_sbs(event_types):
+    return [list(event_type) for event_type in event_types]
 
 
-def _sbs_data_from_sbs(data):
-    return SbsData(module=_optional_from_sbs(data['module']),
-                   type=data['type'],
-                   data=data['data'])
+def _event_types_from_sbs(data):
+    return [tuple(i) for i in data]
 
 
 def _optional_to_sbs(value, fn=lambda i: i):
