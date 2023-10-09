@@ -153,6 +153,12 @@ def test_matches_query_type(event_type, query_type, is_match):
 
     ([('a', '*'), ('b',), ('c', '?'), ('c', '*')],
      [('a', '*'), ('b',), ('c', '*')]),
+
+    ([('',), ('a',)],
+     [('',), ('a',)]),
+
+    ([('',), ('*',)],
+     [('*',)]),
 ])
 def test_subscription_get_query_types(Subscription, query_types, sanitized):
     subscription = Subscription(query_types)
@@ -180,8 +186,8 @@ def test_subscription_get_query_types(Subscription, query_types, sanitized):
      [(), ('a', 'b'), ('b',)]),
 
     ([('a', '?'), ('a',)],
-     [('a',), ('a', 'b')],
-     [(), ('a', 'b', 'c'), ('b',)]),
+     [('a',), ('a', 'b'), ('a', '')],
+     [(), ('a', 'b', 'c'), ('b',), ('',)]),
 ])
 def test_subscription_matches(Subscription, query_types, matching,
                               not_matching):
@@ -208,6 +214,9 @@ def test_subscription_matches(Subscription, query_types, matching,
 
     ([[('a', 'b')], [('a', 'c')]],
      [('a', 'b'), ('a', 'c')]),
+
+    ([[('a', '')], [('', 'a')]],
+     [('a', ''), ('', 'a')]),
 ])
 def test_subscription_union(Subscription, query_types, union):
     subscription = Subscription([]).union(*(Subscription(i)
@@ -248,7 +257,11 @@ def test_subscription_union(Subscription, query_types, union):
 
     ([('a', 'b', '*')],
      [('a', 'b')],
-     False)
+     False),
+
+    ([('a', '', '?')],
+     [('a', '', 'b')],
+     False),
 ])
 def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
     first = Subscription(first)
@@ -278,6 +291,10 @@ def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
     ([('?', 'b')],
      [('a', 'b')],
      [('a', 'b')]),
+
+    ([('',), ('a',)],
+     [('',), ('b',)],
+     [('',)]),
 ])
 def test_subscription_intersection(Subscription, subscription_types,
                                    other_types, intersection_types):
