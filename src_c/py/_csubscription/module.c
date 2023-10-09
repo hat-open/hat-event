@@ -317,7 +317,7 @@ static bool isdisjoint(node_t *first, node_t *second) {
 
     while ((iter = hat_ht_iter_next(first->children, iter))) {
         hat_ht_iter_key(iter, &key, &key_size);
-        if (strncmp((char *)key, "?", key_size) == 0)
+        if (key_size == 1 && *key == '?')
             continue;
 
         second_child = hat_ht_get(second->children, key, key_size);
@@ -331,7 +331,7 @@ static bool isdisjoint(node_t *first, node_t *second) {
 
     while ((iter = hat_ht_iter_next(second->children, iter))) {
         hat_ht_iter_key(iter, &key, &key_size);
-        if (strncmp((char *)key, "?", key_size) == 0)
+        if (key_size == 1 && *key == '?')
             continue;
 
         first_child = hat_ht_get(first->children, key, key_size);
