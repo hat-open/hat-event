@@ -4,20 +4,12 @@ set -e
 
 . $(dirname -- "$0")/env.sh
 
-TARGETS="linux_gnu_x86_64:cp38
-         linux_gnu_x86_64:cp39
-         linux_gnu_x86_64:cp310
+TARGETS="linux_gnu_x86_64:cp310
          linux_gnu_x86_64:cp311
-         linux_musl_x86_64:cp38
-         linux_musl_x86_64:cp39
          linux_musl_x86_64:cp310
          linux_musl_x86_64:cp311
-         linux_gnu_aarch64:cp39
-         linux_gnu_aarch64:cp38
          linux_gnu_aarch64:cp310
          linux_gnu_aarch64:cp311
-         windows_amd64:cp38
-         windows_amd64:cp39
          windows_amd64:cp310
          windows_amd64:cp311"
 # TARGETS=""
@@ -39,6 +31,7 @@ IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.8
         linux/arm/v7/build-hat-event:debian11-cpy3.10
         linux/arm/v7/build-hat-event:debian11-cpy3.11"
 IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.10"
+IMAGES=""
 # IMAGES="linux/arm/v7/build-hat-event:debian11-cpy3.11"
 
 for IMAGE in $IMAGES; do
