@@ -114,7 +114,8 @@ class MainRunner(aio.Resource):
             monitor_client=self._monitor_client,
             monitor_group=self._conf['monitor']['group'],
             name=str(self._conf['engine']['server_id']),
-            syncer_token=self._conf.get('syncer_token'))
+            syncer_token=self._conf.get('syncer_token'),
+            ping_timeout=self._conf.get('syncer_client_ping_timeout', 20))
 
         _bind_resource(self.async_group, self._syncer_client)
 

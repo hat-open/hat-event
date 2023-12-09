@@ -43,7 +43,7 @@ async def create_syncer_client(backend: common.Backend,
                                monitor_group: str,
                                name: str,
                                syncer_token: str | None = None,
-                               **kwargs
+                               ping_timeout: float = 20
                                ) -> 'SyncerClient':
     """Create syncer client
 
@@ -62,7 +62,7 @@ async def create_syncer_client(backend: common.Backend,
     cli._monitor_group = monitor_group
     cli._name = name
     cli._syncer_token = syncer_token
-    cli._kwargs = kwargs
+    cli._ping_timeout = ping_timeout
     cli._conns = {}
     cli._state_cbs = util.CallbackRegistry()
     cli._events_cbs = util.CallbackRegistry()
@@ -139,7 +139,7 @@ class SyncerClient(aio.Resource):
                             server_id=server_id,
                             address=address,
                             client_name=self._name,
-                            kwargs=self._kwargs,
+                            ping_timeout=self._ping_timeout,
                             state_cb=state_cb,
                             events_cb=events_cb)
 
@@ -157,13 +157,13 @@ class SyncerClient(aio.Resource):
 class _Connection(aio.Resource):
 
     def __init__(self, async_group, backend, server_id, address, client_name,
-                 kwargs, state_cb, events_cb):
+                 ping_timeout, state_cb, events_cb):
         self._async_group = async_group
         self._backend = backend
         self._server_id = server_id
         self._address = address
         self._client_name = client_name
-        self._kwargs = kwargs
+        self._ping_timeout = ping_timeout
         self._state_cb = state_cb
         self._events_cb = events_cb
         self._synced = False
@@ -199,7 +199,8 @@ class _Connection(aio.Resource):
                     client_name=self._client_name,
                     last_event_id=last_event_id,
                     synced_cb=self._on_synced,
-                    events_cb=self._backend.register)
+                    events_cb=self._backend.register,
+                    ping_timeout=self._ping_timeout)
 
             except Exception as e:
                 mlog.debug("can not connect to syncer server: %s", e)

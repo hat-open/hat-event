@@ -22,6 +22,10 @@ properties:
         description: |
             match of event servers' syncer_token is necessery condition for 
             their synchronization
+    syncer_client_ping_timeout:
+        type:
+            - "null"
+            - number
     monitor:
         "$ref": "hat-monitor://client.yaml#"
     log:
@@ -95,6 +99,10 @@ definitions:
                     - string
             subscriptions:
                 "$ref": "hat-event://server.yaml#/definitions/event_types"
+            ping_timeout:
+                type:
+                    - "null"
+                    - number
     mariner_server:
         type: object
         required:

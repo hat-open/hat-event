@@ -37,7 +37,8 @@ async def create_syncer_server(conf: json.Data,
         address=conf['address'],
         query_cb=backend.query_flushed,
         subscriptions=subscriptions,
-        token=conf.get('token'))
+        token=conf.get('token'),
+        ping_timeout=conf.get('ping_timeout', 20))
 
     server.async_group.spawn(server._backend_loop)
 

@@ -27,14 +27,16 @@ async def connect(address: str,
                   synced_cb: SyncedCb | None = None,
                   events_cb: EventsCb | None = None,
                   client_token: str | None = None,
-                  subscriptions: list[common.EventType] = [('*',)]
+                  subscriptions: list[common.EventType] = [('*',)],
+                  ping_timeout: float = 20
                   ) -> 'Client':
     """Connect to remote syncer server"""
     client = Client()
     client._synced_cb = synced_cb
     client._events_cb = events_cb
 
-    client._conn = await chatter.connect(common.sbs_repo, address)
+    client._conn = await chatter.connect(common.sbs_repo, address,
+                                         ping_timeout=ping_timeout)
     mlog.debug("connected to %s", address)
 
     try:

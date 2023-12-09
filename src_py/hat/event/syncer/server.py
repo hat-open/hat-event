@@ -33,7 +33,8 @@ QueryCb: typing.TypeAlias = typing.Callable[[common.EventId],
 async def listen(address: str,
                  query_cb: QueryCb | None = None,
                  subscriptions: list[common.EventType] = [('*',)],
-                 token: str | None = None
+                 token: str | None = None,
+                 ping_timeout: float = 20
                  ) -> 'Server':
     """Create listening syncer server"""
     server = Server()
@@ -49,6 +50,7 @@ async def listen(address: str,
     server._server = await chatter.listen(sbs_repo=common.sbs_repo,
                                           address=address,
                                           connection_cb=server._on_connection,
+                                          ping_timeout=ping_timeout,
                                           bind_connections=False)
 
     mlog.debug("listening on %s", address)
