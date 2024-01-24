@@ -175,7 +175,7 @@ async def test_events(addr, server_id, persisted):
 
     await srv.notify_events(events, not persisted)
 
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         await aio.wait_for(common.receive_msg(conn), 0.01)
 
     await conn.async_close()

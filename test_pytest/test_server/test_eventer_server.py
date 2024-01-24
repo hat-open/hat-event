@@ -1,3 +1,4 @@
+import asyncio
 import itertools
 
 import pytest
@@ -242,7 +243,7 @@ async def test_notify_events(events_count, persisted, addr):
 
     await server.notify_events(events, not persisted)
 
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         await aio.wait_for(events_queue.get(), 0.01)
 
     await client.async_close()
