@@ -28,7 +28,7 @@ for IMAGE in $IMAGES; do
     PLATFORM=$(dirname $IMAGE)
     IMAGE_ID=$(podman images -q $IMAGE)
     podman build --platform $PLATFORM \
-                 -f $RUN_PATH/dockerfiles/$IMAGE \
+                 -f $PLAYGROUND_PATH/dockerfiles/$IMAGE \
                  -t $IMAGE \
                  .
     if [ -n "$IMAGE_ID" -a "$IMAGE_ID" != "$(podman images -q $IMAGE)" ]; then

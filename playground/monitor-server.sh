@@ -23,7 +23,7 @@ log:
             level: DEBUG
         syslog_handler:
             class: hat.syslog.handler.SyslogHandler
-            host: '127.0.0.1'
+            host: "127.0.0.1"
             port: 6514
             comm_type: TCP
             level: DEBUG
@@ -37,20 +37,23 @@ log:
             - console_handler
             - syslog_handler
     disable_existing_loggers: false
+default_algorithm: BLESS_ONE
+group_algorithms: {}
 server:
-    address: "tcp+sbs://127.0.0.1:23010"
+    host: "127.0.0.1"
+    port: 23010
     default_rank: 1
 master:
-    address: "tcp+sbs://127.0.0.1:23011"
-    default_algorithm: BLESS_ONE
-    group_algorithms: {}
+    host: "127.0.0.1"
+    port: 23011
 slave:
     parents: []
     connect_timeout: 5
     connect_retry_count: 3
     connect_retry_delay: 5
 ui:
-    address: "http://127.0.0.1:23022"
+    host: "127.0.0.1"
+    port: 23022
 EOF
 
 exec $PYTHON -m hat.monitor.server \

@@ -1,5 +1,6 @@
 from pathlib import Path
 import contextlib
+import enum
 import platform
 import struct
 
@@ -15,7 +16,7 @@ _max_size = (1024 * 1024 * 1024 * 1024
 _max_dbs = 9
 
 
-class Version:
+class Version(enum.Enum):
     v06 = '0.6'
     v07 = '0.7'
     v09 = '0.9'

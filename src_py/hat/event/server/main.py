@@ -30,7 +30,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--conf', metavar='PATH', type=Path, default=None,
         help="configuration defined by hat-event://server.yaml# "
-             "(default $XDG_CONFIG_HOME/hat/event.{yaml|yml|json})")
+             "(default $XDG_CONFIG_HOME/hat/event.{yaml|yml|toml|json})")
     return parser
 
 
@@ -38,19 +38,7 @@ def main():
     """Event Server"""
     parser = create_argument_parser()
     args = parser.parse_args()
-
-    conf_path = args.conf
-    if not conf_path:
-        for suffix in ('.yaml', '.yml', '.json'):
-            conf_path = (user_conf_dir / 'event').with_suffix(suffix)
-            if conf_path.exists():
-                break
-
-    if conf_path == Path('-'):
-        conf = json.decode_stream(sys.stdin)
-    else:
-        conf = json.decode_file(conf_path)
-
+    conf = json.read_conf(args.conf, user_conf_dir / 'event')
     sync_main(conf)
 
 
@@ -60,7 +48,7 @@ def sync_main(conf: json.Data):
 
     common.json_schema_repo.validate('hat-event://server.yaml#', conf)
 
-    sub_confs = [conf['backend'], *conf['engine']['modules']]
+    sub_confs = [conf['backend'], *conf['modules']]
     for sub_conf in sub_confs:
         module = importlib.import_module(sub_conf['module'])
         if module.json_schema_repo and module.json_schema_id:

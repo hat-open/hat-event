@@ -68,7 +68,7 @@ class MainRunner(aio.Resource):
                              self._conf['eventer_server']['port']),
             backend=self._backend,
             server_token=self._conf['server_token'])
-        _bind_resource(self.async_group, self._syncer_server)
+        _bind_resource(self.async_group, self._eventer_server)
 
         if 'monitor_component' in self._conf:
             self._monitor_component = await hat.monitor.component.connect(
@@ -239,7 +239,9 @@ class EngineRunner(aio.Resource):
         self._eventer_server = eventer_server
         self._async_group = aio.Group()
         self._engine = None
-        self._restart = aio.Event()
+        self._restart = asyncio.Event()
+
+        self.async_group.spawn(self._run)
 
     @property
     def async_group(self) -> aio.Group:

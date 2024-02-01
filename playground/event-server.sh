@@ -10,6 +10,8 @@ CONF_PATH=$DATA_PATH/event.yaml
 
 cat > $CONF_PATH << EOF
 type: event
+server_id: 1
+server_token: null
 log:
     version: 1
     formatters:
@@ -37,21 +39,17 @@ log:
             - console_handler
             - syslog_handler
     disable_existing_loggers: false
-monitor:
-    name: event
-    group: event
-    monitor_address: "tcp+sbs://127.0.0.1:23010"
 backend:
     module: hat.event.server.backends.dummy
-engine:
-    server_id: 1
-    modules: []
+modules: []
 eventer_server:
-    address: "tcp+sbs://127.0.0.1:23012"
-syncer_server:
-    address: "tcp+sbs://127.0.0.1:23013"
-mariner_server:
-    address: "tcp://127.0.0.1:23014"
+    host: "127.0.0.1"
+    port: 23012
+monitor_component:
+    host: "127.0.0.1"
+    port: 23010
+    name: event
+    group: event
 EOF
 
 exec $PYTHON -m hat.event.server \

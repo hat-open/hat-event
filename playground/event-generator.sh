@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 
 from hat import aio
+from hat.drivers import tcp
 
 from hat.event import common
 import hat.event.eventer
@@ -20,14 +21,15 @@ def main():
         aio.run_asyncio(async_main())
 
 async def async_main():
-    conn = await hat.event.eventer.connect('tcp+sbs://127.0.0.1:23012')
+    addr = tcp.Address('127.0.0.1', 23012)
+    conn = await hat.event.eventer.connect(addr, 'client')
     try:
-        await conn.register_with_response([common.RegisterEvent(
-            event_type=('a', 'b', 'c'),
+        register_event = common.RegisterEvent(
+            type=('a', 'b', 'c'),
             source_timestamp=common.now(),
-            payload=common.EventPayload(
-                type=common.EventPayloadType.JSON,
-                data=123))])
+            payload=common.EventPayloadJson(123))
+        result = await conn.register([register_event], with_response=True)
+        print(result)
     finally:
         await conn.async_close()
 

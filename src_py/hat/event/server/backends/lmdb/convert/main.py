@@ -69,7 +69,7 @@ def convert(src_path: Path,
 
         else:
             tmp_dst_path = dst_path.with_suffix(
-                f"{dst_path}.{conversion.dst_version.name}")
+                f"{dst_path.suffix}.{conversion.dst_version.name}")
 
         if tmp_dst_path.exists():
             tmp_dst_path.unlink()
