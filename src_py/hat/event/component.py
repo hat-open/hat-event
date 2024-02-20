@@ -83,7 +83,10 @@ async def connect(addr: tcp.Address,
     active Event Server is detected, associated runner is closed. If new
     connection to Event Server is successfully established,
     `component_cb` will be called again to create new runner associated with
-    new instance of evnter client.
+    new instance of eventer client.
+
+    If runner is closed while connection to Event Server is open, component
+    is closed.
 
     """
     component = Component()
@@ -247,7 +250,20 @@ class Component(aio.Resource):
                         aio.call, self._runner_cb, self, server_data, client)
 
                     try:
-                        await client.wait_closing()
+                        async with async_group.create_subgroup() as subgroup:
+                            client_closing_task = subgroup.spawn(
+                                client.wait_closing)
+                            runner_closing_task = subgroup.spawn(
+                                runner.wait_closing)
+
+                            await asyncio.wait(
+                                [client_closing_task, runner_closing_task],
+                                return_when=asyncio.FIRST_COMPLETED)
+
+                            if (runner_closing_task.done() and
+                                    not client_closing_task.done()):
+                                self.close()
+                                break
 
                     finally:
                         await aio.uncancellable(runner.async_close())
