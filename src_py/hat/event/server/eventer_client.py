@@ -1,3 +1,4 @@
+from collections.abc import Callable
 import collections
 import logging
 import typing
@@ -12,9 +13,7 @@ from hat.event.server import common
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
-SyncedCb: typing.TypeAlias = typing.Callable[[common.ServerId,
-                                              int],
-                                             None]
+SyncedCb: typing.TypeAlias = Callable[[common.ServerId, int], None]
 """Synced callback"""
 
 

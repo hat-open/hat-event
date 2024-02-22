@@ -5,10 +5,8 @@ title: Event Server
 description: Event Server's configuration
 type: object
 required:
-    - type
     - server_id
     - server_token
-    - log
     - backend
     - modules
     - eventer_server

@@ -2,6 +2,7 @@
 
 from hat.event.common import *  # NOQA
 
+from collections.abc import Iterable
 import abc
 import enum
 import typing
@@ -154,7 +155,7 @@ class Module(aio.Resource):
     async def process(self,
                       source: Source,
                       event: Event
-                      ) -> typing.Iterable[RegisterEvent] | None:
+                      ) -> Iterable[RegisterEvent] | None:
         """Process new session event.
 
         Provided event is matched by modules subscription filter.

@@ -54,7 +54,9 @@ def sync_main(conf: json.Data):
         if module.json_schema_repo and module.json_schema_id:
             module.json_schema_repo.validate(module.json_schema_id, sub_conf)
 
-    logging.config.dictConfig(conf['log'])
+    log_conf = conf.get('log')
+    if log_conf:
+        logging.config.dictConfig(log_conf)
 
     with contextlib.suppress(asyncio.CancelledError):
         aio.run_asyncio(async_main(conf))

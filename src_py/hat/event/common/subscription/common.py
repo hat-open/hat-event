@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 import abc
 import itertools
 import typing
@@ -9,11 +10,11 @@ class BaseSubscription(abc.ABC):
     """Subscription defined by query event types"""
 
     @abc.abstractmethod
-    def __init__(self, query_types: typing.Iterable[EventType]):
+    def __init__(self, query_types: Iterable[EventType]):
         pass
 
     @abc.abstractmethod
-    def get_query_types(self) -> typing.Iterable[EventType]:
+    def get_query_types(self) -> Iterable[EventType]:
         """Calculate sanitized query event types"""
 
     @abc.abstractmethod
@@ -42,7 +43,7 @@ class Node(typing.NamedTuple):
     children: typing.Dict[EventTypeSegment, 'Node']
 
 
-def node_from_query_types(query_types: typing.Iterable[EventType]) -> Node:
+def node_from_query_types(query_types: Iterable[EventType]) -> Node:
     node = Node(False, {})
 
     for query_type in query_types:
@@ -51,7 +52,7 @@ def node_from_query_types(query_types: typing.Iterable[EventType]) -> Node:
     return node
 
 
-def node_to_query_types(node: Node) -> typing.Iterable[EventType]:
+def node_to_query_types(node: Node) -> Iterable[EventType]:
     is_leaf, children = node
 
     if is_leaf and '*' not in children:
