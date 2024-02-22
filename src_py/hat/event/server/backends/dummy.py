@@ -15,17 +15,9 @@ from hat import aio
 from hat.event.server import common
 
 
-json_schema_id = None
-json_schema_repo = None
-
-
-def create(conf, registered_events_cb, flushed_events_cb):
-    return DummyBackend(registered_events_cb, flushed_events_cb)
-
-
 class DummyBackend(common.Backend):
 
-    def __init__(self, registered_events_cb, flushed_events_cb):
+    def __init__(self, conf, registered_events_cb, flushed_events_cb):
         self._registered_events_cbs = registered_events_cb
         self._flushed_events_cbs = flushed_events_cb
         self._async_group = aio.Group()
@@ -52,3 +44,6 @@ class DummyBackend(common.Backend):
 
     async def flush(self):
         pass
+
+
+info = common.BackendInfo(DummyBackend)

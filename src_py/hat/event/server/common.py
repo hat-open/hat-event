@@ -2,9 +2,10 @@
 
 from hat.event.common import *  # NOQA
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 import abc
 import enum
+import importlib
 import typing
 
 from hat import aio
@@ -36,8 +37,8 @@ class Engine(aio.Resource):
     @abc.abstractmethod
     async def register(self,
                        source: Source,
-                       events: list[RegisterEvent]
-                       ) -> list[Event] | None:
+                       events: Collection[RegisterEvent]
+                       ) -> Collection[Event] | None:
         """Register events"""
 
     @abc.abstractmethod
@@ -51,40 +52,8 @@ class BackendClosedError(Exception):
     """Backend closed"""
 
 
-BackendConf: typing.TypeAlias = json.Data
-"""Backend configuration"""
-
-BackendRegisteredEventsCb: typing.TypeAlias = aio.AsyncCallable[[list[Event]],
-                                                                None]
-"""Backend registered events callback"""
-
-BackendFlushedEventsCb: typing.TypeAlias = aio.AsyncCallable[[list[Event]],
-                                                             None]
-"""Backend flushed events callback"""
-
-CreateBackend: typing.TypeAlias = aio.AsyncCallable[
-    [BackendConf,
-     BackendRegisteredEventsCb | None,
-     BackendFlushedEventsCb | None],
-    'Backend']
-"""Create backend callable"""
-
-
 class Backend(aio.Resource):
-    """Backend ABC
-
-    Backend is implemented as python module which is dynamically imported.
-    It is expected that this module implements:
-
-    * json_schema_id (str | None): JSON schema id
-    * json_schema_repo (json.SchemaRepository | None): JSON schema repo
-    * create (CreateBackend): create new backend instance
-
-    If module defines JSON schema repository and JSON schema id, JSON schema
-    repository will be used for additional validation of backend configuration
-    with JSON schema id.
-
-    """
+    """Backend ABC"""
 
     @abc.abstractmethod
     async def get_last_event_id(self,
@@ -94,8 +63,8 @@ class Backend(aio.Resource):
 
     @abc.abstractmethod
     async def register(self,
-                       events: list[Event]
-                       ) -> list[Event] | None:
+                       events: Collection[Event]
+                       ) -> Collection[Event] | None:
         """Register events"""
 
     @abc.abstractmethod
@@ -109,47 +78,31 @@ class Backend(aio.Resource):
         """Flush internal buffers and permanently persist events"""
 
 
-ModuleConf: typing.TypeAlias = json.Data
-"""Module configuration"""
-
-CreateModule: typing.TypeAlias = aio.AsyncCallable[[ModuleConf,
-                                                    Engine,
-                                                    Source],
-                                                   'Module']
-"""Create module callable"""
-
-
 class Module(aio.Resource):
-    """Module ABC
-
-    Module is implemented as python module which is dynamically imported.
-    It is expected that this module implements:
-
-        * json_schema_id (str | None): JSON schema id
-        * json_schema_repo (json.SchemaRepository | None): JSON schema repo
-        * create (CreateModule): create new module instance
-
-    If module defines JSON schema repository and JSON schema id, JSON schema
-    repository will be used for additional validation of module configuration
-    with JSON schema id.
-
-    Module's `subscription` is constant during module's lifetime.
-
-    Methods `on_session_start`, `on_session_stop` and `process` can be
-    coroutines or regular functions.
-
-    """
+    """Module ABC"""
 
     @property
     @abc.abstractmethod
     def subscription(self) -> Subscription:
-        """Subscribed event types filter"""
+        """Subscribed event types filter.
+
+        `subscription` is constant during module's lifetime.
+
+        """
 
     async def on_session_start(self, session_id: int):
-        """Called on start of a session, identified by session_id."""
+        """Called on start of a session, identified by session_id.
+
+        This method can be coroutine or regular function.
+
+        """
 
     async def on_session_stop(self, session_id: int):
-        """Called on stop of a session, identified by session_id."""
+        """Called on stop of a session, identified by session_id.
+
+        This method can be coroutine or regular function.
+
+        """
 
     @abc.abstractmethod
     async def process(self,
@@ -165,4 +118,96 @@ class Module(aio.Resource):
 
         Single module session process is always called sequentially.
 
+        This method can be coroutine or regular function.
+
         """
+
+
+BackendConf: typing.TypeAlias = json.Data
+"""Backend configuration"""
+
+BackendRegisteredEventsCb: typing.TypeAlias = aio.AsyncCallable[
+    [Collection[Event]],
+    None]
+"""Backend registered events callback"""
+
+BackendFlushedEventsCb: typing.TypeAlias = aio.AsyncCallable[
+    [Collection[Event]],
+    None]
+"""Backend flushed events callback"""
+
+CreateBackend: typing.TypeAlias = aio.AsyncCallable[
+    [BackendConf,
+     BackendRegisteredEventsCb | None,
+     BackendFlushedEventsCb | None],
+    Backend]
+"""Create backend callable"""
+
+
+class BackendInfo(typing.NamedTuple):
+    """Backend info
+
+    Backend is implemented as python module which is dynamically imported.
+    It is expected that this module contains `info` which is instance of
+    `BackendInfo`.
+
+    If backend defines JSON schema repository and JSON schema id, JSON schema
+    repository will be used for additional validation of backend configuration
+    with JSON schema id.
+
+    """
+    create: CreateBackend
+    json_schema_id: str | None = None
+    json_schema_repo: json.SchemaRepository | None = None
+
+
+ModuleConf: typing.TypeAlias = json.Data
+"""Module configuration"""
+
+CreateModule: typing.TypeAlias = aio.AsyncCallable[
+    [ModuleConf, Engine, Source],
+    Module]
+"""Create module callable"""
+
+
+class ModuleInfo(typing.NamedTuple):
+    """Module info
+
+    Module is implemented as python module which is dynamically imported.
+    It is expected that this module contains `info` which is instance of
+    `ModuleInfo`.
+
+        * json_schema_id (str | None): JSON schema id
+        * json_schema_repo (json.SchemaRepository | None): JSON schema repo
+        * create (CreateModule): create new module instance
+
+    If module defines JSON schema repository and JSON schema id, JSON schema
+    repository will be used for additional validation of module configuration
+    with JSON schema id.
+
+    """
+    create: CreateModule
+    json_schema_id: str | None = None
+    json_schema_repo: json.SchemaRepository | None = None
+
+
+def import_backend_info(py_module_str: str) -> BackendInfo:
+    """Import backend info"""
+    py_module = importlib.import_module(py_module_str)
+    info = py_module.info
+
+    if not isinstance(info, BackendInfo):
+        raise Exception('invalid backend implementation')
+
+    return info
+
+
+def import_module_info(py_module_str: str) -> ModuleInfo:
+    """Import module info"""
+    py_module = importlib.import_module(py_module_str)
+    info = py_module.info
+
+    if not isinstance(info, ModuleInfo):
+        raise Exception('invalid module implementation')
+
+    return info

@@ -1,5 +1,6 @@
 """Eventer Client"""
 
+from collections.abc import Collection
 import asyncio
 import logging
 import typing
@@ -18,7 +19,8 @@ StatusCb: typing.TypeAlias = aio.AsyncCallable[['Client', common.Status],
                                                None]
 """Status callback"""
 
-EventsCb: typing.TypeAlias = aio.AsyncCallable[['Client', list[common.Event]],
+EventsCb: typing.TypeAlias = aio.AsyncCallable[['Client',
+                                                Collection[common.Event]],
                                                None]
 """Events callback"""
 
@@ -125,9 +127,9 @@ class Client(aio.Resource):
         return self._status
 
     async def register(self,
-                       events: list[common.RegisterEvent],
+                       events: Collection[common.RegisterEvent],
                        with_response: bool = False
-                       ) -> list[common.Event] | None:
+                       ) -> Collection[common.Event] | None:
         """Register events and optionally wait for response
 
         If `with_response` is ``True``, this coroutine returns list of events

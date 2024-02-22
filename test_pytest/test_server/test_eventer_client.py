@@ -209,10 +209,10 @@ async def test_notify(addr):
         backend=backend)
 
     result = await register_queue.get()
-    assert result == [events[0]]
+    assert list(result) == [events[0]]
 
     result = await register_queue.get()
-    assert result == [events[1]]
+    assert list(result) == [events[1]]
 
     assert register_queue.empty()
     assert client.synced

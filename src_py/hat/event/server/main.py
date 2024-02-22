@@ -4,7 +4,6 @@ from pathlib import Path
 import argparse
 import asyncio
 import contextlib
-import importlib
 import logging.config
 import sys
 
@@ -48,11 +47,13 @@ def sync_main(conf: json.Data):
 
     common.json_schema_repo.validate('hat-event://server.yaml#', conf)
 
-    sub_confs = [conf['backend'], *conf['modules']]
-    for sub_conf in sub_confs:
-        module = importlib.import_module(sub_conf['module'])
-        if module.json_schema_repo and module.json_schema_id:
-            module.json_schema_repo.validate(module.json_schema_id, sub_conf)
+    info_confs = [(common.import_backend_info(conf['backend']['module']),
+                   conf['backend']),
+                  *((common.import_module_info(i['module']), i)
+                    for i in conf['modules'])]
+    for info, info_conf in info_confs:
+        if info.json_schema_repo and info.json_schema_id:
+            info.json_schema_repo.validate(info.json_schema_id, info_conf)
 
     log_conf = conf.get('log')
     if log_conf:

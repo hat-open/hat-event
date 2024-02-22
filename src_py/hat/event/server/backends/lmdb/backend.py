@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from pathlib import Path
 import asyncio
 import collections
@@ -124,8 +125,8 @@ class LmdbBackend(common.Backend):
         return self._dbs.system.get_last_event_id(server_id)
 
     async def register(self,
-                       events: list[common.Event]
-                       ) -> list[common.Event] | None:
+                       events: Collection[common.Event]
+                       ) -> Collection[common.Event] | None:
         if not self.is_open:
             raise common.BackendClosedError()
 

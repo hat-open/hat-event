@@ -1,8 +1,8 @@
 """Engine"""
 
+from collections.abc import Collection, Iterable
 import asyncio
 import collections
-import importlib
 import logging
 
 from hat import aio
@@ -16,7 +16,7 @@ mlog: logging.Logger = logging.getLogger(__name__)
 
 
 async def create_engine(backend: common.Backend,
-                        module_confs: list[json.Data],
+                        module_confs: Iterable[json.Data],
                         server_id: int,
                         register_queue_size: int = 1024
                         ) -> 'Engine':
@@ -37,13 +37,12 @@ async def create_engine(backend: common.Backend,
 
     try:
         for source_id, module_conf in enumerate(module_confs):
-            py_module = importlib.import_module(module_conf['module'])
-
+            info = common.import_module_info(module_conf['module'])
             source = common.Source(type=common.SourceType.MODULE,
                                    id=source_id)
 
             module = await engine.async_group.spawn(
-                aio.call, py_module.create, module_conf, engine, source)
+                aio.call, info.create, module_conf, engine, source)
             engine.async_group.spawn(aio.call_on_cancel, module.async_close)
             engine.async_group.spawn(aio.call_on_done, module.wait_closing(),
                                      engine.close)
@@ -68,8 +67,8 @@ class Engine(common.Engine):
 
     async def register(self,
                        source: common.Source,
-                       events: list[common.RegisterEvent]
-                       ) -> list[common.Event | None]:
+                       events: Collection[common.RegisterEvent]
+                       ) -> Collection[common.Event | None]:
         """Register events"""
         if not events:
             return []
@@ -86,7 +85,7 @@ class Engine(common.Engine):
 
     async def query(self,
                     params: common.QueryParams
-                    ) -> list[common.Event]:
+                    ) -> common.QueryResult:
         """Query events"""
         return await self._backend.query(params)
 
@@ -109,8 +108,9 @@ class Engine(common.Engine):
                 if future.done():
                     continue
 
-                result = (events[:len(register_events)]
-                          if events is not None else None)
+                result = (
+                    list(event for event, _ in zip(events, register_events))
+                    if events is not None else None)
                 future.set_result(result)
 
         except Exception as e:
@@ -171,7 +171,7 @@ class Engine(common.Engine):
         for _, module in self._source_modules:
             await aio.call(module.on_session_stop, self._last_event_id.session)
 
-        return list(events)
+        return events
 
     def _create_status_reg_event(self, status):
         return common.RegisterEvent(type=('event', 'engine'),

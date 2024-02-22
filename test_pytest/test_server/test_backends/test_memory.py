@@ -1,12 +1,11 @@
 from hat import aio
 
 from hat.event.server import common
-import hat.event.server.backends.memory
+from hat.event.server.backends.memory import info
 
 
 async def test_create():
-    backend = await aio.call(hat.event.server.backends.memory.create, {},
-                             None, None)
+    backend = await aio.call(info.create, {}, None, None)
 
     assert isinstance(backend, common.Backend)
     assert backend.is_open

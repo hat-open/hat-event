@@ -1,3 +1,4 @@
+from collections.abc import Hashable, Iterable
 import abc
 import typing
 
@@ -5,7 +6,7 @@ from hat.event.common.data import EventType
 from hat.event.common.subscription import Subscription
 
 
-T = typing.TypeVar('T', bound=typing.Hashable)
+T = typing.TypeVar('T', bound=Hashable)
 
 
 class BaseEventTypeCollection(abc.ABC, typing.Generic[T]):
@@ -23,5 +24,5 @@ class BaseEventTypeCollection(abc.ABC, typing.Generic[T]):
         pass
 
     @abc.abstractmethod
-    def get(self, event_type: EventType) -> typing.Iterable[T]:
+    def get(self, event_type: EventType) -> Iterable[T]:
         pass

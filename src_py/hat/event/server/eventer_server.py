@@ -1,5 +1,6 @@
 """Eventer server"""
 
+from collections.abc import Collection
 import logging
 
 from hat import aio
@@ -56,7 +57,7 @@ class EventerServer(aio.Resource):
         await self._srv.set_status(status)
 
     async def notify_events(self,
-                            events: list[common.Event],
+                            events: Collection[common.Event],
                             persisted: bool):
         """Notify events"""
         await self._srv.notify_events(events, persisted)

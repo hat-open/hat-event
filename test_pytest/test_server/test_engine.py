@@ -97,9 +97,7 @@ def create_module():
                 break
 
         py_module = types.ModuleType(module_name)
-        py_module.json_schema_id = None
-        py_module.json_schema_repo = None
-        py_module.create = create
+        py_module.info = common.ModuleInfo(create)
         sys.modules[module_name] = py_module
 
         module_names.add(module_name)

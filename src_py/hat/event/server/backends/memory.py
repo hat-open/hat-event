@@ -7,28 +7,14 @@ All registered events are stored in single unsorted continuous event list.
 import collections
 
 from hat import aio
-from hat import util
 
 from hat.event.server import common
 
 
-json_schema_id = None
-json_schema_repo = None
-
-
-async def create(conf, register_events_cb, flushed_events_cb):
-    return MemoryBackend(register_events_cb, flushed_events_cb)
-    backend = MemoryBackend()
-    backend._async_group = aio.Group()
-    backend._events = collections.deque()
-    backend._registered_events_cbs = util.CallbackRegistry()
-    return backend
-
-
 class MemoryBackend(common.Backend):
 
-    def __init__(self, register_events_cb, flushed_events_cb):
-        self._register_events_cb = register_events_cb
+    def __init__(self, conf, registered_events_cb, flushed_events_cb):
+        self._registered_events_cb = registered_events_cb
         self._flushed_events_cb = flushed_events_cb
         self._async_group = aio.Group()
         self._events = collections.deque()
@@ -46,11 +32,11 @@ class MemoryBackend(common.Backend):
     async def register(self, events):
         self._events.extend(events)
 
-        if self._registered_events_cbs:
-            await aio.call(self._registered_events_cbs, events)
+        if self._registered_events_cb:
+            await aio.call(self._registered_events_cb, events)
 
-        if self._flushed_events_cbs:
-            await aio.call(self._flushed_events_cbs, events)
+        if self._flushed_events_cb:
+            await aio.call(self._flushed_events_cb, events)
 
         return events
 
@@ -65,6 +51,9 @@ class MemoryBackend(common.Backend):
             return self._query_server(params)
 
         raise ValueError('unsupported params type')
+
+    async def flush(self):
+        pass
 
     def _query_latest(self, params):
         events = self._events
@@ -148,8 +137,8 @@ class MemoryBackend(common.Backend):
         return common.QueryResult(events=events,
                                   more_follows=more_follows)
 
-    async def flush(self):
-        pass
+
+info = common.BackendInfo(MemoryBackend)
 
 
 def _filter_event_types(events, event_types):

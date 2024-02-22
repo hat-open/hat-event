@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import importlib
 import logging
 import types
 import typing
@@ -57,8 +56,9 @@ class MainRunner(aio.Resource):
             await aio.uncancellable(self._stop())
 
     async def _start(self):
-        py_module = importlib.import_module(self._conf['backend']['module'])
-        self._backend = await aio.call(py_module.create, self._conf['backend'],
+        backend_conf = self._conf['backend']
+        backend_info = common.import_backend_info(backend_conf['module'])
+        self._backend = await aio.call(backend_info.create, backend_conf,
                                        self._on_backend_registered_events,
                                        self._on_backend_flushed_events)
         _bind_resource(self.async_group, self._backend)

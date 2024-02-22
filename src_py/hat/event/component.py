@@ -1,5 +1,6 @@
 """Eventer Component"""
 
+from collections.abc import Collection
 import asyncio
 import contextlib
 import logging
@@ -42,7 +43,7 @@ StatusCb: typing.TypeAlias = aio.AsyncCallable[
 """Status callback"""
 
 EventsCb: typing.TypeAlias = aio.AsyncCallable[
-    ['Component', hat.event.eventer.client.Client, list[common.Event]],
+    ['Component', hat.event.eventer.client.Client, Collection[common.Event]],
     None]
 """Events callback"""
 
@@ -227,7 +228,7 @@ class Component(aio.Resource):
                 try:
                     kwargs = {**self._eventer_kwargs,
                               'status_cb': self._on_status,
-                              'events_cb': self._events_cb}
+                              'events_cb': self._on_events}
 
                     if 'server_id' not in kwargs:
                         kwargs['server_id'] = server_data.server_id
@@ -263,7 +264,7 @@ class Component(aio.Resource):
                             if (runner_closing_task.done() and
                                     not client_closing_task.done()):
                                 self.close()
-                                break
+                                return
 
                     finally:
                         await aio.uncancellable(runner.async_close())

@@ -110,10 +110,10 @@ class EventerClient(aio.Resource):
                     while events[0].id.session == session_id:
                         session_events.append(events.popleft())
 
-                    await self._backend.register(list(session_events))
+                    await self._backend.register(session_events)
 
             if events:
-                await self._backend.register(list(events))
+                await self._backend.register(events)
 
             mlog.debug("processing cached notify events")
             while self._events_queue:

@@ -3,12 +3,11 @@ import pytest
 from hat import aio
 
 from hat.event.server import common
-import hat.event.server.backends.dummy
+from hat.event.server.backends.dummy import info
 
 
 async def test_create():
-    backend = await aio.call(hat.event.server.backends.dummy.create, {},
-                             None, None)
+    backend = await aio.call(info.create, {}, None, None)
 
     assert backend.is_open
 
@@ -17,8 +16,7 @@ async def test_create():
 
 @pytest.mark.parametrize("server_id", [0, 1, 5, 10])
 async def test_get_last_event_id(server_id):
-    backend = await aio.call(hat.event.server.backends.dummy.create, {},
-                             None, None)
+    backend = await aio.call(info.create, {}, None, None)
 
     event_id = await backend.get_last_event_id(server_id)
     assert event_id == common.EventId(server_id, 0, 0)
@@ -29,8 +27,8 @@ async def test_get_last_event_id(server_id):
 @pytest.mark.parametrize("event_count", [0, 1, 5, 10])
 async def test_register(event_count):
     events = [
-        hat.event.common.Event(
-            id=hat.event.common.EventId(server=1, session=1, instance=i),
+        common.Event(
+            id=common.EventId(server=1, session=1, instance=i),
             type=(),
             timestamp=common.now(),
             source_timestamp=None,
@@ -39,7 +37,7 @@ async def test_register(event_count):
 
     registered_queue = aio.Queue()
     flushed_queue = aio.Queue()
-    backend = await aio.call(hat.event.server.backends.dummy.create, {},
+    backend = await aio.call(info.create, {},
                              registered_queue.put_nowait,
                              flushed_queue.put_nowait)
 
@@ -62,8 +60,7 @@ async def test_register(event_count):
                                     common.QueryTimeseriesParams(),
                                     common.QueryServerParams(123)])
 async def test_query(params):
-    backend = await aio.call(hat.event.server.backends.dummy.create, {},
-                             None, None)
+    backend = await aio.call(info.create, {}, None, None)
 
     result = await backend.query(params)
     assert result == common.QueryResult(events=[],

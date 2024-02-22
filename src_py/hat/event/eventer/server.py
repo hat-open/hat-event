@@ -1,7 +1,9 @@
+from collections.abc import Collection
+import asyncio
+import collections
 import contextlib
 import itertools
 import logging
-import asyncio
 import typing
 
 from hat import aio
@@ -30,14 +32,14 @@ class ConnectionInfo(typing.NamedTuple):
 ConnectionCb: typing.TypeAlias = aio.AsyncCallable[[ConnectionInfo], None]
 """Connected/disconnected callback"""
 
-RegisterCb: typing.TypeAlias = aio.AsyncCallable[[ConnectionInfo,
-                                                  list[common.RegisterEvent]],
-                                                 list[common.Event] | None]
+RegisterCb: typing.TypeAlias = aio.AsyncCallable[
+    [ConnectionInfo, Collection[common.RegisterEvent]],
+    Collection[common.Event] | None]
 """Register callback"""
 
-QueryCb: typing.TypeAlias = aio.AsyncCallable[[ConnectionInfo,
-                                               common.QueryParams],
-                                              common.QueryResult]
+QueryCb: typing.TypeAlias = aio.AsyncCallable[
+    [ConnectionInfo, common.QueryParams],
+    common.QueryResult]
 """Query callback"""
 
 
@@ -91,17 +93,18 @@ class Server(aio.Resource):
         await asyncio.wait(tasks)
 
     async def notify_events(self,
-                            events: list[common.Event],
+                            events: Collection[common.Event],
                             persisted: bool):
         """Notify events to clients"""
         for conn, info in list(self._conn_infos.items()):
             if info.persisted != persisted:
                 continue
 
-            filtered_events = [event for event in events
-                               if info.subscription.matches(event.type)
-                               and (info.server_id is None or
-                                    info.server_id == event.id.server)]
+            filtered_events = collections.deque(
+                event for event in events
+                if (info.subscription.matches(event.type) and
+                    (info.server_id is None or
+                     info.server_id == event.id.server)))
             if not filtered_events:
                 continue
 
