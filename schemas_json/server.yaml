@@ -6,7 +6,6 @@ description: Event Server's configuration
 type: object
 required:
     - server_id
-    - server_token
     - backend
     - modules
     - eventer_server
@@ -17,6 +16,8 @@ properties:
     version:
         type: string
         description: component version
+    log:
+        "$ref": "hat-json://logging.yaml#"
     server_id:
         type: integer
         description: server identifier
@@ -25,8 +26,6 @@ properties:
             - string
             - 'null'
         description: server token
-    log:
-        "$ref": "hat-json://logging.yaml#"
     backend:
         "$ref": "hat-event://server.yaml#/definitions/backend"
     modules:

@@ -23,6 +23,7 @@ async def create_engine(backend: common.Backend,
     """Create engine"""
     engine = Engine()
     engine._backend = backend
+    engine._server_id = server_id
     engine._loop = asyncio.get_running_loop()
     engine._async_group = aio.Group()
     engine._register_queue = aio.Queue(register_queue_size)
@@ -64,6 +65,11 @@ class Engine(common.Engine):
     def async_group(self) -> aio.Group:
         """Async group"""
         return self._async_group
+
+    @property
+    def server_id(self) -> int:
+        """Event server identifier"""
+        return self._server_id
 
     async def register(self,
                        source: common.Source,
@@ -174,9 +180,10 @@ class Engine(common.Engine):
         return events
 
     def _create_status_reg_event(self, status):
-        return common.RegisterEvent(type=('event', 'engine'),
-                                    source_timestamp=None,
-                                    payload=common.EventPayloadJson(status))
+        return common.RegisterEvent(
+            type=('event', str(self._server_id), 'engine'),
+            source_timestamp=None,
+            payload=common.EventPayloadJson(status))
 
     def _create_session(self):
         self._last_event_id = self._last_event_id._replace(

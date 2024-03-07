@@ -67,7 +67,8 @@ class MainRunner(aio.Resource):
             addr=tcp.Address(self._conf['eventer_server']['host'],
                              self._conf['eventer_server']['port']),
             backend=self._backend,
-            server_token=self._conf['server_token'])
+            server_id=self._conf['server_id'],
+            server_token=self._conf.get('server_token'))
         _bind_resource(self.async_group, self._eventer_server)
 
         if 'monitor_component' in self._conf:
@@ -173,7 +174,7 @@ class EventerClientRunner(aio.Resource):
     async def set_monitor_state(self, state: hat.monitor.component.State):
         valid_server_data = set(_get_eventer_server_data(
             group=self._conf['monitor_component']['group'],
-            server_token=self._conf['server_token'],
+            server_token=self._conf.get('server_token'),
             state=state))
 
         for server_data in list(self._client_subgroups.keys()):
@@ -192,7 +193,7 @@ class EventerClientRunner(aio.Resource):
             subgroup.spawn(self._client_loop, subgroup, server_data)
             self._client_subgroups[server_data] = subgroup
 
-    async def _clent_loop(self, async_group, server_data):
+    async def _client_loop(self, async_group, server_data):
         try:
             while True:
                 try:
@@ -201,7 +202,7 @@ class EventerClientRunner(aio.Resource):
                         client_name=self._conf['monitor_component']['name'],
                         server_id=server_data.server_id,
                         backend=self._backend,
-                        client_token=self._conf['server_token'],
+                        client_token=self._conf.get('server_token'),
                         synced_cb=self._on_synced)
 
                 except Exception:
@@ -254,7 +255,8 @@ class EngineRunner(aio.Resource):
         if self._engine and self._engine.is_open:
             source = common.Source(type=common.SourceType.SERVER, id=0)
             event = common.RegisterEvent(
-                event_type=('event', 'synced', str(server_id)),
+                type=('event', str(self._conf['server_id']), 'synced',
+                      str(server_id)),
                 source_timestamp=None,
                 payload=common.EventPayloadJson(synced))
 

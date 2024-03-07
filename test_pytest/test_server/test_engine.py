@@ -32,7 +32,7 @@ class Backend(common.Backend):
 
     async def query(self, params):
         if not self._query_cb:
-            return []
+            return common.QueryResult([], False)
 
         return await aio.call(self._query_cb, params)
 
@@ -138,7 +138,7 @@ async def test_engine_events(server_id):
     event = events[0]
 
     assert event.id == common.EventId(server_id, 1, 1)
-    assert event.type == ('event', 'engine')
+    assert event.type == ('event', str(server_id), 'engine')
     assert event.source_timestamp is None
     assert event.payload.data == 'STARTED'
 
@@ -149,7 +149,7 @@ async def test_engine_events(server_id):
     event = events[0]
 
     assert event.id == common.EventId(server_id, 2, 1)
-    assert event.type == ('event', 'engine')
+    assert event.type == ('event', str(server_id), 'engine')
     assert event.source_timestamp is None
     assert event.payload.data == 'STOPPED'
 
@@ -229,7 +229,7 @@ async def test_register(create_module):
 
     source, event = await source_event_queue.get()
     assert source.type == common.SourceType.ENGINE
-    assert event.type == ('event', 'engine')
+    assert event.type == ('event', '1', 'engine')
     assert event.payload.data == 'STARTED'
 
     assert source_event_queue.empty()

@@ -177,10 +177,6 @@ class ModuleInfo(typing.NamedTuple):
     It is expected that this module contains `info` which is instance of
     `ModuleInfo`.
 
-        * json_schema_id (str | None): JSON schema id
-        * json_schema_repo (json.SchemaRepository | None): JSON schema repo
-        * create (CreateModule): create new module instance
-
     If module defines JSON schema repository and JSON schema id, JSON schema
     repository will be used for additional validation of module configuration
     with JSON schema id.

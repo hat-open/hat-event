@@ -79,7 +79,8 @@ async def test_create(addr):
     backend = Backend()
     server = await hat.event.server.eventer_server.create_eventer_server(
         addr=addr,
-        backend=backend)
+        backend=backend,
+        server_id=1)
 
     assert server.is_open
 
@@ -93,6 +94,7 @@ async def test_connect(token, addr):
     server = await hat.event.server.eventer_server.create_eventer_server(
         addr=addr,
         backend=backend,
+        server_id=1,
         server_token=token)
 
     client = await hat.event.eventer.connect(addr=addr,
@@ -116,6 +118,7 @@ async def test_invalid_token(addr):
     server = await hat.event.server.eventer_server.create_eventer_server(
         addr=addr,
         backend=backend,
+        server_id=1,
         server_token='token1')
 
     with pytest.raises(hat.event.eventer.EventerInitError):
@@ -137,7 +140,8 @@ async def test_set_engine(addr):
     engine = Engine()
     server = await hat.event.server.eventer_server.create_eventer_server(
         addr=addr,
-        backend=backend)
+        backend=backend,
+        server_id=1)
     client = await hat.event.eventer.connect(addr=addr,
                                              client_name='client',
                                              status_cb=on_status)
@@ -174,7 +178,8 @@ async def test_register(addr):
     engine = Engine(register_cb=on_register)
     server = await hat.event.server.eventer_server.create_eventer_server(
         addr=addr,
-        backend=backend)
+        backend=backend,
+        server_id=42)
     await server.set_engine(engine)
 
     client = await hat.event.eventer.connect(addr=addr,
@@ -184,7 +189,7 @@ async def test_register(addr):
     events = await register_queue.get()
     assert len(events) == 1
     event = events[0]
-    assert event.type == ('event', 'eventer', client_name)
+    assert event.type == ('event', '42', 'eventer', client_name)
     assert event.source_timestamp is None
     assert event.payload.data == 'CONNECTED'
 
@@ -201,7 +206,7 @@ async def test_register(addr):
     events = await register_queue.get()
     assert len(events) == 1
     event = events[0]
-    assert event.type == ('event', 'eventer', client_name)
+    assert event.type == ('event', '42', 'eventer', client_name)
     assert event.source_timestamp is None
     assert event.payload.data == 'DISCONNECTED'
 
@@ -229,7 +234,8 @@ async def test_notify_events(events_count, persisted, addr):
     backend = Backend()
     server = await hat.event.server.eventer_server.create_eventer_server(
         addr=addr,
-        backend=backend)
+        backend=backend,
+        server_id=1)
     client = await hat.event.eventer.connect(addr=addr,
                                              client_name='client',
                                              subscriptions=[('*', )],
@@ -262,7 +268,8 @@ async def test_query(addr):
     backend = Backend(query_cb=on_query)
     server = await hat.event.server.eventer_server.create_eventer_server(
         addr=addr,
-        backend=backend)
+        backend=backend,
+        server_id=1)
     client = await hat.event.eventer.connect(addr=addr,
                                              client_name='client')
 

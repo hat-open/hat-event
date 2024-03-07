@@ -17,6 +17,7 @@ mlog: logging.Logger = logging.getLogger(__name__)
 
 async def create_eventer_server(addr: tcp.Address,
                                 backend: common.Backend,
+                                server_id: int,
                                 *,
                                 server_token: str | None = None,
                                 **kwargs
@@ -24,6 +25,7 @@ async def create_eventer_server(addr: tcp.Address,
     """Create eventer server"""
     server = EventerServer()
     server._backend = backend
+    server._server_id = server_id
     server._server_token = server_token
     server._engine = None
 
@@ -71,7 +73,7 @@ class EventerServer(aio.Resource):
             return
 
         source = _get_source(info.id)
-        register_event = _create_eventer_event(info, 'CONNECTED')
+        register_event = self._create_eventer_event(info, 'CONNECTED')
         await self._engine.register(source, [register_event])
 
     async def _on_disconnected(self, info):
@@ -79,7 +81,7 @@ class EventerServer(aio.Resource):
             return
 
         source = _get_source(info.id)
-        register_event = _create_eventer_event(info, 'DISCONNECTED')
+        register_event = self._create_eventer_event(info, 'DISCONNECTED')
         await self._engine.register(source, [register_event])
 
     async def _on_register(self, info, register_events):
@@ -92,11 +94,11 @@ class EventerServer(aio.Resource):
     async def _on_query(self, info, params):
         return await self._backend.query(params)
 
-
-def _create_eventer_event(info, status):
-    return common.RegisterEvent(type=('event', 'eventer', info.client_name),
-                                source_timestamp=None,
-                                payload=common.EventPayloadJson(status))
+    def _create_eventer_event(self, info, status):
+        return common.RegisterEvent(
+            type=('event', str(self._server_id), 'eventer', info.client_name),
+            source_timestamp=None,
+            payload=common.EventPayloadJson(status))
 
 
 def _get_source(source_id):

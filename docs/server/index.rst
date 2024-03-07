@@ -138,7 +138,7 @@ This module is available only during `operational` mode.
 Engine's method `register` enables registration of events to backend based on
 a list of register events. Entity who requests registration is identified by
 `Source` identifier which is used only during processing of events and is
-discarded once event is created. There are three types of sources that may
+discarded once event is created. There are four types of sources that may
 register events on Engine:
 
 * ``EVENTER``
@@ -156,7 +156,7 @@ register events on Engine:
 
 By creating event, Engine enhances register event with:
 
-* `event_id` - unique event identifier,
+* `id` - unique event identifier,
 * `timestamp` - single point in time when events are registered. All events
   registered in a single session get the same `timestamp`.
 
@@ -188,8 +188,9 @@ notification.
 
 Engine registers an event that signalizes when the Engine was started or
 stopped. Event is registered by Engine, with `Source.Type` set to
-`ENGINE` and with event type ``event/engine``. Source timestamp is set to
-``None`` and payload is specified by
+`ENGINE` and with event type ``event/<server_id>/engine`` where ``<server_id>``
+represent identification of local server. Source timestamp is
+set to ``None`` and payload is specified by
 ``hat-event://events.yaml#/definitions/events/engine``.
 
 
@@ -223,10 +224,11 @@ events with specific `server_id`.
 
 Eventer Server module is responsible for registering events each time new
 chatter connection is established and each time existing chatter connection is
-closed. These events are defined by event type ``event/eventer/<client_name>``
-where ``<client_name>`` is client identifier obtained during connection
-initialization. For these events, source timestamp is set to ``None`` and
-payload is specified by
+closed. These events are defined by event type
+``event/<server_id>/eventer/<client_name>`` where ``<server_id>`` represent
+identification of local server and `<client_name>` is client identifier
+obtained during connection initialization. For these events, source timestamp
+is set to ``None`` and payload is specified by
 ``hat-event://events.yaml#/definitions/events/eventer``.
 
 
@@ -251,8 +253,10 @@ events directly to backend overriding Engines event processing.
 During communication with remote Event Server, if Event Server is in
 operational mode, additional events representing synchronization status will be
 registered. These events are registered with Engine's `register` method
-together with source ``SERVER``. Event type is ``event/synced/<server_id>``
-where ``<server_id>`` represent identification of remote server. Source
+together with source ``SERVER``. Event type is
+``event/<server_id>/synced/<remote_server_id>``
+where ``<server_id>`` represent identification of local server and
+``<remote_server_id>`` represent identification of remote server. Source
 timestamp is set to ``None`` and payload is specified by
 ``hat-event://events.yaml#/definitions/events/synced``. Immediatly after
 connection with remote Event Server is established, synced event with payload
