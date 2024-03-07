@@ -74,7 +74,7 @@ class Engine(common.Engine):
     async def register(self,
                        source: common.Source,
                        events: Collection[common.RegisterEvent]
-                       ) -> Collection[common.Event | None]:
+                       ) -> Collection[common.Event] | None:
         """Register events"""
         if not events:
             return []

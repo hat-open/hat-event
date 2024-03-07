@@ -1,3 +1,4 @@
+from collections.abc import Collection
 import enum
 import importlib.resources
 import typing
@@ -35,7 +36,7 @@ InstanceId: typing.TypeAlias = int
 EventTypeSegment: typing.TypeAlias = str
 """Event type segment"""
 
-EventType: typing.TypeAlias = typing.Tuple[EventTypeSegment, ...]
+EventType: typing.TypeAlias = tuple[EventTypeSegment, ...]
 """Event type"""
 
 
@@ -124,11 +125,11 @@ class RegisterEvent(typing.NamedTuple):
 
 
 class QueryLatestParams(typing.NamedTuple):
-    event_types: list[EventType] | None = None
+    event_types: Collection[EventType] | None = None
 
 
 class QueryTimeseriesParams(typing.NamedTuple):
-    event_types: list[EventType] | None = None
+    event_types: Collection[EventType] | None = None
     t_from: Timestamp | None = None
     t_to: Timestamp | None = None
     source_t_from: Timestamp | None = None
@@ -152,7 +153,7 @@ QueryParams: typing.TypeAlias = (QueryLatestParams |
 
 
 class QueryResult(typing.NamedTuple):
-    events: typing.List[Event]
+    events: Collection[Event]
     more_follows: bool
 
 

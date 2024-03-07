@@ -21,10 +21,10 @@ class Timestamp(typing.NamedTuple):
 
 
 min_timestamp: Timestamp = Timestamp(s=-(1 << 63), us=0)
-"""Minimal serializable timestamp value"""
+"""Minimal byte serializable timestamp value"""
 
 max_timestamp: Timestamp = Timestamp(s=(1 << 63) - 1, us=999_999)
-"""Maximal serializable timestamp value"""
+"""Maximal byte serializable timestamp value"""
 
 
 def now() -> Timestamp:
