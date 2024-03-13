@@ -80,7 +80,7 @@ class MainRunner(aio.Resource):
                 runner_cb=self._create_monitor_runner,
                 data={'server_id': self._conf['server_id'],
                       'eventer_server': self._conf['eventer_server'],
-                      'server_token': self._conf['server_token']},
+                      'server_token': self._conf.get('server_token')},
                 state_cb=self._on_monitor_state)
             _bind_resource(self.async_group, self._monitor_component)
 
