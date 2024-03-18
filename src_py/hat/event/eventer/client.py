@@ -1,6 +1,6 @@
 """Eventer Client"""
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 import asyncio
 import logging
 import typing
@@ -33,7 +33,7 @@ async def connect(addr: tcp.Address,
                   client_name: str,
                   *,
                   client_token: str | None = None,
-                  subscriptions: list[common.EventType] = [],
+                  subscriptions: Iterable[common.EventType] = [],
                   server_id: common.ServerId | None = None,
                   persisted: bool = False,
                   status_cb: StatusCb | None = None,

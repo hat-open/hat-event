@@ -47,13 +47,14 @@ def sync_main(conf: json.Data):
 
     common.json_schema_repo.validate('hat-event://server.yaml#', conf)
 
-    info_confs = [(common.import_backend_info(conf['backend']['module']),
-                   conf['backend']),
-                  *((common.import_module_info(i['module']), i)
-                    for i in conf['modules'])]
-    for info, info_conf in info_confs:
+    info = common.import_backend_info(conf['backend']['module'])
+    if info.json_schema_repo and info.json_schema_id:
+        info.json_schema_repo.validate(info.json_schema_id, conf['backend'])
+
+    for module_conf in conf['modules']:
+        info = common.import_module_info(module_conf['module'])
         if info.json_schema_repo and info.json_schema_id:
-            info.json_schema_repo.validate(info.json_schema_id, info_conf)
+            info.json_schema_repo.validate(info.json_schema_id, module_conf)
 
     log_conf = conf.get('log')
     if log_conf:
