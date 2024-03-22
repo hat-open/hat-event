@@ -165,8 +165,8 @@ def _query_latest(dbs, txn, event_types):
     db = dbs[db_type]
     db_def = common.db_defs[db_type]
 
-    subscription = common.Subscription([('*', )] if event_types is None
-                                       else event_types)
+    subscription = common.create_subscription([('*', )] if event_types is None
+                                              else event_types)
 
     for _, value in txn.cursor(db=db):
         event = db_def.decode_value(value)
@@ -196,8 +196,8 @@ def _query_timeseries(dbs, txn, partition_id, server_id, event_types):
     db = dbs[db_type]
     db_def = common.db_defs[db_type]
 
-    subscription = common.Subscription([('*', )] if event_types is None
-                                       else event_types)
+    subscription = common.create_subscription([('*', )] if event_types is None
+                                              else event_types)
 
     for key, value in txn.cursor(db=db):
         decoded_partition_id, _, event_id = db_def.decode(key)

@@ -9,12 +9,13 @@ from hat.event.server.backends.lmdb.timeseriesdb import Partition
 import hat.event.server.backends.lmdb.timeseriesdb
 
 
-default_partitions = [Partition(order_by=common.OrderBy.TIMESTAMP,
-                                subscription=common.Subscription([('*', )]),
-                                limit=None),
-                      Partition(order_by=common.OrderBy.SOURCE_TIMESTAMP,
-                                subscription=common.Subscription([('*', )]),
-                                limit=None)]
+default_partitions = [
+    Partition(order_by=common.OrderBy.TIMESTAMP,
+              subscription=common.create_subscription([('*', )]),
+              limit=None),
+    Partition(order_by=common.OrderBy.SOURCE_TIMESTAMP,
+              subscription=common.create_subscription([('*', )]),
+              limit=None)]
 
 
 async def create_timeseries_db(env,

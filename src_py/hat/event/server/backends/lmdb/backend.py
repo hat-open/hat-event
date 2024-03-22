@@ -62,13 +62,13 @@ async def create(conf: json.Data,
                               backend.close)
 
     try:
-        latest_subscription = common.Subscription(
+        latest_subscription = common.create_subscription(
             tuple(i) for i in conf['latest']['subscriptions'])
 
         timeseries_partitions = (
             timeseriesdb.Partition(
                 order_by=common.OrderBy[i['order_by']],
-                subscription=common.Subscription(
+                subscription=common.create_subscription(
                     tuple(event_type) for event_type in i['subscriptions']),
                 limit=(
                     timeseriesdb.Limit(

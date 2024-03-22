@@ -74,7 +74,7 @@ class TimeseriesDb:
     async def query(self,
                     params: common.QueryTimeseriesParams
                     ) -> common.QueryResult:
-        subscription = (common.Subscription(params.event_types)
+        subscription = (common.create_subscription(params.event_types)
                         if params.event_types is not None else None)
 
         max_results = (params.max_results

@@ -125,7 +125,7 @@ class Server(aio.Resource):
                     id=conn_id,
                     client_name=req_data['clientName'],
                     client_token=_optional_from_sbs(req_data['clientToken']),
-                    subscription=common.Subscription(
+                    subscription=common.create_subscription(
                         tuple(i) for i in req_data['subscriptions']),
                     server_id=_optional_from_sbs(req_data['serverId']),
                     persisted=req_data['persisted'])

@@ -8,7 +8,7 @@ import hat.event.server.backends.lmdb.latestdb
 
 async def create_latest_db(env,
                            conditions=Conditions([]),
-                           subscription=common.Subscription([('*', )])):
+                           subscription=common.create_subscription([('*', )])):
 
     def ext_create():
         with env.ext_begin(write=True) as txn:
@@ -160,7 +160,7 @@ async def test_subscription(events_count, db_path):
     env = await environment.create(db_path)
     db = await create_latest_db(
         env,
-        subscription=common.Subscription([events[0].type]))
+        subscription=common.create_subscription([events[0].type]))
 
     for event in events:
         db.add(event)

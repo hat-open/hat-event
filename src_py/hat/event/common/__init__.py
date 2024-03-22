@@ -1,6 +1,8 @@
 """Common functionality shared between clients and event server"""
 
-from hat.event.common.collection import EventTypeCollection
+from hat.event.common.collection import (EventTypeCollection,
+                                         ListEventTypeCollection,
+                                         TreeEventTypeCollection)
 from hat.event.common.data import (json_schema_repo,
                                    sbs_repo,
                                    ServerId,
@@ -35,7 +37,8 @@ from hat.event.common.data import (json_schema_repo,
                                    event_payload_to_sbs,
                                    event_payload_from_sbs)
 from hat.event.common.matches import matches_query_type
-from hat.event.common.subscription import Subscription
+from hat.event.common.subscription import (Subscription,
+                                           create_subscription)
 from hat.event.common.timestamp import (Timestamp,
                                         min_timestamp,
                                         max_timestamp,
@@ -51,6 +54,8 @@ from hat.event.common.timestamp import (Timestamp,
 
 
 __all__ = ['EventTypeCollection',
+           'ListEventTypeCollection',
+           'TreeEventTypeCollection',
            'json_schema_repo',
            'sbs_repo',
            'ServerId',
@@ -85,6 +90,8 @@ __all__ = ['EventTypeCollection',
            'event_payload_to_sbs',
            'event_payload_from_sbs',
            'matches_query_type',
+           'Subscription',
+           'create_subscription',
            'Timestamp',
            'min_timestamp',
            'max_timestamp',
@@ -96,5 +103,4 @@ __all__ = ['EventTypeCollection',
            'timestamp_to_datetime',
            'timestamp_from_datetime',
            'timestamp_to_sbs',
-           'timestamp_from_sbs',
-           'Subscription']
+           'timestamp_from_sbs']

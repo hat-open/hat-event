@@ -1,7 +1,7 @@
 from hat.event.common.collection import common
 
 
-class ListEventTypeCollection(common.BaseEventTypeCollection):
+class ListEventTypeCollection(common.EventTypeCollection):
 
     def __init__(self):
         self._values = {}

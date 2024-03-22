@@ -6,12 +6,12 @@ import typing
 from hat.event.common.data import EventTypeSegment, EventType
 
 
-class BaseSubscription(abc.ABC):
+class Subscription(abc.ABC):
     """Subscription defined by query event types"""
 
     @abc.abstractmethod
     def __init__(self, query_types: Iterable[EventType]):
-        pass
+        """Create subscription instance"""
 
     @abc.abstractmethod
     def get_query_types(self) -> Iterable[EventType]:
@@ -22,17 +22,17 @@ class BaseSubscription(abc.ABC):
         """Does `event_type` match subscription"""
 
     @abc.abstractmethod
-    def union(self, *others: 'BaseSubscription') -> 'BaseSubscription':
+    def union(self, *others: 'Subscription') -> 'Subscription':
         """Create new subscription including event types from this and
         other subscriptions."""
 
     @abc.abstractmethod
-    def intersection(self, *others: 'BaseSubscription') -> 'BaseSubscription':
+    def intersection(self, *others: 'Subscription') -> 'Subscription':
         """Create new subscription containing event types in common with
         other subscriptions."""
 
     @abc.abstractmethod
-    def isdisjoint(self, other: 'BaseSubscription') -> bool:
+    def isdisjoint(self, other: 'Subscription') -> bool:
         """Return ``True`` if this subscription has no event types in common
         with other subscription."""
 

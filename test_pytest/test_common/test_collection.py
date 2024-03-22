@@ -1,25 +1,24 @@
 import pytest
 
 from hat.event import common
-import hat.event.common.collection
 
 
-collection_classes = [hat.event.common.collection.ListEventTypeCollection,
-                      hat.event.common.collection.TreeEventTypeCollection]
+collection_classes = [common.ListEventTypeCollection,
+                      common.TreeEventTypeCollection]
 
 
-@pytest.mark.parametrize("EventTypeCollection", collection_classes)
-def test_collection(EventTypeCollection):
-    collection = EventTypeCollection()
+@pytest.mark.parametrize("cls", collection_classes)
+def test_collection(cls):
+    collection = cls()
 
     assert list(collection.get(tuple())) == []
     assert list(collection.get(('a', 'b', 'c'))) == []
     assert list(collection.get(('x', 'b', 'c'))) == []
 
-    collection.add(common.Subscription([('*', )]), 1)
-    collection.add(common.Subscription([]), 2)
-    collection.add(common.Subscription([('?', 'b', 'c')]), 3)
-    collection.add(common.Subscription([('a', 'b', 'c')]), 4)
+    collection.add(common.create_subscription([('*', )]), 1)
+    collection.add(common.create_subscription([]), 2)
+    collection.add(common.create_subscription([('?', 'b', 'c')]), 3)
+    collection.add(common.create_subscription([('a', 'b', 'c')]), 4)
 
     assert list(collection.get(tuple())) == [1]
     assert list(collection.get(('a', 'b', 'c'))) == [1, 3, 4]

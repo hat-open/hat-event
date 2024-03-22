@@ -3,14 +3,14 @@ import math
 
 import pytest
 
-import hat.event.common.subscription
+from hat.event.common.subscription.pysubscription import PySubscription
+from hat.event.common.subscription.csubscription import CSubscription
 
 
 pytestmark = pytest.mark.perf
 
 
-subscription_classes = [hat.event.common.subscription.PySubscription,
-                        hat.event.common.subscription.CSubscription]
+subscription_classes = [PySubscription, CSubscription]
 
 
 def get_event_types(event_type_size, count):
@@ -30,33 +30,33 @@ def get_event_types(event_type_size, count):
     return event_types
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes)
+@pytest.mark.parametrize("cls", subscription_classes)
 @pytest.mark.parametrize("event_type_size", [1, 3, 5, 10])
 @pytest.mark.parametrize("event_type_count", [1, 100, 10000, 1000000])
-def test_create(duration, Subscription, event_type_size, event_type_count):
+def test_create(duration, cls, event_type_size, event_type_count):
     description = (f'subscription create - '
-                   f'class: {Subscription.__name__}; '
+                   f'class: {cls.__name__}; '
                    f'event_type_size: {event_type_size}; '
                    f'event_type_count: {event_type_count}')
 
     event_types = get_event_types(event_type_size, event_type_count)
 
     with duration(description):
-        Subscription(event_types)
+        cls(event_types)
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes)
+@pytest.mark.parametrize("cls", subscription_classes)
 @pytest.mark.parametrize("event_type_size", [1, 3, 5, 10])
 @pytest.mark.parametrize("matches_count", [1, 100, 10000, 1000000])
-def test_matches(duration, Subscription, event_type_size, matches_count):
+def test_matches(duration, cls, event_type_size, matches_count):
 
     description = (f'subscription matches - '
-                   f'class: {Subscription.__name__}; '
+                   f'class: {cls.__name__}; '
                    f'event_type_size: {event_type_size}; '
                    f'matches_count: {matches_count}')
 
     event_types = get_event_types(event_type_size, matches_count)
-    subscription = Subscription(event_types)
+    subscription = cls(event_types)
 
     with duration(description):
         for event_type in event_types:

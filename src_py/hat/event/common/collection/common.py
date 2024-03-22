@@ -9,7 +9,7 @@ from hat.event.common.subscription import Subscription
 T = typing.TypeVar('T', bound=Hashable)
 
 
-class BaseEventTypeCollection(abc.ABC, typing.Generic[T]):
+class EventTypeCollection(abc.ABC, typing.Generic[T]):
 
     @abc.abstractmethod
     def __init__(self):

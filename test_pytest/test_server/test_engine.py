@@ -59,7 +59,7 @@ def create_module():
 
             module = Module()
             module._async_group = aio.Group()
-            module._subscription = common.Subscription([('*', )])
+            module._subscription = common.create_subscription([('*', )])
 
             return module
 

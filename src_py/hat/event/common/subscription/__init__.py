@@ -1,18 +1,22 @@
-import typing
+from collections.abc import Iterable
 
-from hat.event.common.subscription.common import BaseSubscription
+from hat.event.common.data import EventType
+from hat.event.common.subscription.common import Subscription
 from hat.event.common.subscription.pysubscription import PySubscription
-
-
-__all__ = ['BaseSubscription',
-           'Subscription',
-           'PySubscription']
 
 try:
     from hat.event.common.subscription.csubscription import CSubscription
 
-    Subscription: typing.TypeAlias = CSubscription
-    __all__ += ['CSubscription']
-
 except ImportError:
-    Subscription: typing.TypeAlias = PySubscription
+    CSubscription = None
+
+
+__all__ = ['Subscription',
+           'create_subscription']
+
+
+def create_subscription(query_types: Iterable[EventType]) -> Subscription:
+    if CSubscription is not None:
+        return CSubscription(query_types)
+
+    return PySubscription(query_types)

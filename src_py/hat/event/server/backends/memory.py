@@ -142,7 +142,7 @@ info = common.BackendInfo(MemoryBackend)
 
 
 def _filter_event_types(events, event_types):
-    subscription = common.Subscription(event_types)
+    subscription = common.create_subscription(event_types)
     for event in events:
         if subscription.matches(event.event_type):
             yield event

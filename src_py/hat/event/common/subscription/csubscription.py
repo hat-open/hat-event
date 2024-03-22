@@ -3,7 +3,7 @@ from hat.event.common.subscription import common
 from hat.event.common.subscription import _csubscription
 
 
-class CSubscription(common.BaseSubscription):
+class CSubscription(common.Subscription):
     """C implementation of Subscription"""
 
     def __init__(self, query_types):

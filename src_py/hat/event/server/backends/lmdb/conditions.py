@@ -6,7 +6,7 @@ from hat.event.server.backends.lmdb import common
 class Conditions:
 
     def __init__(self, conf: json.Data):
-        self._conditions = [(common.Subscription(i['subscriptions']),
+        self._conditions = [(common.create_subscription(i['subscriptions']),
                              _create_condition(i['condition']))
                             for i in conf]
 

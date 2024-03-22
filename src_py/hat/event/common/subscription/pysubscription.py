@@ -1,7 +1,7 @@
 from hat.event.common.subscription import common
 
 
-class PySubscription(common.BaseSubscription):
+class PySubscription(common.Subscription):
     """Python implementation of Subscription"""
 
     def __init__(self, query_types):

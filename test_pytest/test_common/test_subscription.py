@@ -1,13 +1,13 @@
 import pytest
 
-import hat.event.common.subscription
+from hat.event.common.subscription.pysubscription import PySubscription
+from hat.event.common.subscription.csubscription import CSubscription
 
 
-subscription_classes = [hat.event.common.subscription.PySubscription,
-                        hat.event.common.subscription.CSubscription]
+subscription_classes = [PySubscription, CSubscription]
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes)
+@pytest.mark.parametrize("cls", subscription_classes)
 @pytest.mark.parametrize("query_types, sanitized", [
     ([],
      []),
@@ -33,14 +33,14 @@ subscription_classes = [hat.event.common.subscription.PySubscription,
     ([('',), ('*',)],
      [('*',)]),
 ])
-def test_subscription_get_query_types(Subscription, query_types, sanitized):
-    subscription = Subscription(query_types)
+def test_subscription_get_query_types(cls, query_types, sanitized):
+    subscription = cls(query_types)
     result = list(subscription.get_query_types())
     assert len(result) == len(sanitized)
     assert {tuple(i) for i in result} == {tuple(i) for i in sanitized}
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes)
+@pytest.mark.parametrize("cls", subscription_classes)
 @pytest.mark.parametrize("query_types, matching, not_matching", [
     ([],
      [],
@@ -62,16 +62,16 @@ def test_subscription_get_query_types(Subscription, query_types, sanitized):
      [('a',), ('a', 'b'), ('a', '')],
      [(), ('a', 'b', 'c'), ('b',), ('',)]),
 ])
-def test_subscription_matches(Subscription, query_types, matching,
+def test_subscription_matches(cls, query_types, matching,
                               not_matching):
-    subscription = Subscription(query_types)
+    subscription = cls(query_types)
     for i in matching:
         assert subscription.matches(i) is True
     for i in not_matching:
         assert subscription.matches(i) is False
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes)
+@pytest.mark.parametrize("cls", subscription_classes)
 @pytest.mark.parametrize("query_types, union", [
     ([],
      []),
@@ -91,14 +91,13 @@ def test_subscription_matches(Subscription, query_types, matching,
     ([[('a', '')], [('', 'a')]],
      [('a', ''), ('', 'a')]),
 ])
-def test_subscription_union(Subscription, query_types, union):
-    subscription = Subscription([]).union(*(Subscription(i)
-                                            for i in query_types))
+def test_subscription_union(cls, query_types, union):
+    subscription = cls([]).union(*(cls(i) for i in query_types))
     result = subscription.get_query_types()
     assert set(result) == set(union)
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes)
+@pytest.mark.parametrize("cls", subscription_classes)
 @pytest.mark.parametrize("first, second, isdisjoint", [
     ([],
      [],
@@ -136,14 +135,14 @@ def test_subscription_union(Subscription, query_types, union):
      [('a', '', 'b')],
      False),
 ])
-def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
-    first = Subscription(first)
-    second = Subscription(second)
+def test_subscription_isdisjoint(cls, first, second, isdisjoint):
+    first = cls(first)
+    second = cls(second)
     result = first.isdisjoint(second)
     assert result is isdisjoint
 
 
-@pytest.mark.parametrize("Subscription", subscription_classes)
+@pytest.mark.parametrize("cls", subscription_classes)
 @pytest.mark.parametrize("subscription_types, other_types, intersection_types", [  # NOQA
     ([],
      [],
@@ -169,10 +168,10 @@ def test_subscription_isdisjoint(Subscription, first, second, isdisjoint):
      [('',), ('b',)],
      [('',)]),
 ])
-def test_subscription_intersection(Subscription, subscription_types,
+def test_subscription_intersection(cls, subscription_types,
                                    other_types, intersection_types):
-    subscription = Subscription(subscription_types)
-    other = Subscription(other_types)
+    subscription = cls(subscription_types)
+    other = cls(other_types)
     intersection = subscription.intersection(other)
 
     assert set(intersection.get_query_types()) == set(intersection_types)

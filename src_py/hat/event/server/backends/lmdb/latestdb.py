@@ -86,7 +86,7 @@ class LatestDb:
 
         elif any('*' in event_type or '?' in event_type
                  for event_type in event_types):
-            subscription = common.Subscription(event_types)
+            subscription = common.create_subscription(event_types)
             events = (event for event in self._events.values()
                       if subscription.matches(event.type))
 

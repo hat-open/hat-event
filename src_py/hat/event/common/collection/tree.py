@@ -4,7 +4,7 @@ import typing
 from hat.event.common.collection import common
 
 
-class TreeEventTypeCollection(common.BaseEventTypeCollection):
+class TreeEventTypeCollection(common.EventTypeCollection):
 
     def __init__(self):
         self._root = _create_node()
