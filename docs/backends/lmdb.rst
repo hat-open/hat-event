@@ -6,13 +6,13 @@ wrapper for `LMDB data store <https://symas.com/lmdb/>`_.
 
 This backend provides following characteristics:
 
-    * storage of all event structures
-    * querying by all query data parameters
-    * optimization for latest events querying
-    * optimization for time series querying
-    * fragmentation of time series entries based on event types
-    * in memory caching of event registration with periodic disk persistence
-    * configurable condition rules for filtering event by their content
+* storage of all event structures
+* querying by all query data parameters
+* optimization for latest events querying
+* optimization for time series querying
+* fragmentation of time series entries based on event types
+* in memory caching of event registration with periodic disk persistence
+* configurable condition rules for filtering event by their content
 
 
 Storage models
@@ -20,9 +20,9 @@ Storage models
 
 Storage of events in LMDB Backend is based on models:
 
-    * key-value storage
-    * time series storage
-    * `event id` based reference storage
+* key-value storage
+* time series storage
+* `event id` based reference storage
 
 
 Key-value storage
@@ -78,17 +78,17 @@ Query planning
 
 During event querying, simple query planning is done based on following steps:
 
-    * if query data filters only latest events for each queried event type,
-      then only key-value storage is searched for possible event instances
+* if query data filters only latest events for each queried event type,
+  then only key-value storage is searched for possible event instances
 
-    * for all other queries, time series partition is searched, in order
-      as they are defined in configuration, for first series that contains
-      at least one possible event type constrained by query data - only that
-      time series storage partition is used as source of event instances
-      returned by query
+* for all other queries, time series partition is searched, in order
+  as they are defined in configuration, for first series that contains
+  at least one possible event type constrained by query data - only that
+  time series storage partition is used as source of event instances
+  returned by query
 
-    * if no time series storage could be found, empty list is returned as query
-      result
+* if no time series storage could be found, empty list is returned as query
+  result
 
 In case of querying event sequences ordered by `event id` and based on
 starting `event id`, `event id` based reference storage is used (backends
@@ -128,30 +128,30 @@ Each time series storage can optionally limit number of stored events. This
 functionality is associated with disk persisting procedure and is part
 of same database transaction. Supported limits include:
 
-    * `min_entries`
+* `min_entries`
 
-        Minimum number of events preserved in database despite of other
-        limits. This property can be used as "low water mark" - number
-        of entries always available.
+  Minimum number of events preserved in database despite of other
+  limits. This property can be used as "low water mark" - number
+  of entries always available.
 
-    * `max_entries`
+* `max_entries`
 
-        Maximum number of event preserver in database. This property can be
-        used as "high water mark" - number of entries will never exceed this
-        number.
+  Maximum number of event preserver in database. This property can be
+  used as "high water mark" - number of entries will never exceed this
+  number.
 
-    * `duration`
+* `duration`
 
-        Time in seconds representing maximum duration between current time
-        and time used as time series key. All entries which exceed this
-        duration will be removed.
+  Time in seconds representing maximum duration between current time
+  and time used as time series key. All entries which exceed this
+  duration will be removed.
 
-    * `size`
+* `size`
 
-        Size in bytes allocated for associated time series. Once time series
-        exceeds this storage size, some of the oldest entries are removed.
-        Number of removed entries is calculated based on average entry size
-        and limiting storage size.
+  Size in bytes allocated for associated time series. Once time series
+  exceeds this storage size, some of the oldest entries are removed.
+  Number of removed entries is calculated based on average entry size
+  and limiting storage size.
 
 
 Configuration
