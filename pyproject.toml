@@ -9,7 +9,7 @@ dependencies = [
     "appdirs ~=1.4.4",
     "hat-aio ~=0.7.9",
     "hat-drivers ~=0.7.9",
-    "hat-json ~=0.5.25",
+    "hat-json ~=0.5.26",
     "hat-monitor ~=0.8.5",
     "hat-sbs ~=0.7.1",
     "hat-util ~=0.6.13",
@@ -18,8 +18,8 @@ dependencies = [
 
 [project.scripts]
 hat-event-server = "hat.event.server.main:main"
-hat-event-lmdb-convert = "hat.event.server.backends.lmdb.convert.main:main"
-hat-event-lmdb-manager = "hat.event.server.backends.lmdb.manager.main:main"
+hat-event-lmdb-convert = "hat.event.backends.lmdb.convert.main:main"
+hat-event-lmdb-manager = "hat.event.backends.lmdb.manager.main:main"
 
 [project.urls]
 Homepage = "http://hat-open.com"

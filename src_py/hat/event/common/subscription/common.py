@@ -3,7 +3,7 @@ import abc
 import itertools
 import typing
 
-from hat.event.common.data import EventTypeSegment, EventType
+from hat.event.common.common import EventTypeSegment, EventType
 
 
 class Subscription(abc.ABC):

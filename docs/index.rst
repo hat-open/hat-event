@@ -9,4 +9,6 @@ Content
 
     event
     eventer
-    server/index
+    server
+    backends/index
+    modules/index

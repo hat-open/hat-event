@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from hat.event.common.data import EventType
+from hat.event.common.common import EventType
 from hat.event.common.subscription.common import Subscription
 from hat.event.common.subscription.pysubscription import PySubscription
 

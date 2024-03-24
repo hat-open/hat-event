@@ -8,7 +8,7 @@ from hat.drivers import tcp
 import hat.monitor.common
 import hat.monitor.component
 
-from hat.event.server import common
+from hat.event import common
 import hat.event.server.eventer_server
 import hat.event.server.runner
 

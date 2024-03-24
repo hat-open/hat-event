@@ -6,8 +6,8 @@ import typing
 from hat import aio
 from hat.drivers import tcp
 
+from hat.event import common
 from hat.event import eventer
-from hat.event.server import common
 
 
 mlog: logging.Logger = logging.getLogger(__name__)

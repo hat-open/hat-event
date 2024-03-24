@@ -2,7 +2,7 @@ from collections.abc import Hashable, Iterable
 import abc
 import typing
 
-from hat.event.common.data import EventType
+from hat.event.common.common import EventType
 from hat.event.common.subscription import Subscription
 
 

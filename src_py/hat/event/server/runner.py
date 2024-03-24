@@ -9,7 +9,7 @@ from hat import json
 from hat.drivers import tcp
 import hat.monitor.component
 
-from hat.event.server import common
+from hat.event import common
 from hat.event.server.engine import create_engine
 from hat.event.server.eventer_client import create_eventer_client
 from hat.event.server.eventer_server import (create_eventer_server,

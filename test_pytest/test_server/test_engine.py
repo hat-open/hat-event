@@ -6,7 +6,7 @@ import pytest
 
 from hat import aio
 
-from hat.event.server import common
+from hat.event import common
 import hat.event.server.engine
 
 

@@ -7,7 +7,7 @@ from hat import aio
 from hat import util
 from hat.drivers import tcp
 
-from hat.event.server import common
+from hat.event import common
 import hat.event.eventer
 import hat.event.server.eventer_server
 

@@ -6,9 +6,8 @@ import logging
 from hat import aio
 from hat.drivers import tcp
 
+from hat.event import common
 from hat.event import eventer
-from hat.event.server import common
-import hat.event.server.engine
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
@@ -51,7 +50,7 @@ class EventerServer(aio.Resource):
         """Async group"""
         return self._srv.async_group
 
-    async def set_engine(self, engine: hat.event.server.engine.Engine | None):
+    async def set_engine(self, engine: common.Engine | None):
         """Set engine"""
         self._engine = engine
 

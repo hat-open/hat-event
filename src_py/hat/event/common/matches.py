@@ -1,4 +1,4 @@
-from hat.event.common.data import EventType
+from hat.event.common.common import EventType
 
 
 def matches_query_type(event_type: EventType,
