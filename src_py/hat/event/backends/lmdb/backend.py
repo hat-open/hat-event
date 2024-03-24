@@ -158,7 +158,7 @@ class LmdbBackend(common.Backend):
             if latest_result.removed_ref:
                 self._dbs.ref.remove(*latest_result.removed_ref)
 
-            refs.extend(self._db.timeseries.add(event))
+            refs.extend(self._dbs.timeseries.add(event))
 
             if not refs:
                 continue
@@ -204,24 +204,33 @@ class LmdbBackend(common.Backend):
         except aio.QueueClosedError:
             raise common.BackendClosedError()
 
-    async def _close_env(self):
-        with contextlib.suppress(Exception):
-            await self._flush()
-
-        await self._env.async_close()
-
     async def _flush_loop(self, flush_period):
         futures = collections.deque()
 
+        async def cleanup():
+            with contextlib.suppress(Exception):
+                await self._flush()
+
+            await self._env.async_close()
+
         try:
             while True:
-                future = await aio.wait_for(self._flush_queue.get(),
-                                            flush_period)
-                while True:
+                try:
+                    future = await aio.wait_for(self._flush_queue.get(),
+                                                flush_period)
                     futures.append(future)
-                    if self._futures_queue.empty():
-                        break
-                    future = self._futures_queue.get_nowait()
+
+                except asyncio.TimeoutError:
+                    pass
+
+                except aio.CancelledWithResultError as e:
+                    if e.result:
+                        futures.append(e.result)
+
+                    raise
+
+                while not self._flush_queue.empty():
+                    futures.append(self._flush_queue.get_nowait())
 
                 await aio.uncancellable(self._flush())
 
@@ -237,14 +246,14 @@ class LmdbBackend(common.Backend):
             self.close()
             self._flush_queue.close()
 
-            while not self._futures_queue.empty():
-                futures.append(self._futures_queue.get_nowait())
+            while not self._flush_queue.empty():
+                futures.append(self._flush_queue.get_nowait())
 
             for future in futures:
                 if not future.done():
                     future.set_exception(common.BackendClosedError())
 
-            await aio.uncancellable(self._close_env())
+            await aio.uncancellable(cleanup())
 
     async def _cleanup_loop(self, cleanup_period):
         try:
