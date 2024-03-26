@@ -7,7 +7,7 @@ Event Server is a central component responsible for registering, processing,
 storing and providing access to events.
 
 `Configuration`_ for Event Server is defined with schema
-``hat-event://server.yaml#``.
+``hat-event://server.yaml``.
 
 
 Running
@@ -33,7 +33,7 @@ algorithm, Monitor Server is also used for service discovery. Each Monitor
 Component is described with its `info`, that is `Component Information`_. One
 of the properties of component `info` is `data`, through which a component can
 share some arbitrary information with any other component. Event Server uses
-`data` (specified by ``hat-event://monitor_data.yaml#``) to share the following
+`data` (specified by ``hat-event://monitor_data.yaml``) to share the following
 information:
 
 * `server_id`
@@ -191,7 +191,7 @@ stopped. Event is registered by Engine, with `Source.Type` set to
 `ENGINE` and with event type ``event/<server_id>/engine`` where ``<server_id>``
 represent identification of local server. Source timestamp is
 set to ``None`` and payload is specified by
-``hat-event://events.yaml#/definitions/events/engine``.
+``hat-event://events.yaml#/$defs/events/engine``.
 
 
 Eventer Server
@@ -229,7 +229,7 @@ closed. These events are defined by event type
 identification of local server and `<client_name>` is client identifier
 obtained during connection initialization. For these events, source timestamp
 is set to ``None`` and payload is specified by
-``hat-event://events.yaml#/definitions/events/eventer``.
+``hat-event://events.yaml#/$defs/events/eventer``.
 
 
 Eventer Client
@@ -258,7 +258,7 @@ together with source ``SERVER``. Event type is
 where ``<server_id>`` represent identification of local server and
 ``<remote_server_id>`` represent identification of remote server. Source
 timestamp is set to ``None`` and payload is specified by
-``hat-event://events.yaml#/definitions/events/synced``. Immediatly after
+``hat-event://events.yaml#/$defs/events/synced``. Immediatly after
 connection with remote Event Server is established, synced event with payload
 ``False`` is registered. Once all remote events are queried, new synced event
 with payload ``True`` is registered.

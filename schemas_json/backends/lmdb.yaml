@@ -1,6 +1,5 @@
----
-"$schema": "http://json-schema.org/schema#"
-id: "hat-event://backends/lmdb.yaml#"
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "hat-event://backends/lmdb.yaml"
 title: LMDB backend
 type: object
 required:
@@ -31,16 +30,16 @@ properties:
                 - condition
             properties:
                 subscriptions:
-                    $ref: "hat-event://backends/lmdb.yaml#/definitions/event_types"
+                    $ref: "hat-event://backends/lmdb.yaml#/$defs/event_types"
                 condition:
-                    $ref: "hat-event://backends/lmdb.yaml#/definitions/condition"
+                    $ref: "hat-event://backends/lmdb.yaml#/$defs/condition"
     latest:
         type: object
         required:
             - subscriptions
         properties:
             subscriptions:
-                $ref: "hat-event://backends/lmdb.yaml#/definitions/event_types"
+                $ref: "hat-event://backends/lmdb.yaml#/$defs/event_types"
     timeseries:
         type: array
         items:
@@ -54,10 +53,10 @@ properties:
                         - TIMESTAMP
                         - SOURCE_TIMESTAMP
                 subscriptions:
-                    $ref: "hat-event://backends/lmdb.yaml#/definitions/event_types"
+                    $ref: "hat-event://backends/lmdb.yaml#/$defs/event_types"
                 limit:
-                    $ref: "hat-event://backends/lmdb.yaml#/definitions/limit"
-definitions:
+                    $ref: "hat-event://backends/lmdb.yaml#/$defs/limit"
+$defs:
     event_types:
         type: array
         items:
@@ -87,9 +86,9 @@ definitions:
                     additional cleanup based on average entry size
     condition:
         oneOf:
-            - $ref: "hat-event://backends/lmdb.yaml#/definitions/conditions/all"
-            - $ref: "hat-event://backends/lmdb.yaml#/definitions/conditions/any"
-            - $ref: "hat-event://backends/lmdb.yaml#/definitions/conditions/json"
+            - $ref: "hat-event://backends/lmdb.yaml#/$defs/conditions/all"
+            - $ref: "hat-event://backends/lmdb.yaml#/$defs/conditions/any"
+            - $ref: "hat-event://backends/lmdb.yaml#/$defs/conditions/json"
     conditions:
         all:
             type: object
@@ -102,7 +101,7 @@ definitions:
                 conditions:
                     type: array
                     items:
-                        $ref: "hat-event://backends/lmdb.yaml#/definitions/condition"
+                        $ref: "hat-event://backends/lmdb.yaml#/$defs/condition"
         any:
             type: object
             required:
@@ -114,7 +113,7 @@ definitions:
                 conditions:
                     type: array
                     items:
-                        $ref: "hat-event://backends/lmdb.yaml#/definitions/condition"
+                        $ref: "hat-event://backends/lmdb.yaml#/$defs/condition"
         json:
             type: object
             required:
@@ -123,7 +122,7 @@ definitions:
                 type:
                     const: json
                 data_path:
-                    $ref: "hat-event://backends/lmdb.yaml#/definitions/path"
+                    $ref: "hat-event://backends/lmdb.yaml#/$defs/path"
                 data_type:
                     enum:
                         - "null"
@@ -139,5 +138,4 @@ definitions:
           - type: integer
           - type: array
             items:
-                $ref: "hat-event://backends/lmdb.yaml#/definitions/path"
-...
+                $ref: "hat-event://backends/lmdb.yaml#/$defs/path"

@@ -1,6 +1,5 @@
----
-"$schema": "http://json-schema.org/schema#"
-id: "hat-event://backends/sqlite.yaml#"
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "hat-event://backends/sqlite.yaml"
 title: Sqlite backend
 description: Sqlite backend configuration
 type: object
@@ -15,4 +14,3 @@ properties:
         type: integer
         description: |
             number of connections in a pool used for querying
-...

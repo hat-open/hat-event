@@ -1,6 +1,5 @@
----
-"$schema": "http://json-schema.org/schema#"
-id: "hat-event://server.yaml#"
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "hat-event://server.yaml"
 title: Event Server
 description: Event Server's configuration
 type: object
@@ -17,7 +16,7 @@ properties:
         type: string
         description: component version
     log:
-        "$ref": "hat-json://logging.yaml#"
+        $ref: "hat-json://logging.yaml"
     server_id:
         type: integer
         description: server identifier
@@ -27,11 +26,11 @@ properties:
             - 'null'
         description: server token
     backend:
-        "$ref": "hat-event://server.yaml#/definitions/backend"
+        $ref: "hat-event://server.yaml#/$defs/backend"
     modules:
         type: array
         items:
-            "$ref": "hat-event://server.yaml#/definitions/module"
+            $ref: "hat-event://server.yaml#/$defs/module"
     eventer_server:
         type: object
         required:
@@ -85,4 +84,3 @@ definitions:
             module:
                 type: string
                 description: full python module name that implements module
-...
