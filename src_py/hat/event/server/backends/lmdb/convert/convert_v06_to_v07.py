@@ -23,6 +23,9 @@ def convert(src_path: Path,
         src_system_db = src_env.open_db(b'system')
         server_id = _get_server_id(src_env, src_system_db)
 
+        if server_id < 1:
+            server_id = 1
+
         with v07.create_env(dst_path) as dst_env:
             dst_system_db = v07.open_db(dst_env, v07.DbType.SYSTEM)
             dst_ref_db = v07.open_db(dst_env, v07.DbType.REF)
