@@ -1,6 +1,6 @@
 [project]
 name = "hat-event"
-version = "0.9.0"
+version = "0.9.1"
 description = "Hat event"
 readme = "README.rst"
 requires-python = ">=3.10"

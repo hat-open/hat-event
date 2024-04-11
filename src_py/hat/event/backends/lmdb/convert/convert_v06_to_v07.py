@@ -40,7 +40,7 @@ def _convert_latest(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
     with src_env.begin(db=src_latest_db, buffers=True) as src_txn:
         for _, src_encoded_value in src_txn.cursor():
             src_event = v06.decode_event(src_encoded_value)
-            dst_event = _convert_event(src_event)
+            dst_event = _convert_event(src_event, server_id)
 
             if not latest_event or latest_event.event_id < dst_event.event_id:
                 latest_event = dst_event
@@ -91,7 +91,7 @@ def _convert_ordered(src_env, dst_env, dst_system_db, dst_ref_db, server_id):
                 src_encoded_key)
             src_event = v06.decode_event(src_encoded_value)
             dst_timestamp = _convert_timestamp(src_timestamp)
-            dst_event = _convert_event(src_event)
+            dst_event = _convert_event(src_event, server_id)
 
             if not latest_event or latest_event.event_id < dst_event.event_id:
                 latest_event = dst_event
@@ -181,9 +181,9 @@ def _get_server_id(src_env, src_system_db):
         return v06.decode_uint(src_encoded_server_id)
 
 
-def _convert_event(src_event):
+def _convert_event(src_event, server_id):
     return v07.Event(
-        event_id=_convert_event_id(src_event.event_id),
+        event_id=_convert_event_id(src_event.event_id, server_id),
         event_type=src_event.event_type,
         timestamp=_convert_timestamp(src_event.timestamp),
         source_timestamp=(_convert_timestamp(src_event.source_timestamp)
@@ -192,8 +192,9 @@ def _convert_event(src_event):
                  if src_event.payload else None))
 
 
-def _convert_event_id(src_event_id):
-    return v07.EventId(server=src_event_id.server,
+def _convert_event_id(src_event_id, server_id):
+    return v07.EventId(server=(src_event_id.server if src_event_id.server > 0
+                               else server_id),
                        session=src_event_id.instance,
                        instance=src_event_id.instance)
 
