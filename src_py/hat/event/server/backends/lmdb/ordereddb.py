@@ -158,7 +158,7 @@ class OrderedDb(common.Flushable):
                         max_entries_remove: int | None = None,
                         ) -> int:
         if not self._limit:
-            return True
+            return 0
 
         with self._env.ext_begin(write=True) as txn:
             entries_count = self._ext_get_entries_count(txn)
