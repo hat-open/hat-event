@@ -35,11 +35,12 @@ def _act_copy(src_path, dst_path, skip_latest, skip_ordered):
 
     with common.ext_create_env(src_path, readonly=True) as src_env:
         with common.ext_create_env(dst_path) as dst_env:
-            with src_env.begin(buffers=True) as src_txn:
-                for db_name in db_names:
-                    src_db = common.ext_open_db(src_env, db_name)
-                    dst_db = common.ext_open_db(dst_env, db_name)
+            dbs = [(common.ext_open_db(src_env, db_name),
+                    common.ext_open_db(dst_env, db_name))
+                   for db_name in db_names]
 
+            with src_env.begin(buffers=True) as src_txn:
+                for src_db, dst_db in dbs:
                     with dst_env.begin(db=dst_db, write=True) as dst_txn:
                         for key, value in src_txn.cursor(db=src_db):
                             dst_txn.put(key, value)
