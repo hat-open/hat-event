@@ -114,6 +114,10 @@ definitions:
                 default: "tcp://127.0.0.1:23014"
             subscriptions:
                 "$ref": "hat-event://server.yaml#/definitions/event_types"
+            server_token:
+                type:
+                    - 'null'
+                    - string
     events:
         eventer:
             enum:

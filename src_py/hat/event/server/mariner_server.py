@@ -31,6 +31,7 @@ async def create_mariner_server(conf: json.Data,
 
     server = MarinerServer()
     server._backend = backend
+    server._server_token = conf.get('server_token')
 
     server._server = await mariner.listen(
         address, server._on_connection,
@@ -51,7 +52,13 @@ class MarinerServer(aio.Resource):
         try:
             mlog.debug("new connection: %s", conn.client_id)
 
-            # TODO check client token, subscriptions
+            if self._server_token and conn.client_token != self._server_token:
+                mlog.warning("client token not matching server token")
+
+                conn.close()
+                return
+
+            # TODO check subscriptions
 
             conn = _Connection(self._backend, conn)
 
