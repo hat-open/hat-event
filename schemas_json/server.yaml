@@ -63,7 +63,7 @@ properties:
                 type: string
     synced_restart_engine:
         type: boolean
-definitions:
+$defs:
     backend:
         type: object
         description: |
