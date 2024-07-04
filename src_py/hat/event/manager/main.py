@@ -1,5 +1,4 @@
-"""Event server main"""
-
+from collections.abc import Collection
 from pathlib import Path
 import argparse
 import asyncio
@@ -7,9 +6,11 @@ import contextlib
 import sys
 
 from hat import aio
+from hat import json
 from hat.drivers import tcp
 
-from hat.event import common
+from hat.event import eventer
+from hat.event.manager import common
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -37,14 +38,17 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="source timestamp")
     register_parser.add_argument(
         '--payload-type', metavar='TYPE',
-        choices=['json', 'yaml', 'binary', 'none'],
+        choices=['json', 'yaml', 'toml', 'binary', 'none'],
         default=None,
         help="payload type")
+    register_parser.add_argument(
+        '--binary-type', metavar='TYPE', type=str, default='',
+        help="binary payload type (default '')")
     register_parser.add_argument(
         '--payload-path', metavar='PATH', type=Path, default=Path('-'),
         help="payload file path or '-' for stdin (default '-')")
     register_parser.add_argument(
-        'event-type',
+        'event_type', metavar='EVENT_TYPE', type=_parse_event_type,
         help="event type where segments are delimited by '/'")
 
     query_parser = subparsers.add_parser(
@@ -80,11 +84,11 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default=None,
         help="to source timestamp")
     query_timeseries_parser.add_argument(
-        '--order', type=common.Order, choices=[i.name for i in common.Order],
+        '--order', type=_parse_order, choices=[i.name for i in common.Order],
         default=common.Order.DESCENDING,
         help="order (default 'DESCENDING')")
     query_timeseries_parser.add_argument(
-        '--order-by', type=common.OrderBy,
+        '--order-by', type=_parse_order_by,
         choices=[i.name for i in common.OrderBy],
         default=common.OrderBy.TIMESTAMP,
         help="order (default 'TIMESTAMP')")
@@ -115,14 +119,20 @@ def create_argument_parser() -> argparse.ArgumentParser:
     subscribe_parser = subparsers.add_parser(
         'subscribe', description="watch newly registered events")
     subscribe_parser.add_argument(
+        '--server-id', type=int, default=None,
+        help="server id")
+    subscribe_parser.add_argument(
         '--persisted', action='store_true',
         help="persisted events")
     subscribe_parser.add_argument(
-        'event_types', metavar='EVENT_TYPE', type=_parse_event_type, nargs='+',
+        'event_types', metavar='EVENT_TYPE', type=_parse_event_type, nargs='*',
         help='query event type')
 
     server_parser = subparsers.add_parser(
         'server', description="run manager server with web ui")
+    server_parser.add_argument(
+        '--server-id', type=int, default=None,
+        help="server id")
     server_parser.add_argument(
         '--persisted', action='store_true',
         help="persisted events")
@@ -140,47 +150,146 @@ def main():
     addr = tcp.Address(args.host, args.port)
 
     if args.action == 'register':
-        payload = _read_payload(args.payload_type, args.payload_path)
+        register_event = common.RegisterEvent(
+            type=args.event_type,
+            source_timestamp=args.source_timestamp,
+            payload=_read_payload(payload_type=args.payload_type,
+                                  binary_type=args.binary_type,
+                                  path=args.payload_path))
+
         co = register(addr=addr,
                       client_name=args.client_name,
                       client_token=args.client_token,
-                      event_type=args.event_type,
-                      source_timestamp=args.source_timestamp,
-                      payload=payload)
+                      register_event=register_event)
 
     elif args.action == 'query':
         if args.query_type == 'latest':
-            raise NotImplementedError()
+            params = common.QueryLatestParams(
+                event_types=args.event_types)
 
         elif args.query_type == 'timeseries':
-            raise NotImplementedError()
+            params = common.QueryTimeseriesParams(
+                event_types=args.event_types,
+                t_from=args.t_from,
+                t_to=args.t_to,
+                source_t_from=args.source_t_from,
+                source_t_to=args.source_t_to,
+                order=args.order,
+                order_by=args.order_by,
+                max_results=args.max_results,
+                last_event_id=args.last_event_id)
 
         elif args.query_type == 'server':
-            raise NotImplementedError()
+            params = common.QueryTimeseriesParams(
+                server_id=args.server_id,
+                persisted=args.persisted,
+                max_results=args.max_results,
+                last_event_id=args.last_event_id)
 
         else:
             raise ValueError('unsupported query type')
 
+        co = query(addr=addr,
+                   client_name=args.client_name,
+                   client_token=args.client_token,
+                   params=params)
+
     elif args.action == 'subscribe':
-        raise NotImplementedError()
+        subscriptions = args.event_types or [('*', )]
+
+        co = subscribe(addr=addr,
+                       client_name=args.client_name,
+                       client_token=args.client_token,
+                       subscriptions=subscriptions,
+                       server_id=args.server_id,
+                       persisted=args.persisted)
 
     elif args.action == 'server':
-        raise NotImplementedError()
+        subscriptions = args.event_types or [('*', )]
+
+        co = server(addr=addr,
+                    client_name=args.client_name,
+                    client_token=args.client_token,
+                    subscriptions=subscriptions,
+                    server_id=args.server_id,
+                    persisted=args.persisted)
 
     else:
         raise ValueError('unsupported action')
 
     aio.init_asyncio()
     with contextlib.suppress(asyncio.CancelledError):
-        aio.run_asyncio(co)
+        return aio.run_asyncio(co)
 
 
 async def register(addr: tcp.Address,
                    client_name: str,
                    client_token: str | None,
-                   event_type: common.EventType,
-                   source_timestamp: common.Timestamp | None,
-                   payload: common.EventPayload | None):
+                   register_event: common.RegisterEvent):
+    client = await eventer.connect(addr=addr,
+                                   client_name=client_name,
+                                   client_token=client_token)
+
+    try:
+        result = await client.register([register_event])
+
+        if result is None:
+            return 1
+
+    finally:
+        await aio.uncancellable(client.async_close())
+
+
+async def query(addr: tcp.Address,
+                client_name: str,
+                client_token: str | None,
+                params: common.QueryParams):
+    client = await eventer.connect(addr=addr,
+                                   client_name=client_name,
+                                   client_token=client_token)
+
+    try:
+        result = await client.query(params)
+
+        result_json = common.query_result_to_json(result)
+        print(json.encode(result_json))
+
+    finally:
+        await aio.uncancellable(client.async_close())
+
+
+async def subscribe(addr: tcp.Address,
+                    client_name: str,
+                    client_token: str | None,
+                    subscriptions: Collection[common.EventType],
+                    server_id: int | None,
+                    persisted: bool):
+
+    def on_events(client, events):
+        events_json = [common.event_to_json(event) for event in events]
+        print(json.encode(events_json))
+
+    client = await eventer.connect(addr=addr,
+                                   client_name=client_name,
+                                   client_token=client_token,
+                                   subscriptions=subscriptions,
+                                   server_id=server_id,
+                                   persisted=persisted,
+                                   events_cb=on_events)
+
+    try:
+        await client.wait_closing()
+
+    finally:
+        await aio.uncancellable(client.async_close())
+
+
+async def server(addr: tcp.Address,
+                 client_name: str,
+                 client_token: str | None,
+                 subscriptions: Collection[common.EventType],
+                 server_id: int | None,
+                 persisted: bool):
     raise NotImplementedError()
 
 
@@ -196,8 +305,78 @@ def _parse_event_id(event_id):
     return common.EventId(event_id.split(','))
 
 
-def _read_payload(payload_type, path):
-    raise NotImplementedError()
+def _parse_order(order):
+    return common.Order[order]
+
+
+def _parse_order_by(order_by):
+    return common.OrderBy[order_by]
+
+
+def _read_payload(payload_type, binary_type, path):
+    if payload_type == 'none':
+        return
+
+    if path == Path('-'):
+        if payload_type == 'json' or payload_type is None:
+            json_format = json.Format.JSON
+
+        elif payload_type == 'yaml':
+            json_format = json.Format.YAML
+
+        elif payload_type == 'toml':
+            json_format = json.Format.TOML
+
+        elif payload_type == 'binary':
+            json_format = None
+
+        else:
+            raise ValueError('unsupported payload type')
+
+        if json_format is None or json_format == json.Format.TOML:
+            stdin, sys.stdin = sys.stdin.detach(), None
+
+        else:
+            stdin = sys.stdin
+
+        if json_format:
+            data = json.decode_stream(stdin, json_format)
+            return common.EventPayloadJson(data)
+
+        else:
+            data = stdin.read()
+            return common.EventPayloadBinary(type=binary_type,
+                                             data=data)
+
+    if payload_type is None:
+        try:
+            json_format = json.get_file_format(path)
+
+        except ValueError:
+            json_format = None
+
+    elif payload_type == 'json':
+        json_format = json.Format.JSON
+
+    elif payload_type == 'yaml':
+        json_format = json.Format.YAML
+
+    elif payload_type == 'toml':
+        json_format = json.Format.TOML
+
+    elif payload_type == 'binary':
+        json_format = None
+
+    else:
+        raise ValueError('unsupported payload type')
+
+    if json_format:
+        data = json.decode_file(path, json_format)
+        return common.EventPayloadJson(data)
+
+    data = path.read_bytes()
+    return common.EventPayloadBinary(type=binary_type,
+                                     data=data)
 
 
 if __name__ == '__main__':

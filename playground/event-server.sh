@@ -9,9 +9,6 @@ LOG_LEVEL=DEBUG
 CONF_PATH=$DATA_PATH/event.yaml
 
 cat > $CONF_PATH << EOF
-type: event
-server_id: 1
-server_token: null
 log:
     version: 1
     formatters:
@@ -39,17 +36,13 @@ log:
             - console_handler
             - syslog_handler
     disable_existing_loggers: false
+server_id: 1
 backend:
-    module: hat.event.server.backends.dummy
+    module: hat.event.backends.dummy
 modules: []
 eventer_server:
     host: "127.0.0.1"
     port: 23012
-monitor_component:
-    host: "127.0.0.1"
-    port: 23010
-    name: event
-    group: event
 EOF
 
 exec $PYTHON -m hat.event.server \
