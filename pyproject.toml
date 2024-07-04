@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 hat-event-server = "hat.event.server.main:main"
+hat-event-manager = "hat.event.manager.main:main"
 hat-event-lmdb-convert = "hat.event.backends.lmdb.convert.main:main"
 hat-event-lmdb-manager = "hat.event.backends.lmdb.manager.main:main"
 
