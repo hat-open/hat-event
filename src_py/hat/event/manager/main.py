@@ -294,6 +294,9 @@ async def server(addr: tcp.Address,
 
 
 def _parse_timestamp(t):
+    if t == 'now':
+        return common.now()
+
     return common.timestamp_from_float(float(t))
 
 
