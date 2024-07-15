@@ -1,9 +1,0 @@
-FROM python:3.10-alpine3.17 as base
-RUN apk update && \
-    apk add build-base git jq
-
-FROM base
-WORKDIR /hat
-VOLUME /hat/dist
-VOLUME /root/.cache/pip
-COPY . .

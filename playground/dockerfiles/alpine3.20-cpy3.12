@@ -1,4 +1,4 @@
-FROM python:3.9-alpine3.17 as base
+FROM python:3.12-alpine3.20 as base
 RUN apk update && \
     apk add build-base git jq
 
