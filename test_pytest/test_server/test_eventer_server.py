@@ -50,6 +50,10 @@ class Engine(common.Engine):
     def async_group(self):
         return self._async_group
 
+    @property
+    def server_id(self):
+        return 1
+
     async def register(self, source, events):
         if self._register_cb:
             await aio.call(self._register_cb, source, events)

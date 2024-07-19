@@ -29,6 +29,11 @@ class Source(typing.NamedTuple):
 class Engine(aio.Resource):
     """Engine ABC"""
 
+    @property
+    @abc.abstractmethod
+    def server_id(self) -> int:
+        """Event server identifier"""
+
     @abc.abstractmethod
     async def register(self,
                        source: Source,
