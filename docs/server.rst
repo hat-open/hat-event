@@ -250,10 +250,11 @@ retrieved, Eventer Client keeps active connection to remote Event Server and
 registers new events as they are received. Eventer Client registers received
 events directly to backend overriding Engines event processing.
 
-During communication with remote Event Server, if Event Server is in
-operational mode, additional events representing synchronization status will be
-registered. These events are registered with Engine's `register` method
-together with source ``SERVER``. Event type is
+During communication with remote Event Server, additional events representing
+synchronization status will be registered. These events are registered on
+remote event server via Eventer register message. If local Event Server is in
+operational mode, these events will also be registered in local Event Server
+with Engine's `register` method together with source ``SERVER``. Event type is
 ``event/<server_id>/synced/<remote_server_id>``
 where ``<server_id>`` represent identification of local server and
 ``<remote_server_id>`` represent identification of remote server. Source

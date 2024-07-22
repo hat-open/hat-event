@@ -200,7 +200,8 @@ class EventerClientRunner(aio.Resource):
                     eventer_client = await create_eventer_client(
                         addr=server_data.addr,
                         client_name=self._conf['monitor_component']['name'],
-                        server_id=server_data.server_id,
+                        local_server_id=self._conf['server_id'],
+                        remote_server_id=server_data.server_id,
                         backend=self._backend,
                         client_token=self._conf.get('server_token'),
                         synced_cb=self._on_synced)

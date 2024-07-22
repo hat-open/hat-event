@@ -19,7 +19,8 @@ SyncedCb: typing.TypeAlias = Callable[[common.ServerId, int], None]
 
 async def create_eventer_client(addr: tcp.Address,
                                 client_name: str,
-                                server_id: common.ServerId,
+                                local_server_id: common.ServerId,
+                                remote_server_id: common.ServerId,
                                 backend: common.Backend,
                                 *,
                                 client_token: str | None = None,
@@ -28,7 +29,8 @@ async def create_eventer_client(addr: tcp.Address,
                                 ) -> 'EventerClient':
     """Create eventer client"""
     client = EventerClient()
-    client._server_id = server_id
+    client._local_server_id = local_server_id
+    client._remote_server_id = remote_server_id
     client._backend = backend
     client._synced_cb = synced_cb
     client._synced = False
@@ -38,7 +40,7 @@ async def create_eventer_client(addr: tcp.Address,
                                            client_name=client_name,
                                            client_token=client_token,
                                            subscriptions=[('*', )],
-                                           server_id=server_id,
+                                           server_id=remote_server_id,
                                            persisted=True,
                                            events_cb=client._on_events,
                                            **kwargs)
@@ -84,15 +86,23 @@ class EventerClient(aio.Resource):
 
         try:
             last_event_id = await self._backend.get_last_event_id(
-                self._server_id)
+                self._remote_server_id)
             events = collections.deque()
             result = common.QueryResult([], True)
             synced_counter = 0
 
+            await self._client.register([
+                common.RegisterEvent(
+                    type=('event', str(self._local_server_id), 'synced',
+                          str(self._remote_server_id)),
+                    source_timestamp=None,
+                    payload=common.EventPayloadJson(False))])
+
             while result.more_follows:
-                params = common.QueryServerParams(server_id=self._server_id,
-                                                  persisted=True,
-                                                  last_event_id=last_event_id)
+                params = common.QueryServerParams(
+                    server_id=self._remote_server_id,
+                    persisted=True,
+                    last_event_id=last_event_id)
                 result = await self._client.query(params)
 
                 mlog.debug("received %s query events", len(result.events))
@@ -128,8 +138,16 @@ class EventerClient(aio.Resource):
             self._synced = True
 
             mlog.debug("synchronized %s events", synced_counter)
+
+            await self._client.register([
+                common.RegisterEvent(
+                    type=('event', str(self._local_server_id), 'synced',
+                          str(self._remote_server_id)),
+                    source_timestamp=None,
+                    payload=common.EventPayloadJson(True))])
+
             if self._synced_cb:
-                await aio.call(self._synced_cb, self._server_id,
+                await aio.call(self._synced_cb, self._remote_server_id,
                                synced_counter)
 
         except ConnectionError:

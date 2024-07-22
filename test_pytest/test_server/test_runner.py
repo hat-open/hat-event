@@ -174,7 +174,8 @@ async def test_engine_runner_set_synced(synced_restart_engine, synced,
 
 
 async def test_eventer_client_runner_create():
-    conf = {'monitor_component': {'name': 'event server name',
+    conf = {'server_id': 1,
+            'monitor_component': {'name': 'event server name',
                                   'group': 'event server group'}}
 
     async def on_synced(server_id, synced, counter):
@@ -193,7 +194,8 @@ async def test_eventer_client_runner_create():
 
 
 async def test_eventer_client_runner_set_monitor_state(addr):
-    conf = {'monitor_component': {'name': 'name1',
+    conf = {'server_id': 1,
+            'monitor_component': {'name': 'name1',
                                   'group': 'group1'}}
     synced_queue = aio.Queue()
 
@@ -204,7 +206,7 @@ async def test_eventer_client_runner_set_monitor_state(addr):
     eventer_server = await hat.event.server.eventer_server.create_eventer_server(  # NOQA
         addr=addr,
         backend=backend,
-        server_id=1)
+        server_id=2)
     runner = hat.event.server.runner.EventerClientRunner(
         conf=conf,
         backend=backend,
