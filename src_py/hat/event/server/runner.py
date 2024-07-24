@@ -75,7 +75,7 @@ class MainRunner(aio.Resource):
             self._monitor_component = await hat.monitor.component.connect(
                 addr=tcp.Address(self._conf['monitor_component']['host'],
                                  self._conf['monitor_component']['port']),
-                name=self._conf['monitor_component']['name'],
+                name=self._conf['name'],
                 group=self._conf['monitor_component']['group'],
                 runner_cb=self._create_monitor_runner,
                 data={'server_id': self._conf['server_id'],
@@ -199,7 +199,7 @@ class EventerClientRunner(aio.Resource):
                 try:
                     eventer_client = await create_eventer_client(
                         addr=server_data.addr,
-                        client_name=self._conf['monitor_component']['name'],
+                        client_name=self._conf['name'],
                         local_server_id=self._conf['server_id'],
                         remote_server_id=server_data.server_id,
                         backend=self._backend,

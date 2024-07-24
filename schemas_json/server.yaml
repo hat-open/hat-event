@@ -4,6 +4,7 @@ title: Event Server
 description: Event Server's configuration
 type: object
 required:
+    - name
     - server_id
     - backend
     - modules
@@ -17,6 +18,9 @@ properties:
         description: component version
     log:
         $ref: "hat-json://logging.yaml"
+    name:
+        type: string
+        description: component name
     server_id:
         type: integer
         description: server identifier
@@ -48,7 +52,6 @@ properties:
         required:
             - host
             - port
-            - name
             - group
         properties:
             host:
@@ -57,8 +60,6 @@ properties:
             port:
                 type: integer
                 default: 23010
-            name:
-                type: string
             group:
                 type: string
     synced_restart_engine:

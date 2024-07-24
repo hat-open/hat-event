@@ -175,8 +175,8 @@ async def test_engine_runner_set_synced(synced_restart_engine, synced,
 
 async def test_eventer_client_runner_create():
     conf = {'server_id': 1,
-            'monitor_component': {'name': 'event server name',
-                                  'group': 'event server group'}}
+            'name': 'event server name',
+            'monitor_component': {'group': 'event server group'}}
 
     async def on_synced(server_id, synced, counter):
         pass
@@ -195,8 +195,8 @@ async def test_eventer_client_runner_create():
 
 async def test_eventer_client_runner_set_monitor_state(addr):
     conf = {'server_id': 1,
-            'monitor_component': {'name': 'name1',
-                                  'group': 'group1'}}
+            'name': 'name1',
+            'monitor_component': {'group': 'group1'}}
     synced_queue = aio.Queue()
 
     async def on_synced(server_id, synced, counter):
