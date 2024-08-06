@@ -207,7 +207,7 @@ class Component(aio.Resource):
         try:
             server_data = None
             while True:
-                while not server_data and not server_data_queue.empty():
+                while not server_data or not server_data_queue.empty():
                     server_data = await server_data_queue.get_until_empty()
 
                 async with async_group.create_subgroup() as subgroup:

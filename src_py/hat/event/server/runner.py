@@ -45,17 +45,21 @@ class MainRunner(aio.Resource):
 
     async def _run(self):
         try:
+            mlog.debug("starting main runner loop")
             await self._start()
+
             await self._loop.create_future()
 
         except Exception as e:
             mlog.error("main runner loop error: %s", e, exc_info=e)
 
         finally:
+            mlog.debug("closing main runner loop")
             self.close()
             await aio.uncancellable(self._stop())
 
     async def _start(self):
+        mlog.debug("creating backend")
         backend_conf = self._conf['backend']
         backend_info = common.import_backend_info(backend_conf['module'])
         self._backend = await aio.call(backend_info.create, backend_conf,
@@ -63,6 +67,7 @@ class MainRunner(aio.Resource):
                                        self._on_backend_flushed_events)
         _bind_resource(self.async_group, self._backend)
 
+        mlog.debug("creating eventer server")
         self._eventer_server = await create_eventer_server(
             addr=tcp.Address(self._conf['eventer_server']['host'],
                              self._conf['eventer_server']['port']),
@@ -72,6 +77,7 @@ class MainRunner(aio.Resource):
         _bind_resource(self.async_group, self._eventer_server)
 
         if 'monitor_component' in self._conf:
+            mlog.debug("creating monitor component")
             self._monitor_component = await hat.monitor.component.connect(
                 addr=tcp.Address(self._conf['monitor_component']['host'],
                                  self._conf['monitor_component']['port']),
@@ -84,6 +90,7 @@ class MainRunner(aio.Resource):
                 state_cb=self._on_monitor_state)
             _bind_resource(self.async_group, self._monitor_component)
 
+            mlog.debug("creating eventer client runner")
             self._eventer_client_runner = EventerClientRunner(
                 conf=self._conf,
                 backend=self._backend,
@@ -96,6 +103,7 @@ class MainRunner(aio.Resource):
             await self._monitor_component.set_ready(True)
 
         else:
+            mlog.debug("creating engine runner")
             self._engine_runner = EngineRunner(
                 conf=self._conf,
                 backend=self._backend,
@@ -122,6 +130,7 @@ class MainRunner(aio.Resource):
             await self._backend.async_close()
 
     async def _create_monitor_runner(self, monitor_component):
+        mlog.debug("creating engine runner")
         self._engine_runner = EngineRunner(conf=self._conf,
                                            backend=self._backend,
                                            eventer_server=self._eventer_server)
@@ -195,8 +204,10 @@ class EventerClientRunner(aio.Resource):
 
     async def _client_loop(self, async_group, server_data):
         try:
+            mlog.debug("staring eventer client runner loop")
             while True:
                 try:
+                    mlog.debug("creating eventer client")
                     eventer_client = await create_eventer_client(
                         addr=server_data.addr,
                         client_name=self._conf['name'],
@@ -224,6 +235,7 @@ class EventerClientRunner(aio.Resource):
             self.close()
 
         finally:
+            mlog.debug("closing eventer client runner loop")
             async_group.close()
 
     async def _on_synced(self, server_id, counter):
@@ -268,9 +280,11 @@ class EngineRunner(aio.Resource):
 
     async def _run(self):
         try:
+            mlog.debug("staring engine runner loop")
             while True:
                 self._restart.clear()
 
+                mlog.debug("creating engine")
                 self._engine = await create_engine(
                     backend=self._backend,
                     module_confs=self._conf['modules'],
@@ -292,6 +306,7 @@ class EngineRunner(aio.Resource):
             mlog.error("engine runner loop error: %s", e, exc_info=e)
 
         finally:
+            mlog.debug("closing engine runner loop")
             self.close()
             await aio.uncancellable(self._close())
 
