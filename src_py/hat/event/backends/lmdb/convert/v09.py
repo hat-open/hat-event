@@ -10,6 +10,7 @@ version = '0.9'
 Timestamp = common.Timestamp
 OrderBy = common.OrderBy
 EventId = common.EventId
+EventType = common.EventType
 EventPayloadBinary = common.EventPayloadBinary
 EventPayloadJson = common.EventPayloadJson
 Event = common.Event
