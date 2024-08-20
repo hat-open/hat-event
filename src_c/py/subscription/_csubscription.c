@@ -6,6 +6,7 @@
 
 typedef struct {
     bool is_leaf;
+    bool has_star;
     hat_ht_t *children;
 } node_t;
 
@@ -28,7 +29,7 @@ static void free_children(node_t *node) {
 
 
 static int add_query_type(node_t *node, PyObject *query_type_iter) {
-    if (node->children && hat_ht_get(node->children, (uint8_t *)"*", 1))
+    if (node->has_star)
         return 0;
 
     PyObject *subtype = PyIter_Next(query_type_iter);
@@ -59,7 +60,12 @@ static int add_query_type(node_t *node, PyObject *query_type_iter) {
             PyErr_SetString(PyExc_ValueError, "invalid query event type");
             return 1;
         }
+
+        node->is_leaf = true;
+        node->has_star = true;
         free_children(node);
+
+        return 0;
     }
 
     if (!node->children) {
@@ -89,7 +95,8 @@ static int add_query_type(node_t *node, PyObject *query_type_iter) {
             return 1;
         }
 
-        *child = (node_t){.is_leaf = false, .children = NULL};
+        *child =
+            (node_t){.is_leaf = false, .has_star = false, .children = NULL};
         if (hat_ht_set(node->children, (uint8_t *)key, key_size, child)) {
             PyMem_Free(child);
             Py_DECREF(subtype);
@@ -120,8 +127,34 @@ static int resize_children(node_t *node) {
 
 
 static int get_query_types(node_t *node, PyObject *prefix, PyObject *deque) {
-    if (node->is_leaf &&
-        !(node->children && hat_ht_get(node->children, (uint8_t *)"*", 1))) {
+    if (node->has_star) {
+        Py_ssize_t query_type_len = PyTuple_Size(prefix) + 1;
+        PyObject *query_type = PyTuple_New(query_type_len);
+
+        for (Py_ssize_t i = 0; i < query_type_len - 1; ++i) {
+            PyObject *segment = PyTuple_GetItem(prefix, i);
+            Py_INCREF(segment);
+            PyTuple_SetItem(query_type, i, segment);
+        }
+
+        PyObject *segment = PyUnicode_FromString("*");
+        if (!segment) {
+            Py_DECREF(query_type);
+            return 1;
+        }
+        PyTuple_SetItem(query_type, query_type_len - 1, segment);
+
+        PyObject *result =
+            PyObject_CallMethod(deque, "append", "(O)", query_type);
+        Py_DECREF(query_type);
+        if (!result)
+            return 1;
+
+        Py_DECREF(result);
+        return 0;
+    }
+
+    if (node->is_leaf && !node->has_star) {
         PyObject *result = PyObject_CallMethod(deque, "append", "(O)", prefix);
         if (!result)
             return 1;
@@ -169,11 +202,11 @@ static int get_query_types(node_t *node, PyObject *prefix, PyObject *deque) {
 
 
 static bool matches(node_t *node, PyObject *event_type,
-                    size_t event_type_index) {
-    if (node->children && hat_ht_get(node->children, (uint8_t *)"*", 1))
+                    Py_ssize_t event_type_size, size_t event_type_index) {
+    if (node->has_star)
         return true;
 
-    if (event_type_index >= PyTuple_Size(event_type))
+    if (event_type_index >= event_type_size)
         return node->is_leaf;
 
     if (!node->children)
@@ -187,11 +220,13 @@ static bool matches(node_t *node, PyObject *event_type,
     if (!key)
         return false;
     child = hat_ht_get(node->children, (uint8_t *)key, key_size);
-    if (child && matches(child, event_type, event_type_index + 1))
+    if (child &&
+        matches(child, event_type, event_type_size, event_type_index + 1))
         return true;
 
     child = hat_ht_get(node->children, (uint8_t *)"?", 1);
-    if (child && matches(child, event_type, event_type_index + 1))
+    if (child &&
+        matches(child, event_type, event_type_size, event_type_index + 1))
         return true;
 
     return false;
@@ -202,21 +237,17 @@ static bool isdisjoint(node_t *first, node_t *second) {
     if (first->is_leaf && second->is_leaf)
         return false;
 
-    if (!first->children) {
-        return !first->is_leaf || !second->children ||
-               !hat_ht_get(second->children, (uint8_t *)"*", 1);
-    }
+    if (first->has_star)
+        return !second->is_leaf && !second->children;
 
-    if (!second->children) {
-        return !second->is_leaf || !first->children ||
-               !hat_ht_get(first->children, (uint8_t *)"*", 1);
-    }
+    if (second->has_star)
+        return !first->is_leaf && !first->children;
 
-    if (hat_ht_get(first->children, (uint8_t *)"*", 1))
-        return false;
+    if (!first->children)
+        return !first->is_leaf || !second->children;
 
-    if (hat_ht_get(second->children, (uint8_t *)"*", 1))
-        return false;
+    if (!second->children)
+        return !second->is_leaf || !first->children;
 
     node_t *first_child;
     node_t *second_child;
@@ -277,12 +308,10 @@ static bool isdisjoint(node_t *first, node_t *second) {
 }
 
 
-// clang-format off
 typedef struct {
-    PyObject_HEAD
+    PyObject ob_base;
     node_t root;
 } Subscription;
-// clang-format on
 
 
 static PyObject *Subscription_new(PyTypeObject *type, PyObject *args,
@@ -301,7 +330,8 @@ static PyObject *Subscription_new(PyTypeObject *type, PyObject *args,
         return NULL;
     }
 
-    self->root = (node_t){.is_leaf = false, .children = NULL};
+    self->root =
+        (node_t){.is_leaf = false, .has_star = false, .children = NULL};
 
     while (true) {
         PyObject *query_type = PyIter_Next(query_types_iter);
@@ -321,6 +351,7 @@ static PyObject *Subscription_new(PyTypeObject *type, PyObject *args,
         Py_DECREF(query_type);
         if (err) {
             Py_DECREF(self);
+            Py_DECREF(query_types_iter);
             return NULL;
         }
     }
@@ -383,8 +414,13 @@ static PyObject *Subscription_matches(Subscription *self, PyObject *args) {
         return NULL;
     }
 
-    if (matches(&(self->root), args, 0))
+    Py_ssize_t args_size = PyTuple_Size(args);
+
+    if (matches(&(self->root), args, args_size, 0))
         Py_RETURN_TRUE;
+
+    if (PyErr_Occurred())
+        return NULL;
 
     Py_RETURN_FALSE;
 }
@@ -400,10 +436,7 @@ static PyObject *Subscription_isdisjoint(Subscription *self, PyObject *args) {
 
     Subscription *other = (Subscription *)args;
 
-    if (isdisjoint(&(self->root), &(other->root)))
-        Py_RETURN_TRUE;
-
-    Py_RETURN_FALSE;
+    return PyBool_FromLong(isdisjoint(&(self->root), &(other->root)));
 }
 
 
@@ -433,17 +466,15 @@ static PyType_Spec subscription_type_spec = {
 
 
 static int module_exec(PyObject *module) {
-    PyObject *subscription_type = PyType_FromSpec(&subscription_type_spec);
+    PyObject *subscription_type =
+        PyType_FromModuleAndSpec(module, &subscription_type_spec, NULL);
     if (!subscription_type)
         return -1;
 
-    int result = PyModule_AddObject(module, "Subscription", subscription_type);
-    if (result) {
-        Py_DECREF(subscription_type);
-        return -1;
-    }
-
-    return 0;
+    int result =
+        PyModule_AddObjectRef(module, "Subscription", subscription_type);
+    Py_DECREF(subscription_type);
+    return result;
 }
 
 
