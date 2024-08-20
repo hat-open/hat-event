@@ -417,12 +417,12 @@ static PyObject *Subscription_matches(Subscription *self, PyObject *args) {
     Py_ssize_t args_size = PyTuple_Size(args);
 
     if (matches(&(self->root), args, args_size, 0))
-        Py_RETURN_TRUE;
+        return Py_NewRef(Py_True);
 
     if (PyErr_Occurred())
         return NULL;
 
-    Py_RETURN_FALSE;
+    return Py_NewRef(Py_False);
 }
 
 
