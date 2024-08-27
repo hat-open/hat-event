@@ -9,6 +9,7 @@ import hat.monitor.common
 import hat.monitor.component
 
 from hat.event import common
+import hat.event.server.eventer_client
 import hat.event.server.eventer_server
 import hat.event.server.runner
 
@@ -119,10 +120,9 @@ async def test_engine_runner_close_engine():
 
 
 @pytest.mark.parametrize('synced_restart_engine', [True, False])
-@pytest.mark.parametrize('synced', [True, False])
-@pytest.mark.parametrize('counter', [0, 1])
-async def test_engine_runner_set_synced(synced_restart_engine, synced,
-                                        counter):
+@pytest.mark.parametrize('state', hat.event.server.eventer_client.SyncedState)
+@pytest.mark.parametrize('count', [None, 0, 1])
+async def test_engine_runner_set_synced(synced_restart_engine, state, count):
     conf = {'server_id': 123,
             'modules': [],
             'synced_restart_engine': synced_restart_engine}
@@ -145,15 +145,21 @@ async def test_engine_runner_set_synced(synced_restart_engine, synced,
     assert event.type == ('event', str(conf['server_id']), 'engine')
 
     await runner.set_synced(server_id=42,
-                            synced=synced,
-                            counter=counter)
+                            state=state,
+                            count=count)
 
     events = await events_queue.get()
     event = events[0]
     assert event.type == ('event', str(conf['server_id']), 'synced', '42')
-    assert event.payload.data == synced
+    assert event.payload.data['state'] == state.name
 
-    if synced_restart_engine and synced and counter:
+    if event.payload.data['state'] == 'SYNCED':
+        event.payload.data['count'] == count
+
+    else:
+        assert 'count' not in event.payload.data
+
+    if synced_restart_engine and state.name == 'SYNCED' and count:
         await engine.wait_closed()
 
         engine = await engine_queue.get()
@@ -178,7 +184,7 @@ async def test_eventer_client_runner_create():
             'name': 'event server name',
             'monitor_component': {'group': 'event server group'}}
 
-    async def on_synced(server_id, synced, counter):
+    async def on_synced(server_id, state, count):
         pass
 
     backend = Backend()
@@ -199,8 +205,8 @@ async def test_eventer_client_runner_set_monitor_state(addr):
             'monitor_component': {'group': 'group1'}}
     synced_queue = aio.Queue()
 
-    async def on_synced(server_id, synced, counter):
-        synced_queue.put_nowait((server_id, synced, counter))
+    async def on_synced(server_id, state, count):
+        synced_queue.put_nowait((server_id, state, count))
 
     backend = Backend()
     eventer_server = await hat.event.server.eventer_server.create_eventer_server(  # NOQA
@@ -234,14 +240,15 @@ async def test_eventer_client_runner_set_monitor_state(addr):
                                         components=[info])
     await runner.set_monitor_state(state)
 
-    server_id, synced, counter = await synced_queue.get()
+    server_id, state, count = await synced_queue.get()
     assert server_id == 42
-    assert synced is False
+    assert state == hat.event.server.eventer_client.SyncedState.CONNECTED
+    assert count is None
 
-    server_id, synced, counter = await synced_queue.get()
+    server_id, state, count = await synced_queue.get()
     assert server_id == 42
-    assert synced is True
-    assert counter == 0
+    assert state == hat.event.server.eventer_client.SyncedState.SYNCED
+    assert count == 0
 
     state = hat.monitor.component.State(info=None,
                                         components=[])

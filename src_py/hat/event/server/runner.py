@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import functools
 import logging
 import types
 import typing
@@ -11,7 +12,8 @@ import hat.monitor.component
 
 from hat.event import common
 from hat.event.server.engine import create_engine
-from hat.event.server.eventer_client import create_eventer_client
+from hat.event.server.eventer_client import (SyncedState,
+                                             create_eventer_client)
 from hat.event.server.eventer_server import (create_eventer_server,
                                              EventerServer)
 
@@ -154,11 +156,11 @@ class MainRunner(aio.Resource):
 
         await self._eventer_client_runner.set_monitor_state(state)
 
-    async def _on_eventer_client_synced(self, server_id, synced, counter):
+    async def _on_eventer_client_synced(self, server_id, state, count):
         if not self._engine_runner:
             return
 
-        await self._engine_runner.set_synced(server_id, synced, counter)
+        await self._engine_runner.set_synced(server_id, state, count)
 
 
 class EventerClientRunner(aio.Resource):
@@ -166,7 +168,9 @@ class EventerClientRunner(aio.Resource):
     def __init__(self,
                  conf: json.Data,
                  backend: common.Backend,
-                 synced_cb: aio.AsyncCallable[[common.ServerId, bool, int],
+                 synced_cb: aio.AsyncCallable[[common.ServerId,
+                                               SyncedState,
+                                               int | None],
                                               None],
                  reconnect_delay: float = 5):
         self._conf = conf
@@ -215,16 +219,14 @@ class EventerClientRunner(aio.Resource):
                         remote_server_id=server_data.server_id,
                         backend=self._backend,
                         client_token=self._conf.get('server_token'),
-                        synced_cb=self._on_synced)
+                        synced_cb=functools.partial(self._synced_cb,
+                                                    server_data.server_id))
 
                 except Exception:
                     await asyncio.sleep(self._reconnect_delay)
                     continue
 
                 try:
-                    await aio.call(self._synced_cb, server_data.server_id,
-                                   False, 0)
-
                     await eventer_client.wait_closing()
 
                 finally:
@@ -237,9 +239,6 @@ class EventerClientRunner(aio.Resource):
         finally:
             mlog.debug("closing eventer client runner loop")
             async_group.close()
-
-    async def _on_synced(self, server_id, counter):
-        await aio.call(self._synced_cb, server_id, True, counter)
 
 
 class EngineRunner(aio.Resource):
@@ -263,19 +262,25 @@ class EngineRunner(aio.Resource):
 
     async def set_synced(self,
                          server_id: common.ServerId,
-                         synced: bool,
-                         counter: int):
+                         state: SyncedState,
+                         count: int | None):
         if self._engine and self._engine.is_open:
+            data = {'state': state.name}
+            if state == SyncedState.SYNCED:
+                data['count'] = count
+
             source = common.Source(type=common.SourceType.SERVER, id=0)
             event = common.RegisterEvent(
                 type=('event', str(self._conf['server_id']), 'synced',
                       str(server_id)),
                 source_timestamp=None,
-                payload=common.EventPayloadJson(synced))
+                payload=common.EventPayloadJson(data))
 
             await self._engine.register(source, [event])
 
-        if synced and counter and self._conf.get('synced_restart_engine'):
+        if (state == SyncedState.SYNCED and
+                count and
+                self._conf.get('synced_restart_engine')):
             self._restart.set()
 
     async def _run(self):

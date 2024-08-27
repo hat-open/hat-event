@@ -11,4 +11,25 @@ definitions:
                 - CONNECTED
                 - DISCONNECTED
         synced:
-            type: boolean
+            oneOf:
+              - type: object
+                required:
+                    - state
+                properties:
+                    state:
+                        const: CONNECTED
+              - type: object
+                required:
+                    - state
+                properties:
+                    state:
+                        const: SYNCING
+              - type: object
+                required:
+                    - state
+                    - count
+                properties:
+                    state:
+                        const: SYNCED
+                    count:
+                        type: integer

@@ -259,10 +259,13 @@ with Engine's `register` method together with source ``SERVER``. Event type is
 where ``<server_id>`` represent identification of local server and
 ``<remote_server_id>`` represent identification of remote server. Source
 timestamp is set to ``None`` and payload is specified by
-``hat-event://events.yaml#/$defs/events/synced``. Immediatly after
-connection with remote Event Server is established, synced event with payload
-``False`` is registered. Once all remote events are queried, new synced event
-with payload ``True`` is registered.
+``hat-event://events.yaml#/$defs/events/synced``.
+
+Immediatly after connection with remote Event Server is established, synced
+event with state ``CONNECTED`` is registered. If first query returns at least
+one event, synced event with state ``SYNCING`` is registered. Once all remote
+events are queried, synced event with state ``SYNCED`` and total number of
+synced events is registered.
 
 Based on configuration property ``synced_restart_engine``, Engine can be
 restarted if synchronization of more than ``0`` events occur.

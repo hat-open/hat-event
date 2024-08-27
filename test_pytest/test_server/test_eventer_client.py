@@ -63,12 +63,10 @@ async def test_create(addr):
 @pytest.mark.parametrize('event_count', [0, 1, 42])
 async def test_synced(local_server_id, event_count, addr):
     remote_server_id = local_server_id + 1
-    synced_future = asyncio.Future()
+    synced_queue = aio.Queue()
 
-    def on_synced(srv_id, count):
-        assert srv_id == remote_server_id
-        assert count == event_count
-        synced_future.set_result(None)
+    def on_synced(state, count):
+        synced_queue.put_nowait((state, count))
 
     def on_query(info, params):
         events = [common.Event(id=common.EventId(server=remote_server_id,
@@ -93,7 +91,18 @@ async def test_synced(local_server_id, event_count, addr):
         backend=backend,
         synced_cb=on_synced)
 
-    await synced_future
+    synced_state, synced_count = await synced_queue.get()
+    assert synced_state == hat.event.server.eventer_client.SyncedState.CONNECTED  # NOQA
+    assert synced_count is None
+
+    if event_count > 0:
+        synced_state, synced_count = await synced_queue.get()
+        assert synced_state == hat.event.server.eventer_client.SyncedState.SYNCING  # NOQA
+        assert synced_count is None
+
+    synced_state, synced_count = await synced_queue.get()
+    assert synced_state == hat.event.server.eventer_client.SyncedState.SYNCED
+    assert synced_count == event_count
 
     await client.async_close()
     await server.async_close()
@@ -105,10 +114,10 @@ async def test_synced(local_server_id, event_count, addr):
 async def test_more_follows(local_server_id, event_count, addr):
     remote_server_id = local_server_id + 1
     counter = 0
-    synced_future = asyncio.Future()
+    synced_queue = aio.Queue()
 
-    def on_synced(srv_id, count):
-        synced_future.set_result(None)
+    def on_synced(state, count):
+        synced_queue.put_nowait((state, count))
 
     def on_query(info, params):
         nonlocal counter
@@ -134,7 +143,18 @@ async def test_more_follows(local_server_id, event_count, addr):
         backend=backend,
         synced_cb=on_synced)
 
-    await synced_future
+    synced_state, synced_count = await synced_queue.get()
+    assert synced_state == hat.event.server.eventer_client.SyncedState.CONNECTED  # NOQA
+    assert synced_count is None
+
+    if event_count > 0:
+        synced_state, synced_count = await synced_queue.get()
+        assert synced_state == hat.event.server.eventer_client.SyncedState.SYNCING  # NOQA
+        assert synced_count is None
+
+    synced_state, synced_count = await synced_queue.get()
+    assert synced_state == hat.event.server.eventer_client.SyncedState.SYNCED
+    assert synced_count == event_count
 
     assert counter == event_count
 
@@ -240,7 +260,8 @@ async def test_notify(addr):
     await backend.async_close()
 
 
-async def test_remote_register_synced(addr):
+@pytest.mark.parametrize('event_count', [0, 1, 42])
+async def test_remote_register_synced(addr, event_count):
     local_server_id = 1
     remote_server_id = 2
     event_queue = aio.Queue()
@@ -254,7 +275,16 @@ async def test_remote_register_synced(addr):
         query_future = asyncio.Future()
         query_queue.put_nowait(query_future)
         await query_future
-        return common.QueryResult(events=[],
+
+        events = [common.Event(id=common.EventId(server=remote_server_id,
+                                                 session=1,
+                                                 instance=1 + i),
+                               type=('x', str(i)),
+                               timestamp=common.now(),
+                               source_timestamp=None,
+                               payload=None)
+                  for i in range(event_count)]
+        return common.QueryResult(events=events,
                                   more_follows=False)
 
     backend = Backend()
@@ -271,16 +301,23 @@ async def test_remote_register_synced(addr):
     event = await event_queue.get()
     assert event.type == ('event', str(local_server_id), 'synced',
                           str(remote_server_id))
-    assert event.payload.data is False
+    assert event.payload.data == {'state': 'CONNECTED'}
 
     query_future = await query_queue.get()
     assert event_queue.empty()
     query_future.set_result(None)
 
+    if event_count > 0:
+        event = await event_queue.get()
+        assert event.type == ('event', str(local_server_id), 'synced',
+                              str(remote_server_id))
+        assert event.payload.data == {'state': 'SYNCING'}
+
     event = await event_queue.get()
     assert event.type == ('event', str(local_server_id), 'synced',
                           str(remote_server_id))
-    assert event.payload.data is True
+    assert event.payload.data == {'state': 'SYNCED',
+                                  'count': event_count}
 
     assert event_queue.empty()
 

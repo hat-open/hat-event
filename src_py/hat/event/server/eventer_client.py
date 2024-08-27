@@ -1,5 +1,5 @@
-from collections.abc import Callable
 import collections
+import enum
 import logging
 import typing
 
@@ -13,7 +13,15 @@ from hat.event import eventer
 mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
-SyncedCb: typing.TypeAlias = Callable[[common.ServerId, int], None]
+
+class SyncedState(enum.Enum):
+    """Synced state"""
+    CONNECTED = 0
+    SYNCING = 1
+    SYNCED = 2
+
+
+SyncedCb: typing.TypeAlias = aio.AsyncCallable[[SyncedState, int | None], None]
 """Synced callback"""
 
 
@@ -91,12 +99,7 @@ class EventerClient(aio.Resource):
             result = common.QueryResult([], True)
             synced_counter = 0
 
-            await self._client.register([
-                common.RegisterEvent(
-                    type=('event', str(self._local_server_id), 'synced',
-                          str(self._remote_server_id)),
-                    source_timestamp=None,
-                    payload=common.EventPayloadJson(False))])
+            await self._notify_synced(SyncedState.CONNECTED, None)
 
             while result.more_follows:
                 params = common.QueryServerParams(
@@ -107,6 +110,10 @@ class EventerClient(aio.Resource):
 
                 mlog.debug("received %s query events", len(result.events))
                 events.extend(result.events)
+
+                if result.events and synced_counter == 0:
+                    await self._notify_synced(SyncedState.SYNCING, None)
+
                 synced_counter += len(result.events)
                 if not events:
                     continue
@@ -138,17 +145,7 @@ class EventerClient(aio.Resource):
             self._synced = True
 
             mlog.debug("synchronized %s events", synced_counter)
-
-            await self._client.register([
-                common.RegisterEvent(
-                    type=('event', str(self._local_server_id), 'synced',
-                          str(self._remote_server_id)),
-                    source_timestamp=None,
-                    payload=common.EventPayloadJson(True))])
-
-            if self._synced_cb:
-                await aio.call(self._synced_cb, self._remote_server_id,
-                               synced_counter)
+            await self._notify_synced(SyncedState.SYNCED, synced_counter)
 
         except ConnectionError:
             mlog.debug("connection closed")
@@ -157,3 +154,20 @@ class EventerClient(aio.Resource):
         except Exception as e:
             mlog.error("synchronization error: %s", e, exc_info=e)
             self.close()
+
+    async def _notify_synced(self, state, count):
+        data = {'state': state.name}
+        if state == SyncedState.SYNCED:
+            data['count'] = count
+
+        await self._client.register([
+            common.RegisterEvent(
+                type=('event', str(self._local_server_id), 'synced',
+                      str(self._remote_server_id)),
+                source_timestamp=None,
+                payload=common.EventPayloadJson(data))])
+
+        if not self._synced_cb:
+            return
+
+        await aio.call(self._synced_cb, state, count)
