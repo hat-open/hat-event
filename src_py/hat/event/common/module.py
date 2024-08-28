@@ -47,6 +47,14 @@ class Engine(aio.Resource):
                     ) -> QueryResult:
         """Query events"""
 
+    @abc.abstractmethod
+    def restart(self):
+        """Schedule engine restart"""
+
+    @abc.abstractmethod
+    def reset_monitor_ready(self):
+        """Schedule reseting of monitor component's ready flag"""
+
 
 class Module(aio.Resource):
     """Module ABC"""

@@ -113,7 +113,12 @@ def create_module():
 
 async def test_create_engine():
     backend = Backend()
-    engine = await hat.event.server.engine.create_engine(backend, [], 1)
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=[],
+        server_id=1,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=lambda: None)
 
     assert engine.is_open
 
@@ -130,8 +135,12 @@ async def test_engine_events(server_id):
         return events
 
     backend = Backend(register_cb=on_register)
-    engine = await hat.event.server.engine.create_engine(backend, [],
-                                                         server_id)
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=[],
+        server_id=server_id,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=lambda: None)
 
     events = await events_queue.get()
     assert len(events) == 1
@@ -174,8 +183,12 @@ async def test_create_module(server_id, modules_count, create_module):
               'index': i}
              for i, module in enumerate(modules)]
     backend = Backend()
-    engine = await hat.event.server.engine.create_engine(backend, confs,
-                                                         server_id)
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=confs,
+        server_id=server_id,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=lambda: None)
 
     assert engine.is_open
     assert len(sources) == modules_count
@@ -194,7 +207,12 @@ async def test_query(query_params, query_result):
         return query_result
 
     backend = Backend(query_cb=on_query)
-    engine = await hat.event.server.engine.create_engine(backend, [], 1)
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=[],
+        server_id=1,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=lambda: None)
 
     result = await engine.query(query_params)
     assert result == query_result
@@ -225,7 +243,12 @@ async def test_register(create_module):
     module = create_module(process_cb=on_process)
     confs = [{'module': module}]
     backend = Backend()
-    engine = await hat.event.server.engine.create_engine(backend, confs, 1)
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=confs,
+        server_id=1,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=lambda: None)
 
     source, event = await source_event_queue.get()
     assert source.type == common.SourceType.ENGINE
@@ -271,7 +294,12 @@ async def test_session_start_stop(create_module):
                            session_stop_cb=session_stop_queue.put_nowait)
     confs = [{'module': module}]
     backend = Backend()
-    engine = await hat.event.server.engine.create_engine(backend, confs, 1)
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=confs,
+        server_id=1,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=lambda: None)
 
     session_id = await session_start_queue.get()
     assert session_id == 1
@@ -295,3 +323,53 @@ async def test_session_start_stop(create_module):
 
     assert session_start_queue.empty()
     assert session_stop_queue.empty()
+
+
+async def test_restart():
+    restart_queue = aio.Queue()
+
+    def on_restart():
+        restart_queue.put_nowait(None)
+
+    backend = Backend()
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=[],
+        server_id=1,
+        restart_cb=on_restart,
+        reset_monitor_ready_cb=lambda: None)
+
+    assert restart_queue.empty()
+
+    engine.restart()
+    await restart_queue.get()
+
+    assert restart_queue.empty()
+
+    await engine.async_close()
+    await backend.async_close()
+
+
+async def test_reset_monitor_ready():
+    reset_monitor_ready_queue = aio.Queue()
+
+    def on_reset_monitor_ready():
+        reset_monitor_ready_queue.put_nowait(None)
+
+    backend = Backend()
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        module_confs=[],
+        server_id=1,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=on_reset_monitor_ready)
+
+    assert reset_monitor_ready_queue.empty()
+
+    engine.reset_monitor_ready()
+    await reset_monitor_ready_queue.get()
+
+    assert reset_monitor_ready_queue.empty()
+
+    await engine.async_close()
+    await backend.async_close()

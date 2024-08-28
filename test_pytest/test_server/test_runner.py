@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 from hat import aio
@@ -76,7 +74,8 @@ async def test_engine_runner_create():
     runner = hat.event.server.runner.EngineRunner(
         conf=conf,
         backend=backend,
-        eventer_server=eventer_server)
+        eventer_server=eventer_server,
+        reset_monitor_ready_cb=lambda: None)
 
     engine = await engine_queue.get()
 
@@ -102,7 +101,8 @@ async def test_engine_runner_close_engine():
     runner = hat.event.server.runner.EngineRunner(
         conf=conf,
         backend=backend,
-        eventer_server=eventer_server)
+        eventer_server=eventer_server,
+        reset_monitor_ready_cb=lambda: None)
 
     engine = await engine_queue.get()
 
@@ -119,13 +119,11 @@ async def test_engine_runner_close_engine():
     await eventer_server.async_close()
 
 
-@pytest.mark.parametrize('synced_restart_engine', [True, False])
 @pytest.mark.parametrize('state', hat.event.server.eventer_client.SyncedState)
 @pytest.mark.parametrize('count', [None, 0, 1])
-async def test_engine_runner_set_synced(synced_restart_engine, state, count):
+async def test_engine_runner_set_synced(state, count):
     conf = {'server_id': 123,
-            'modules': [],
-            'synced_restart_engine': synced_restart_engine}
+            'modules': []}
 
     events_queue = aio.Queue()
     engine_queue = aio.Queue()
@@ -135,7 +133,8 @@ async def test_engine_runner_set_synced(synced_restart_engine, state, count):
     runner = hat.event.server.runner.EngineRunner(
         conf=conf,
         backend=backend,
-        eventer_server=eventer_server)
+        eventer_server=eventer_server,
+        reset_monitor_ready_cb=lambda: None)
 
     engine = await engine_queue.get()
     assert engine.is_open
@@ -159,24 +158,46 @@ async def test_engine_runner_set_synced(synced_restart_engine, state, count):
     else:
         assert 'count' not in event.payload.data
 
-    if synced_restart_engine and state.name == 'SYNCED' and count:
-        await engine.wait_closed()
-
-        engine = await engine_queue.get()
-        assert engine is None
-
-        engine = await engine_queue.get()
-        assert engine.is_open
-
-    else:
-        with pytest.raises(asyncio.TimeoutError):
-            await aio.wait_for(engine.wait_closing(), 0.01)
-
-        assert engine.is_open
-
     await runner.async_close()
     await backend.async_close()
     await eventer_server.async_close()
+
+
+async def test_engine_runner_reset():
+    conf = {'server_id': 123,
+            'modules': []}
+
+    events_queue = aio.Queue()
+    engine_queue = aio.Queue()
+    backend = Backend(register_cb=events_queue.put_nowait)
+    eventer_server = EventerServer(engine_cb=engine_queue.put_nowait)
+
+    runner = hat.event.server.runner.EngineRunner(
+        conf=conf,
+        backend=backend,
+        eventer_server=eventer_server,
+        reset_monitor_ready_cb=lambda: None)
+
+    engine = await engine_queue.get()
+    assert engine.is_open
+
+    assert engine_queue.empty()
+
+    engine.restart()
+    await engine.wait_closed()
+
+    engine = await engine_queue.get()
+    assert engine is None
+
+    engine = await engine_queue.get()
+    assert engine.is_open
+
+    assert engine_queue.empty()
+
+    assert runner.is_open
+
+    await runner.async_close()
+    await backend.async_close()
 
 
 async def test_eventer_client_runner_create():

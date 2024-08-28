@@ -62,8 +62,6 @@ properties:
                 default: 23010
             group:
                 type: string
-    synced_restart_engine:
-        type: boolean
 $defs:
     backend:
         type: object

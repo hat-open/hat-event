@@ -73,6 +73,12 @@ class Engine(common.Engine):
     async def query(self, params):
         raise NotImplementedError()
 
+    def restart(self):
+        raise NotImplementedError()
+
+    def reset_monitor_ready(self):
+        raise NotImplementedError()
+
 
 @pytest.fixture
 def addr():
