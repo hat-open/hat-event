@@ -267,8 +267,10 @@ one event, synced event with state ``SYNCING`` is registered. Once all remote
 events are queried, synced event with state ``SYNCED`` and total number of
 synced events is registered.
 
-Based on configuration property ``synced_restart_engine``, Engine can be
-restarted if synchronization of more than ``0`` events occur.
+Each time remote Event Server changes state to ``OPERATIONAL``, Eventer Client
+will register new synced event with last registered synced state. In case
+of ``SYNCED`` state and registration triggered by ``OPERATIONAL`` change,
+new synced event will have `count` set to ``null``.
 
 
 Extensions

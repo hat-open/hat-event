@@ -32,4 +32,6 @@ definitions:
                     state:
                         const: SYNCED
                     count:
-                        type: integer
+                        type:
+                            - integer
+                            - 'null'

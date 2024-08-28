@@ -324,3 +324,6 @@ async def test_remote_register_synced(addr, event_count):
     await client.async_close()
     await server.async_close()
     await backend.async_close()
+
+
+# TODO test synced on operational
