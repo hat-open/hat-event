@@ -41,7 +41,10 @@ Immediately after chatter connection is established, client must send
 
 * client name
 
-  Label used as client identification.
+  Label used as client identification. By convention, client name is usually
+  formatted as ``<type>/<name>`` where `<type>` represents component
+  type and `<name>` represents component instance name. Both component type
+  and instance name can contain ``/`` as additional segment delimiter.
 
 * client token
 

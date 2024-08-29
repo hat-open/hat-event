@@ -239,6 +239,9 @@ If multiple redundant Event Servers are used, each Event Server runs
 Eventer Client module. This module is used for obtaining and active
 synchronization of events originating from other Event Server instances.
 
+Eventer Client connets to Eventer server with client name ``event/<name>``
+where `<name>` represents configured component's name.
+
 This module is available during `standby` and `operational` modes.
 
 By continuously monitoring state reported by `Monitor Server`_, Event Server

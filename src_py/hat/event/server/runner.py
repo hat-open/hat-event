@@ -237,7 +237,7 @@ class EventerClientRunner(aio.Resource):
                     mlog.debug("creating eventer client")
                     eventer_client = await create_eventer_client(
                         addr=server_data.addr,
-                        client_name=self._conf['name'],
+                        client_name=f"event/{self._conf['name']}",
                         local_server_id=self._conf['server_id'],
                         remote_server_id=server_data.server_id,
                         backend=self._backend,
