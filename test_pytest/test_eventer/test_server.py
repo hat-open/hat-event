@@ -42,6 +42,7 @@ async def test_init(addr, client_name, client_token, subscriptions,
     assert conn.is_open
     assert connected_queue.empty()
     assert disconnected_queue.empty()
+    assert srv.get_conn_infos() == []
 
     await common.send_msg(conn, 'HatEventer.MsgInitReq',
                           {'clientName': client_name,
@@ -64,6 +65,7 @@ async def test_init(addr, client_name, client_token, subscriptions,
 
     assert conn.is_open
     assert disconnected_queue.empty()
+    assert srv.get_conn_infos() == [info]
 
     await conn.async_close()
 

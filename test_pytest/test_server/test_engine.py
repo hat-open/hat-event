@@ -40,6 +40,29 @@ class Backend(common.Backend):
         pass
 
 
+class EventerServer(aio.Resource):
+
+    def __init__(self, get_client_names_cb=None):
+        self._get_client_names_cb = get_client_names_cb
+        self._async_group = aio.Group()
+
+    @property
+    def async_group(self):
+        return self._async_group
+
+    def get_client_names(self):
+        if not self._get_client_names_cb:
+            return []
+
+        yield from self._get_client_names_cb()
+
+    async def set_engine(self, engine):
+        raise NotImplementedError()
+
+    async def notify_events(self, events, persisted):
+        raise NotImplementedError()
+
+
 def assert_event(event, register_event):
     assert event.type == register_event.type
     assert event.source_timestamp == register_event.source_timestamp
@@ -113,8 +136,10 @@ def create_module():
 
 async def test_create_engine():
     backend = Backend()
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=[],
         server_id=1,
         restart_cb=lambda: None,
@@ -123,6 +148,7 @@ async def test_create_engine():
     assert engine.is_open
 
     await engine.async_close()
+    await eventer_server.async_close()
     await backend.async_close()
 
 
@@ -135,8 +161,10 @@ async def test_engine_events(server_id):
         return events
 
     backend = Backend(register_cb=on_register)
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=[],
         server_id=server_id,
         restart_cb=lambda: None,
@@ -162,6 +190,7 @@ async def test_engine_events(server_id):
     assert event.source_timestamp is None
     assert event.payload.data == 'STOPPED'
 
+    await eventer_server.async_close()
     await backend.async_close()
 
 
@@ -183,8 +212,10 @@ async def test_create_module(server_id, modules_count, create_module):
               'index': i}
              for i, module in enumerate(modules)]
     backend = Backend()
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=confs,
         server_id=server_id,
         restart_cb=lambda: None,
@@ -194,6 +225,7 @@ async def test_create_module(server_id, modules_count, create_module):
     assert len(sources) == modules_count
 
     await engine.async_close()
+    await eventer_server.async_close()
     await backend.async_close()
 
 
@@ -207,8 +239,10 @@ async def test_query(query_params, query_result):
         return query_result
 
     backend = Backend(query_cb=on_query)
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=[],
         server_id=1,
         restart_cb=lambda: None,
@@ -218,6 +252,7 @@ async def test_query(query_params, query_result):
     assert result == query_result
 
     await engine.async_close()
+    await eventer_server.async_close()
     await backend.async_close()
 
 
@@ -243,8 +278,10 @@ async def test_register(create_module):
     module = create_module(process_cb=on_process)
     confs = [{'module': module}]
     backend = Backend()
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=confs,
         server_id=1,
         restart_cb=lambda: None,
@@ -276,6 +313,7 @@ async def test_register(create_module):
     assert event.timestamp == timestamp
 
     await engine.async_close()
+    await eventer_server.async_close()
     await backend.async_close()
 
     assert source_event_queue.empty()
@@ -294,8 +332,10 @@ async def test_session_start_stop(create_module):
                            session_stop_cb=session_stop_queue.put_nowait)
     confs = [{'module': module}]
     backend = Backend()
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=confs,
         server_id=1,
         restart_cb=lambda: None,
@@ -319,6 +359,7 @@ async def test_session_start_stop(create_module):
     assert session_id == 2
 
     await engine.async_close()
+    await eventer_server.async_close()
     await backend.async_close()
 
     assert session_start_queue.empty()
@@ -332,8 +373,10 @@ async def test_restart():
         restart_queue.put_nowait(None)
 
     backend = Backend()
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=[],
         server_id=1,
         restart_cb=on_restart,
@@ -347,6 +390,7 @@ async def test_restart():
     assert restart_queue.empty()
 
     await engine.async_close()
+    await eventer_server.async_close()
     await backend.async_close()
 
 
@@ -357,8 +401,10 @@ async def test_reset_monitor_ready():
         reset_monitor_ready_queue.put_nowait(None)
 
     backend = Backend()
+    eventer_server = EventerServer()
     engine = await hat.event.server.engine.create_engine(
         backend=backend,
+        eventer_server=eventer_server,
         module_confs=[],
         server_id=1,
         restart_cb=lambda: None,
@@ -372,4 +418,33 @@ async def test_reset_monitor_ready():
     assert reset_monitor_ready_queue.empty()
 
     await engine.async_close()
+    await eventer_server.async_close()
+    await backend.async_close()
+
+
+@pytest.mark.parametrize('client_names', [
+    [],
+    [(common.Source(type=common.SourceType.EVENTER,
+                    id=123),
+      'abc')]
+])
+async def test_get_client_names(client_names):
+
+    def get_client_names():
+        return client_names
+
+    backend = Backend()
+    eventer_server = EventerServer(get_client_names)
+    engine = await hat.event.server.engine.create_engine(
+        backend=backend,
+        eventer_server=eventer_server,
+        module_confs=[],
+        server_id=1,
+        restart_cb=lambda: None,
+        reset_monitor_ready_cb=lambda: None)
+
+    assert list(engine.get_client_names()) == client_names
+
+    await engine.async_close()
+    await eventer_server.async_close()
     await backend.async_close()

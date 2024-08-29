@@ -48,6 +48,10 @@ class Engine(aio.Resource):
         """Query events"""
 
     @abc.abstractmethod
+    def get_client_names(self) -> Iterable[tuple[Source, str]]:
+        """Get client names connected to local eventer server"""
+
+    @abc.abstractmethod
     def restart(self):
         """Schedule engine restart"""
 

@@ -79,6 +79,10 @@ class Server(aio.Resource):
         """Async group"""
         return self._srv.async_group
 
+    def get_conn_infos(self) -> list[ConnectionInfo]:
+        """Get connection infos"""
+        return list(self._conn_infos.values())
+
     async def set_status(self, status: common.Status):
         """Set status and wait for acks"""
         if self._status == status:

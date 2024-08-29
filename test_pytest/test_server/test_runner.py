@@ -48,6 +48,9 @@ class EventerServer(aio.Resource):
     def async_group(self):
         return self._async_group
 
+    def get_client_names(self):
+        return []
+
     async def set_engine(self, engine):
         if not self._engine_cb:
             return

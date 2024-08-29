@@ -9,6 +9,7 @@ from hat import aio
 from hat import json
 
 from hat.event import common
+import hat.event.server.eventer_server
 
 
 mlog: logging.Logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ mlog: logging.Logger = logging.getLogger(__name__)
 
 
 async def create_engine(backend: common.Backend,
+                        eventer_server: hat.event.server.eventer_server.EventerServer,  # NOQA
                         module_confs: Iterable[json.Data],
                         server_id: int,
                         restart_cb: Callable[[], None],
@@ -25,6 +27,7 @@ async def create_engine(backend: common.Backend,
     """Create engine"""
     engine = Engine()
     engine._backend = backend
+    engine._eventer_server = eventer_server
     engine._server_id = server_id
     engine._restart_cb = restart_cb
     engine._reset_monitor_ready_cb = reset_monitor_ready_cb
@@ -95,6 +98,9 @@ class Engine(common.Engine):
                     params: common.QueryParams
                     ) -> common.QueryResult:
         return await self._backend.query(params)
+
+    def get_client_names(self) -> Iterable[tuple[common.Source, str]]:
+        return self._eventer_server.get_client_names()
 
     def restart(self):
         self._restart_cb()

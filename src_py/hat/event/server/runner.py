@@ -314,6 +314,7 @@ class EngineRunner(aio.Resource):
                 mlog.debug("creating engine")
                 self._engine = await create_engine(
                     backend=self._backend,
+                    eventer_server=self._eventer_server,
                     module_confs=self._conf['modules'],
                     server_id=self._conf['server_id'],
                     restart_cb=self._restart.set,

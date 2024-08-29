@@ -1,6 +1,6 @@
 """Eventer server"""
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 import logging
 
 from hat import aio
@@ -49,6 +49,11 @@ class EventerServer(aio.Resource):
     def async_group(self) -> aio.Group:
         """Async group"""
         return self._srv.async_group
+
+    def get_client_names(self) -> Iterable[tuple[common.Source, str]]:
+        """Get client names"""
+        for info in self._srv.get_conn_infos():
+            yield _get_source(info.id), info.client_name
 
     async def set_engine(self, engine: common.Engine | None):
         """Set engine"""

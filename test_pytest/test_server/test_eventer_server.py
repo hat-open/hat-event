@@ -73,6 +73,9 @@ class Engine(common.Engine):
     async def query(self, params):
         raise NotImplementedError()
 
+    def get_client_names(self):
+        raise NotImplementedError()
+
     def restart(self):
         raise NotImplementedError()
 
@@ -107,17 +110,36 @@ async def test_connect(token, addr):
         server_id=1,
         server_token=token)
 
-    client = await hat.event.eventer.connect(addr=addr,
-                                             client_name='client',
-                                             client_token=token)
-    assert client.is_open
-    await client.async_close()
+    client_names = list(server.get_client_names())
+    assert client_names == []
 
     client = await hat.event.eventer.connect(addr=addr,
-                                             client_name='client',
+                                             client_name='client1',
+                                             client_token=token)
+    assert client.is_open
+
+    client_names = list(server.get_client_names())
+    assert len(client_names) == 1
+    assert client_names[0][1] == 'client1'
+
+    await client.async_close()
+
+    client_names = list(server.get_client_names())
+    assert client_names == []
+
+    client = await hat.event.eventer.connect(addr=addr,
+                                             client_name='client2',
                                              client_token=None)
     assert client.is_open
+
+    client_names = list(server.get_client_names())
+    assert len(client_names) == 1
+    assert client_names[0][1] == 'client2'
+
     await client.async_close()
+
+    client_names = list(server.get_client_names())
+    assert client_names == []
 
     await server.async_close()
     await backend.async_close()
