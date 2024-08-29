@@ -59,6 +59,7 @@ async def connect(addr: tcp.Address,
                   name: str,
                   group: str,
                   server_group: str,
+                  client_name: str,
                   runner_cb: RunnerCb,
                   *,
                   state_cb: StateCb | None = None,
@@ -91,8 +92,8 @@ async def connect(addr: tcp.Address,
 
     """
     component = Component()
-    component._name = name
     component._server_group = server_group
+    component._client_name = client_name
     component._runner_cb = runner_cb
     component._state_cb = state_cb
     component._close_req_cb = close_req_cb
@@ -236,7 +237,7 @@ class Component(aio.Resource):
                     mlog.debug("connecting to server %s", server_data.addr)
                     client = await hat.event.eventer.client.connect(
                         addr=server_data.addr,
-                        client_name=self._name,
+                        client_name=self._client_name,
                         **kwargs)
 
                 except Exception as e:

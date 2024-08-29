@@ -24,14 +24,16 @@ async def test_connect(observer_addr):
     name = 'component name'
     group = 'component group'
     server_group = 'server group'
+    client_name = 'client name'
 
     with pytest.raises(ConnectionError):
         await hat.event.component.connect(observer_addr, name, group,
-                                          server_group, aio.Group)
+                                          server_group, client_name, aio.Group)
 
     observer_server = await hat.monitor.observer.server.listen(observer_addr)
     component = await hat.event.component.connect(observer_addr, name, group,
-                                                  server_group, aio.Group)
+                                                  server_group, client_name,
+                                                  aio.Group)
 
     assert component.is_open
 
@@ -43,6 +45,7 @@ async def test_ready(observer_addr):
     name = 'component name'
     group = 'component group'
     server_group = 'server group'
+    client_name = 'client name'
 
     state_queue = aio.Queue()
 
@@ -52,7 +55,8 @@ async def test_ready(observer_addr):
     observer_server = await hat.monitor.observer.server.listen(
         observer_addr, state_cb=on_state)
     component = await hat.event.component.connect(observer_addr, name, group,
-                                                  server_group, aio.Group)
+                                                  server_group, client_name,
+                                                  aio.Group)
 
     await state_queue.get()
 
@@ -83,6 +87,7 @@ async def test_runner(observer_addr, eventer_addr):
     server_name = 'server name'
     server_group = 'server group'
     server_token = 'server token'
+    client_name = 'client name'
 
     state_queue = aio.Queue()
     runner_queue = aio.Queue()
@@ -104,7 +109,8 @@ async def test_runner(observer_addr, eventer_addr):
     observer_server = await hat.monitor.observer.server.listen(
         observer_addr, state_cb=on_state)
     component = await hat.event.component.connect(observer_addr, name, group,
-                                                  server_group, on_runner)
+                                                  server_group, client_name,
+                                                  on_runner)
 
     await state_queue.get()
 
