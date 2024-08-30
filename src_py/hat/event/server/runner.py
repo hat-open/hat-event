@@ -42,7 +42,8 @@ class MainRunner(aio.Resource):
         self._monitor_component = None
         self._eventer_client_runner = None
         self._engine_runner = None
-        self._reset_monitor_ready = asyncio.Event()
+        self._reset_monitor_ready_start = asyncio.Event()
+        self._reset_monitor_ready_stop = asyncio.Event()
 
         self.async_group.spawn(self._run)
 
@@ -62,15 +63,19 @@ class MainRunner(aio.Resource):
             await self._monitor_component.set_ready(True)
 
             while True:
-                self._reset_monitor_ready.clear()
-                await self._reset_monitor_ready.wait()
+                self._reset_monitor_ready_start.clear()
+                await self._reset_monitor_ready_start.wait()
 
                 await self._monitor_component.set_ready(False)
 
-                if self._engine_runner:
+                if (self._monitor_component.state.info and
+                        self._monitor_component.state.info.blessing_res.token):
+                    self._reset_monitor_ready_stop.clear()
+
                     with contextlib.suppress(asyncio.TimeoutError):
-                        await aio.wait_for(self._engine_runner.wait_closed(),
-                                           self._reset_monitor_ready_timeout)
+                        await aio.wait_for(
+                            self._reset_monitor_ready_stop.wait(),
+                            self._reset_monitor_ready_timeout)
 
                 await self._monitor_component.set_ready(True)
 
@@ -130,7 +135,7 @@ class MainRunner(aio.Resource):
                 conf=self._conf,
                 backend=self._backend,
                 eventer_server=self._eventer_server,
-                reset_monitor_ready_cb=self._reset_monitor_ready.set)
+                reset_monitor_ready_cb=self._reset_monitor_ready_start.set)
             _bind_resource(self.async_group, self._engine_runner)
 
     async def _stop(self):
@@ -158,7 +163,7 @@ class MainRunner(aio.Resource):
             conf=self._conf,
             backend=self._backend,
             eventer_server=self._eventer_server,
-            reset_monitor_ready_cb=self._reset_monitor_ready.set)
+            reset_monitor_ready_cb=self._reset_monitor_ready_start.set)
         return self._engine_runner
 
     async def _on_backend_registered_events(self, events):
@@ -176,6 +181,9 @@ class MainRunner(aio.Resource):
     async def _on_monitor_state(self, monitor_component, state):
         if not self._eventer_client_runner:
             return
+
+        if not state.info or state.info.blessing_res.token is None:
+            self._reset_monitor_ready_stop.set()
 
         await self._eventer_client_runner.set_monitor_state(state)
 
