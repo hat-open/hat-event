@@ -64,9 +64,10 @@ class EventerServer(aio.Resource):
 
     async def notify_events(self,
                             events: Collection[common.Event],
-                            persisted: bool):
+                            persisted: bool,
+                            with_ack: bool = False):
         """Notify events"""
-        await self._srv.notify_events(events, persisted)
+        await self._srv.notify_events(events, persisted, with_ack)
 
     async def _on_connected(self, info):
         if (info.client_token is not None and

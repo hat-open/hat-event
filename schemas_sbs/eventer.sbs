@@ -15,9 +15,9 @@ MsgInitRes = Choice {
 
 MsgStatusNotify = Status
 
-MsgStatusAck = None
-
 MsgEventsNotify = Array(Event)
+
+MsgEventsAck = None
 
 MsgRegisterReq = Array(RegisterEvent)
 

@@ -99,16 +99,11 @@ async def test_status(addr):
     assert status_queue.empty()
 
     await common.send_msg(conn, 'HatEventer.MsgStatusNotify',
-                          ('operational', None),
-                          last=False)
+                          ('operational', None))
 
     status = await status_queue.get()
     assert status == common.Status.OPERATIONAL
     assert status_queue.empty()
-
-    msg, msg_type, msg_data = await common.receive_msg(conn)
-    assert msg_type == 'HatEventer.MsgStatusAck'
-    assert msg_data is None
 
     await client.async_close()
     await srv.async_close()
@@ -219,7 +214,8 @@ async def test_query(addr, params, result):
                   payload=common.EventPayloadJson(i))
      for i in range(3)]
 ])
-async def test_events(addr, events):
+@pytest.mark.parametrize('with_ack', [True, False])
+async def test_events(addr, events, with_ack):
     events_queue = aio.Queue()
 
     def on_events(client, events):
@@ -243,10 +239,20 @@ async def test_events(addr, events):
     client = await client_task
 
     await common.send_msg(conn, 'HatEventer.MsgEventsNotify',
-                          [common.event_to_sbs(event) for event in events])
+                          [common.event_to_sbs(event) for event in events],
+                          last=not with_ack)
 
     result = await events_queue.get()
     assert result == events
+
+    if with_ack:
+        msg, msg_type, msg_data = await common.receive_msg(conn)
+        assert msg_type == 'HatEventer.MsgEventsAck'
+        assert msg_data is None
+
+    else:
+        with pytest.raises(asyncio.TimeoutError):
+            await aio.wait_for(common.receive_msg(conn), 0.01)
 
     await client.async_close()
     await srv.async_close()

@@ -57,7 +57,7 @@ class EventerServer(aio.Resource):
 
         await aio.call(self._engine_cb, engine)
 
-    async def notify_events(self, events, persisted):
+    async def notify_events(self, events, persisted, with_ack):
         pass
 
 

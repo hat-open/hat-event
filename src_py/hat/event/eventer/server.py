@@ -84,35 +84,48 @@ class Server(aio.Resource):
         return list(self._conn_infos.values())
 
     async def set_status(self, status: common.Status):
-        """Set status and wait for acks"""
+        """Set status"""
         if self._status == status:
             return
 
         self._status = status
-        tasks = [self.async_group.spawn(self._notify_status, conn, status)
-                 for conn in self._conn_infos.keys()]
-        if not tasks:
-            return
 
-        await asyncio.wait(tasks)
+        for conn in list(self._conn_infos.keys()):
+            await self._notify_status(conn)
 
     async def notify_events(self,
                             events: Collection[common.Event],
-                            persisted: bool):
+                            persisted: bool,
+                            with_ack: bool = False):
         """Notify events to clients"""
-        for conn, info in list(self._conn_infos.items()):
+        conn_conn_events = collections.deque()
+
+        for conn, info in self._conn_infos.items():
             if info.persisted != persisted:
                 continue
 
-            filtered_events = collections.deque(
+            conn_events = collections.deque(
                 event for event in events
                 if (info.subscription.matches(event.type) and
                     (info.server_id is None or
                      info.server_id == event.id.server)))
-            if not filtered_events:
+            if not conn_events:
                 continue
 
-            await self._notify_events(conn, filtered_events)
+            conn_conn_events.append((conn, conn_events))
+
+        if not conn_conn_events:
+            return
+
+        if with_ack:
+            await asyncio.wait([
+                self.async_group.spawn(self._notify_events, conn, conn_events,
+                                       True)
+                for conn, conn_events in conn_conn_events])
+
+        else:
+            for conn, conn_events in conn_conn_events:
+                await self._notify_events(conn, conn_events, False)
 
     async def _connection_loop(self, conn):
         mlog.debug("starting connection loop")
@@ -158,8 +171,8 @@ class Server(aio.Resource):
                 mlog.debug("waiting for incomming messages")
                 msg, msg_type, msg_data = await common.receive_msg(conn)
 
-                if msg_type == 'HatEventer.MsgStatusAck':
-                    mlog.debug("received status ack")
+                if msg_type == 'HatEventer.MsgEventsAck':
+                    mlog.debug("received events ack")
                     future = self._conn_conv_futures.get((conn, msg.conv))
                     if future and not future.done():
                         future.set_result(None)
@@ -231,11 +244,27 @@ class Server(aio.Resource):
         await common.send_msg(conn, 'HatEventer.MsgQueryRes', res_data,
                               conv=req.conv)
 
-    async def _notify_status(self, conn, status):
+    async def _notify_status(self, conn):
         try:
-            req_data = common.status_to_sbs(self._status)
-            conv = await common.send_msg(conn, 'HatEventer.MsgStatusNotify',
-                                         req_data)
+            msg_data = common.status_to_sbs(self._status)
+            await common.send_msg(conn, 'HatEventer.MsgStatusNotify', msg_data)
+
+        except ConnectionError:
+            pass
+
+        except Exception as e:
+            mlog.error("notify status error: %s", e, exc_info=e)
+
+    async def _notify_events(self, conn, events, with_ack):
+        try:
+            msg_data = [common.event_to_sbs(event) for event in events]
+            conv = await common.send_msg(conn,
+                                         'HatEventer.MsgEventsNotify',
+                                         msg_data,
+                                         last=not with_ack)
+
+            if not with_ack:
+                return
 
             future = self._loop.create_future()
             self._conn_conv_futures[(conn, conv)] = future
@@ -245,17 +274,6 @@ class Server(aio.Resource):
 
             finally:
                 self._conn_conv_futures.pop((conn, conv))
-
-        except ConnectionError:
-            pass
-
-        except Exception as e:
-            mlog.error("notify status error: %s", e, exc_info=e)
-
-    async def _notify_events(self, conn, events):
-        try:
-            msg_data = [common.event_to_sbs(event) for event in events]
-            await common.send_msg(conn, 'HatEventer.MsgEventsNotify', msg_data)
 
         except ConnectionError:
             pass

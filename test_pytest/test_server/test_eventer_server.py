@@ -249,7 +249,8 @@ async def test_register(addr):
 
 @pytest.mark.parametrize('events_count', [1, 5])
 @pytest.mark.parametrize('persisted', [True, False])
-async def test_notify_events(events_count, persisted, addr):
+@pytest.mark.parametrize('with_ack', [True, False])
+async def test_notify_events(events_count, persisted, with_ack, addr):
     events = [common.Event(id=common.EventId(server=1,
                                              session=123,
                                              instance=i+1),
@@ -274,7 +275,7 @@ async def test_notify_events(events_count, persisted, addr):
                                              persisted=persisted,
                                              events_cb=on_events)
 
-    await server.notify_events(events, persisted)
+    await server.notify_events(events, persisted, with_ack)
 
     result = await events_queue.get()
     assert result == events

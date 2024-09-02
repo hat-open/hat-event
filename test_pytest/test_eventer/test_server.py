@@ -116,19 +116,11 @@ async def test_status(addr):
     assert msg_type == 'HatEventer.MsgInitRes'
     assert msg_data == ('success', ('standby', None))
 
-    status_future = asyncio.create_task(
-        srv.set_status(common.Status.OPERATIONAL))
+    await srv.set_status(common.Status.OPERATIONAL)
 
     msg, msg_type, msg_data = await common.receive_msg(conn)
     assert msg_type == 'HatEventer.MsgStatusNotify'
     assert msg_data == ('operational', None)
-
-    assert not status_future.done()
-
-    await common.send_msg(conn, 'HatEventer.MsgStatusAck', None,
-                          conv=msg.conv)
-
-    await status_future
 
     await conn.async_close()
     await srv.async_close()
@@ -136,7 +128,8 @@ async def test_status(addr):
 
 @pytest.mark.parametrize('server_id', [None, 123])
 @pytest.mark.parametrize('persisted', [True, False])
-async def test_events(addr, server_id, persisted):
+@pytest.mark.parametrize('with_ack', [True, False])
+async def test_events(addr, server_id, persisted, with_ack):
     srv = await hat.event.eventer.listen(addr)
     conn = await chatter.connect(addr)
 
@@ -168,12 +161,22 @@ async def test_events(addr, server_id, persisted):
                            source_timestamp=None,
                            payload=None)]
 
-    await srv.notify_events(events, persisted)
+    notify_events_task = asyncio.create_task(
+        srv.notify_events(events, persisted, with_ack))
 
     msg, msg_type, msg_data = await common.receive_msg(conn)
     assert msg_type == 'HatEventer.MsgEventsNotify'
     assert [common.event_from_sbs(i) for i in msg_data] == (
         [events[0], events[1]] if server_id is None else [events[0]])
+    assert msg.last == (not with_ack)
+
+    if with_ack:
+        assert not notify_events_task.done()
+
+        await common.send_msg(conn, 'HatEventer.MsgEventsAck', None,
+                              conv=msg.conv)
+
+    await notify_events_task
 
     await srv.notify_events(events, not persisted)
 

@@ -216,16 +216,19 @@ class Client(aio.Resource):
         if self._status_cb:
             await aio.call(self._status_cb, self, self._status)
 
-        await common.send_msg(conn=self._conn,
-                              msg_type='HatEventer.MsgStatusAck',
-                              msg_data=None,
-                              conv=msg.conv)
-
     async def _process_msg_events_notify(self, msg, msg_data):
         events = [common.event_from_sbs(event) for event in msg_data]
 
         if self._events_cb:
             await aio.call(self._events_cb, self, events)
+
+        if msg.last:
+            return
+
+        await common.send_msg(conn=self._conn,
+                              msg_type='HatEventer.MsgEventsAck',
+                              msg_data=None,
+                              conv=msg.conv)
 
     async def _process_msg_register_res(self, msg, msg_data):
         if msg_data[0] == 'events':

@@ -359,6 +359,8 @@ class EngineRunner(aio.Resource):
 
         await self._backend.flush()
 
+        await self._eventer_server.notify_events([], True, True)
+
 
 def _bind_resource(async_group, resource):
     async_group.spawn(aio.call_on_done, resource.wait_closing(),

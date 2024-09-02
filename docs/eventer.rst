@@ -17,11 +17,11 @@ Eventer Client (in the remainder of this document, mostly referred only as
     +--------------------+-------+------+-------+-----------+
     | MsgInitRes         | F     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
-    | MsgStatusNotify    | T     | F    | T     | s |arr| c |
+    | MsgStatusNotify    | T     | T    | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
-    | MsgStatusAck       | F     | T    | T     | c |arr| s |
+    | MsgEventsNotify    | T     | T/F  | T     | s |arr| c |
     +--------------------+-------+------+-------+-----------+
-    | MsgEventsNotify    | T     | T    | T     | s |arr| c |
+    | MsgEventsAck       | F     | T    | T     | c |arr| s |
     +--------------------+-------+------+-------+-----------+
     | MsgRegisterReq     | T     | T/F  | T     | c |arr| s |
     +--------------------+-------+------+-------+-----------+
@@ -103,8 +103,6 @@ event registration during ``standby`` status will usually fail.
 As part of successful Eventer connection establishment, server notifies it's
 current status to client. During Eventer communication, server can at any time
 send `MsgStatusNotify` message and thus notify client of it's status change.
-When client receives `MsgStatusNotify` message, it should confirm
-that notification was received by sending `MsgStatusAck` message.
 
 
 Events notification
@@ -116,6 +114,10 @@ events from same session (single session's events should not be split into
 multiple `MsgEventsNotify` messages). Before events are sent to specific
 client, they are additionally filtered using properties negotiated during
 client's connection initialization.
+
+`MsgEventsNotify` can be sent with `last` flag set to ``true`` or ``false``.
+If client receives `MsgEventsNotify` with `last` set to ``False``, it should
+respond with ``MsgEventsAck`` message.
 
 
 Event registration
