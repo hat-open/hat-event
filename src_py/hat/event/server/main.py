@@ -13,7 +13,7 @@ from hat import aio
 from hat import json
 
 from hat.event import common
-from hat.event.server.runner import MainRunner
+from hat.event.server.main_runner import MainRunner
 
 
 mlog: logging.Logger = logging.getLogger('hat.event.server.main')

@@ -9,7 +9,7 @@ import hat.monitor.component
 from hat.event import common
 import hat.event.server.eventer_client
 import hat.event.server.eventer_server
-import hat.event.server.runner
+import hat.event.server.engine_runner
 
 
 class Backend(common.Backend):
@@ -66,7 +66,7 @@ def addr():
     return tcp.Address('127.0.0.1', util.get_unused_tcp_port())
 
 
-async def test_engine_runner_create():
+async def test_create():
     status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
@@ -77,7 +77,7 @@ async def test_engine_runner_create():
     backend = Backend()
     eventer_server = EventerServer(status_cb=on_status)
 
-    runner = hat.event.server.runner.EngineRunner(
+    runner = hat.event.server.engine_runner.EngineRunner(
         conf=conf,
         backend=backend,
         eventer_server=eventer_server,
@@ -100,7 +100,7 @@ async def test_engine_runner_create():
     await eventer_server.async_close()
 
 
-async def test_engine_runner_close_engine():
+async def test_close_engine():
     status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
@@ -111,7 +111,7 @@ async def test_engine_runner_close_engine():
     backend = Backend()
     eventer_server = EventerServer(status_cb=on_status)
 
-    runner = hat.event.server.runner.EngineRunner(
+    runner = hat.event.server.engine_runner.EngineRunner(
         conf=conf,
         backend=backend,
         eventer_server=eventer_server,
@@ -138,7 +138,7 @@ async def test_engine_runner_close_engine():
 
 @pytest.mark.parametrize('state', hat.event.server.eventer_client.SyncedState)
 @pytest.mark.parametrize('count', [None, 0, 1])
-async def test_engine_runner_set_synced(state, count):
+async def test_set_synced(state, count):
     status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
@@ -150,7 +150,7 @@ async def test_engine_runner_set_synced(state, count):
     backend = Backend(register_cb=events_queue.put_nowait)
     eventer_server = EventerServer(status_cb=on_status)
 
-    runner = hat.event.server.runner.EngineRunner(
+    runner = hat.event.server.engine_runner.EngineRunner(
         conf=conf,
         backend=backend,
         eventer_server=eventer_server,
@@ -188,7 +188,7 @@ async def test_engine_runner_set_synced(state, count):
     await eventer_server.async_close()
 
 
-async def test_engine_runner_reset():
+async def test_reset():
     status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
@@ -201,7 +201,7 @@ async def test_engine_runner_reset():
     backend = Backend(register_cb=events_queue.put_nowait)
     eventer_server = EventerServer(status_cb=on_status)
 
-    runner = hat.event.server.runner.EngineRunner(
+    runner = hat.event.server.engine_runner.EngineRunner(
         conf=conf,
         backend=backend,
         eventer_server=eventer_server,
@@ -242,88 +242,3 @@ async def test_engine_runner_reset():
 
     await runner.async_close()
     await backend.async_close()
-
-
-async def test_eventer_client_runner_create():
-    conf = {'server_id': 1,
-            'name': 'event server name',
-            'monitor_component': {'group': 'event server group'}}
-
-    async def on_synced(server_id, state, count):
-        pass
-
-    backend = Backend()
-    runner = hat.event.server.runner.EventerClientRunner(
-        conf=conf,
-        backend=backend,
-        synced_cb=on_synced)
-
-    assert runner.is_open
-
-    await runner.async_close()
-    await backend.async_close()
-
-
-async def test_eventer_client_runner_set_monitor_state(addr):
-    conf = {'server_id': 1,
-            'name': 'name1',
-            'monitor_component': {'group': 'group1'}}
-    synced_queue = aio.Queue()
-
-    async def on_synced(server_id, state, count):
-        synced_queue.put_nowait((server_id, state, count))
-
-    backend = Backend()
-    eventer_server = await hat.event.server.eventer_server.create_eventer_server(  # NOQA
-        addr=addr,
-        backend=backend,
-        server_id=2)
-    runner = hat.event.server.runner.EventerClientRunner(
-        conf=conf,
-        backend=backend,
-        synced_cb=on_synced)
-
-    assert synced_queue.empty()
-
-    blessing_req = hat.monitor.common.BlessingReq(token=123,
-                                                  timestamp=None)
-    blessing_res = hat.monitor.common.BlessingRes(token=123,
-                                                  ready=True)
-    data = {'server_id': 42,
-            'eventer_server': {'host': addr.host,
-                               'port': addr.port},
-            'server_token': None}
-    info = hat.monitor.common.ComponentInfo(cid=1,
-                                            mid=2,
-                                            name='name2',
-                                            group='group1',
-                                            data=data,
-                                            rank=1,
-                                            blessing_req=blessing_req,
-                                            blessing_res=blessing_res)
-    state = hat.monitor.component.State(info=None,
-                                        components=[info])
-    runner.set_monitor_state(state)
-
-    server_id, state, count = await synced_queue.get()
-    assert server_id == 42
-    assert state == hat.event.server.eventer_client.SyncedState.CONNECTED
-    assert count is None
-
-    server_id, state, count = await synced_queue.get()
-    assert server_id == 42
-    assert state == hat.event.server.eventer_client.SyncedState.SYNCED
-    assert count == 0
-
-    state = hat.monitor.component.State(info=None,
-                                        components=[])
-    runner.set_monitor_state(state)
-
-    assert runner.is_open
-
-    await runner.async_close()
-    await eventer_server.async_close()
-    await backend.async_close()
-
-
-# TODO MainRunner
