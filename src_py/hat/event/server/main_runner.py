@@ -5,6 +5,7 @@ import logging
 
 from hat import aio
 from hat import json
+from hat import util
 from hat.drivers import tcp
 import hat.monitor.component
 
@@ -32,8 +33,8 @@ class MainRunner(aio.Resource):
         self._monitor_component = None
         self._eventer_client_runner = None
         self._engine_runner = None
-        self._reset_monitor_ready_start = asyncio.Event()
-        self._reset_monitor_ready_stop = asyncio.Event()
+        self._monitor_state_cbs = util.CallbackRegistry()
+        self._reset_monitor_ready = asyncio.Event()
 
         self.async_group.spawn(self._run)
 
@@ -53,19 +54,15 @@ class MainRunner(aio.Resource):
             await self._monitor_component.set_ready(True)
 
             while True:
-                self._reset_monitor_ready_start.clear()
-                await self._reset_monitor_ready_start.wait()
+                self._reset_monitor_ready.clear()
+                await self._reset_monitor_ready.wait()
 
                 await self._monitor_component.set_ready(False)
 
-                if (self._monitor_component.state.info and
-                        self._monitor_component.state.info.blessing_res.token):
-                    self._reset_monitor_ready_stop.clear()
-
-                    with contextlib.suppress(asyncio.TimeoutError):
-                        await aio.wait_for(
-                            self._reset_monitor_ready_stop.wait(),
-                            self._reset_monitor_ready_timeout)
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await aio.wait_for(
+                        self._wait_while_monitor_blessing_res_token(),
+                        self._reset_monitor_ready_timeout)
 
                 await self._monitor_component.set_ready(True)
 
@@ -97,6 +94,18 @@ class MainRunner(aio.Resource):
         _bind_resource(self.async_group, self._eventer_server)
 
         if 'monitor_component' in self._conf:
+            mlog.debug("creating eventer client runner")
+            self._eventer_client_runner = EventerClientRunner(
+                conf=self._conf,
+                backend=self._backend,
+                synced_cb=self._on_eventer_client_synced)
+            _bind_resource(self.async_group, self._eventer_client_runner)
+
+            handle = self._monitor_state_cbs.register(
+                self._eventer_client_runner.set_monitor_state)
+            self._eventer_client_runner.async_group.spawn(
+                aio.call_on_cancel, handle.cancel)
+
             mlog.debug("creating monitor component")
             self._monitor_component = await hat.monitor.component.connect(
                 addr=tcp.Address(self._conf['monitor_component']['host'],
@@ -107,17 +116,10 @@ class MainRunner(aio.Resource):
                 data={'server_id': self._conf['server_id'],
                       'eventer_server': self._conf['eventer_server'],
                       'server_token': self._conf.get('server_token')},
-                state_cb=self._on_monitor_state)
+                state_cb=lambda _, state: self._monitor_state_cbs.notify(state))  # NOQA
             _bind_resource(self.async_group, self._monitor_component)
 
-            mlog.debug("creating eventer client runner")
-            self._eventer_client_runner = EventerClientRunner(
-                conf=self._conf,
-                backend=self._backend,
-                synced_cb=self._on_eventer_client_synced)
-            _bind_resource(self.async_group, self._eventer_client_runner)
-
-            await self._eventer_client_runner.set_monitor_state(
+            self._eventer_client_runner.set_monitor_state(
                 self._monitor_component.state)
 
         else:
@@ -126,7 +128,8 @@ class MainRunner(aio.Resource):
                 conf=self._conf,
                 backend=self._backend,
                 eventer_server=self._eventer_server,
-                reset_monitor_ready_cb=self._reset_monitor_ready_start.set)
+                eventer_client_runner=None,
+                reset_monitor_ready_cb=self._reset_monitor_ready.set)
             _bind_resource(self.async_group, self._engine_runner)
 
     async def _stop(self):
@@ -154,7 +157,8 @@ class MainRunner(aio.Resource):
             conf=self._conf,
             backend=self._backend,
             eventer_server=self._eventer_server,
-            reset_monitor_ready_cb=self._reset_monitor_ready_start.set)
+            eventer_client_runner=self._eventer_client_runner,
+            reset_monitor_ready_cb=self._reset_monitor_ready.set)
         return self._engine_runner
 
     async def _on_backend_events(self, persisted, events):
@@ -163,20 +167,21 @@ class MainRunner(aio.Resource):
 
         await self._eventer_server.notify_events(events, persisted)
 
-    def _on_monitor_state(self, monitor_component, state):
-        if not state.info or state.info.blessing_res.token is None:
-            self._reset_monitor_ready_stop.set()
-
-        if not self._eventer_client_runner:
-            return
-
-        self._eventer_client_runner.set_monitor_state(state)
-
     async def _on_eventer_client_synced(self, server_id, state, count):
         if not self._engine_runner:
             return
 
         await self._engine_runner.set_synced(server_id, state, count)
+
+    async def _wait_while_monitor_blessing_res_token(self):
+        if not self._monitor_component:
+            return
+
+        while (self._monitor_component.state.info and
+                self._monitor_component.state.info.blessing_res.token):
+            event = asyncio.Event()
+            with self._monitor_state_cbs.register(lambda _: event.set()):
+                await event.wait()
 
 
 def _bind_resource(async_group, resource):

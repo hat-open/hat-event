@@ -22,6 +22,9 @@ class SyncedState(enum.Enum):
     SYNCED = 2
 
 
+StatusCb: typing.TypeAlias = aio.AsyncCallable[[common.Status], None]
+"""Status callback"""
+
 SyncedCb: typing.TypeAlias = aio.AsyncCallable[[SyncedState, int | None], None]
 """Synced callback"""
 
@@ -33,6 +36,7 @@ async def create_eventer_client(addr: tcp.Address,
                                 backend: common.Backend,
                                 *,
                                 client_token: str | None = None,
+                                status_cb: StatusCb | None = None,
                                 synced_cb: SyncedCb | None = None,
                                 **kwargs
                                 ) -> 'EventerClient':
@@ -41,6 +45,7 @@ async def create_eventer_client(addr: tcp.Address,
     client._local_server_id = local_server_id
     client._remote_server_id = remote_server_id
     client._backend = backend
+    client._status_cb = status_cb
     client._synced_cb = synced_cb
     client._synced = None
     client._events_queue = collections.deque()
@@ -78,25 +83,33 @@ class EventerClient(aio.Resource):
         return self._client.async_group
 
     @property
+    def status(self) -> common.Status:
+        """Status"""
+        return self._client.status
+
+    @property
     def synced(self) -> SyncedState | None:
         """Synced state"""
         return self._synced
 
     async def _on_status(self, client, status):
-        if status != common.Status.OPERATIONAL or not self._synced:
+        if status == common.Status.OPERATIONAL and self._synced:
+            data = {'state': self._synced.name}
+            if self._synced == SyncedState.SYNCED:
+                data['count'] = None
+
+            with contextlib.suppress(Exception):
+                await self._client.register([
+                    common.RegisterEvent(
+                        type=('event', str(self._local_server_id), 'synced',
+                              str(self._remote_server_id)),
+                        source_timestamp=None,
+                        payload=common.EventPayloadJson(data))])
+
+        if not self._status_cb:
             return
 
-        data = {'state': self._synced.name}
-        if self._synced == SyncedState.SYNCED:
-            data['count'] = None
-
-        with contextlib.suppress(Exception):
-            await self._client.register([
-                common.RegisterEvent(
-                    type=('event', str(self._local_server_id), 'synced',
-                          str(self._remote_server_id)),
-                    source_timestamp=None,
-                    payload=common.EventPayloadJson(data))])
+        await aio.call(self._status_cb, status)
 
     async def _on_events(self, client, events):
         mlog.debug("received %s notify events", len(events))

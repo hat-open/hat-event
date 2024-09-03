@@ -1,3 +1,4 @@
+from collections.abc import Callable
 import asyncio
 import functools
 import logging
@@ -6,6 +7,7 @@ import typing
 
 from hat import aio
 from hat import json
+from hat import util
 from hat.drivers import tcp
 import hat.monitor.component
 
@@ -18,6 +20,11 @@ mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
+SyncedCb: typing.TypeAlias = aio.AsyncCallable[
+    [common.ServerId, SyncedState, int | None],
+    None]
+
+
 class EventerServerData(typing.NamedTuple):
     server_id: common.ServerId
     addr: tcp.Address
@@ -28,22 +35,31 @@ class EventerClientRunner(aio.Resource):
     def __init__(self,
                  conf: json.Data,
                  backend: common.Backend,
-                 synced_cb: aio.AsyncCallable[[common.ServerId,
-                                               SyncedState,
-                                               int | None],
-                                              None],
+                 synced_cb: SyncedCb,
                  reconnect_delay: float = 5):
         self._conf = conf
         self._backend = backend
         self._synced_cb = synced_cb
         self._reconnect_delay = reconnect_delay
         self._async_group = aio.Group()
+        self._operational = False
+        self._operational_cbs = util.CallbackRegistry()
         self._valid_server_data = set()
-        self._client_subgroups = {}
+        self._active_server_data = set()
+        self._operational_server_data = set()
 
     @property
     def async_group(self) -> aio.Group:
         return self._async_group
+
+    @property
+    def operational(self) -> bool:
+        return self._operational
+
+    def register_operational_cb(self,
+                                cb: Callable[[bool], None]
+                                ) -> util.RegisterCallbackHandle:
+        return self._operational_cbs.register(cb)
 
     def set_monitor_state(self, state: hat.monitor.component.State):
         self._valid_server_data = set(_get_eventer_server_data(
@@ -51,26 +67,19 @@ class EventerClientRunner(aio.Resource):
             server_token=self._conf.get('server_token'),
             state=state))
 
-        for server_data in list(self._client_subgroups.keys()):
-            if server_data in self._valid_server_data:
-                continue
-
-            subgroup = self._client_subgroups.pop(server_data)
-            subgroup.close()
-
         for server_data in self._valid_server_data:
-            subgroup = self._client_subgroups.get(server_data)
-            if subgroup and subgroup.is_open:
+            if server_data in self._active_server_data:
                 continue
 
-            subgroup = self.async_group.create_subgroup()
-            subgroup.spawn(self._client_loop, subgroup, server_data)
-            self._client_subgroups[server_data] = subgroup
+            self.async_group.spawn(self._client_loop, server_data)
+            self._active_server_data.add(server_data)
 
-    async def _client_loop(self, async_group, server_data):
+    async def _client_loop(self, server_data):
         try:
             mlog.debug("staring eventer client runner loop")
-            while True:
+            while server_data in self._valid_server_data:
+                self._set_client_status(server_data, None)
+
                 try:
                     mlog.debug("creating eventer client")
                     eventer_client = await create_eventer_client(
@@ -80,12 +89,16 @@ class EventerClientRunner(aio.Resource):
                         remote_server_id=server_data.server_id,
                         backend=self._backend,
                         client_token=self._conf.get('server_token'),
+                        status_cb=functools.partial(self._set_client_status,
+                                                    server_data.server_id),
                         synced_cb=functools.partial(self._synced_cb,
                                                     server_data.server_id))
 
                 except Exception:
                     await asyncio.sleep(self._reconnect_delay)
                     continue
+
+                self._set_client_status(server_data, eventer_client.status)
 
                 try:
                     await eventer_client.wait_closing()
@@ -99,7 +112,22 @@ class EventerClientRunner(aio.Resource):
 
         finally:
             mlog.debug("closing eventer client runner loop")
-            async_group.close()
+            self._active_server_data.remove(server_data)
+            self._set_client_status(server_data, None)
+
+    def _set_client_status(self, server_data, status):
+        if status == common.Status.OPERATIONAL:
+            self._operational_server_data.add(server_data)
+
+        else:
+            self._operational_server_data.discard(server_data)
+
+        operational = bool(self._operational_server_data)
+        if operational == self._operational:
+            return
+
+        self._operational = operational
+        self._operational_cbs.notify(operational)
 
 
 def _get_eventer_server_data(group, server_token, state):

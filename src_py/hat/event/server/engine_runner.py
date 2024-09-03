@@ -8,6 +8,7 @@ from hat import json
 from hat.event import common
 from hat.event.server.engine import create_engine
 from hat.event.server.eventer_client import SyncedState
+from hat.event.server.eventer_client_runner import EventerClientRunner
 from hat.event.server.eventer_server import EventerServer
 
 
@@ -21,10 +22,12 @@ class EngineRunner(aio.Resource):
                  conf: json.Data,
                  backend: common.Backend,
                  eventer_server: EventerServer,
+                 eventer_client_runner: EventerClientRunner | None,
                  reset_monitor_ready_cb: Callable[[], None]):
         self._conf = conf
         self._backend = backend
         self._eventer_server = eventer_server
+        self._eventer_client_runner = eventer_client_runner
         self._reset_monitor_ready_cb = reset_monitor_ready_cb
         self._async_group = aio.Group()
         self._engine = None
@@ -60,6 +63,8 @@ class EngineRunner(aio.Resource):
         try:
             mlog.debug("staring engine runner loop")
             while True:
+                await self._wait_while_eventer_client_runner_operational()
+
                 self._restart.clear()
 
                 await self._eventer_server.set_status(common.Status.STARTING,
@@ -106,6 +111,17 @@ class EngineRunner(aio.Resource):
 
         await self._backend.flush()
 
+        # TODO not needed with wait wile operational
         await self._eventer_server.notify_events([], True, True)
 
         await self._eventer_server.set_status(common.Status.STANDBY, None)
+
+    async def _wait_while_eventer_client_runner_operational(self):
+        if not self._eventer_client_runner:
+            return
+
+        while self._eventer_client_runner.operational:
+            event = asyncio.Event()
+            with self._eventer_client_runner.register_operational_cb(
+                    lambda _: event.set()):
+                await event.wait()
