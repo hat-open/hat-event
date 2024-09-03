@@ -178,14 +178,14 @@ class MainRunner(aio.Resource):
 
         await self._eventer_server.notify_events(events, True)
 
-    async def _on_monitor_state(self, monitor_component, state):
-        if not self._eventer_client_runner:
-            return
-
+    def _on_monitor_state(self, monitor_component, state):
         if not state.info or state.info.blessing_res.token is None:
             self._reset_monitor_ready_stop.set()
 
-        await self._eventer_client_runner.set_monitor_state(state)
+        if not self._eventer_client_runner:
+            return
+
+        self._eventer_client_runner.set_monitor_state(state)
 
     async def _on_eventer_client_synced(self, server_id, state, count):
         if not self._engine_runner:
@@ -215,7 +215,7 @@ class EventerClientRunner(aio.Resource):
     def async_group(self) -> aio.Group:
         return self._async_group
 
-    async def set_monitor_state(self, state: hat.monitor.component.State):
+    def set_monitor_state(self, state: hat.monitor.component.State):
         valid_server_data = set(_get_eventer_server_data(
             group=self._conf['monitor_component']['group'],
             server_token=self._conf.get('server_token'),
@@ -319,6 +319,9 @@ class EngineRunner(aio.Resource):
             while True:
                 self._restart.clear()
 
+                await self._eventer_server.set_status(common.Status.STARTING,
+                                                      None)
+
                 mlog.debug("creating engine")
                 self._engine = await create_engine(
                     backend=self._backend,
@@ -327,7 +330,8 @@ class EngineRunner(aio.Resource):
                     server_id=self._conf['server_id'],
                     restart_cb=self._restart.set,
                     reset_monitor_ready_cb=self._reset_monitor_ready_cb)
-                await self._eventer_server.set_engine(self._engine)
+                await self._eventer_server.set_status(
+                    common.Status.OPERATIONAL, self._engine)
 
                 async with self._async_group.create_subgroup() as subgroup:
                     await asyncio.wait(
@@ -352,7 +356,7 @@ class EngineRunner(aio.Resource):
         if self._engine:
             self._engine.close()
 
-        await self._eventer_server.set_engine(None)
+        await self._eventer_server.set_status(common.Status.STOPPING, None)
 
         if self._engine:
             await self._engine.async_close()
@@ -360,6 +364,8 @@ class EngineRunner(aio.Resource):
         await self._backend.flush()
 
         await self._eventer_server.notify_events([], True, True)
+
+        await self._eventer_server.set_status(common.Status.STANDBY, None)
 
 
 def _bind_resource(async_group, resource):

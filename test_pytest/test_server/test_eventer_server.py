@@ -162,7 +162,7 @@ async def test_invalid_token(addr):
     await backend.async_close()
 
 
-async def test_set_engine(addr):
+async def test_set_status(addr):
     status_queue = aio.Queue()
 
     def on_status(client, status):
@@ -180,13 +180,25 @@ async def test_set_engine(addr):
 
     assert client.status == common.Status.STANDBY
 
-    await server.set_engine(engine)
+    await server.set_status(common.Status.STARTING, None)
+
+    status = await status_queue.get()
+    assert status == common.Status.STARTING
+    assert status_queue.empty()
+
+    await server.set_status(common.Status.OPERATIONAL, engine)
 
     status = await status_queue.get()
     assert status == common.Status.OPERATIONAL
     assert status_queue.empty()
 
-    await server.set_engine(None)
+    await server.set_status(common.Status.STOPPING, None)
+
+    status = await status_queue.get()
+    assert status == common.Status.STOPPING
+    assert status_queue.empty()
+
+    await server.set_status(common.Status.STANDBY, None)
 
     status = await status_queue.get()
     assert status == common.Status.STANDBY
@@ -212,7 +224,7 @@ async def test_register(addr):
         addr=addr,
         backend=backend,
         server_id=42)
-    await server.set_engine(engine)
+    await server.set_status(common.Status.OPERATIONAL, engine)
 
     client = await hat.event.eventer.connect(addr=addr,
                                              client_name=client_name)

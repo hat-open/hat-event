@@ -32,7 +32,9 @@ MsgQueryRes = QueryResult
 
 Status = Choice {
     standby:      None
+    starting:     None
     operational:  None
+    stopping:     None
 }
 
 Timestamp = Record {

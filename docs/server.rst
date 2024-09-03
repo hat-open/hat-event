@@ -64,6 +64,9 @@ modes:
 * `standby`
 * `operating`
 
+Additional transient modes `starting` and `stopping` represent transition
+between `starting` and `operating` modes.
+
 
 Components
 ----------
@@ -204,8 +207,9 @@ queries to :ref:`Backend <backends>` `query` method calls. At the same time, it
 observes all new event notifications made by Backend and notifies clients with
 appropriate messages.
 
-This module is available during `standby` and `operational` modes
-(event registration is not possible in `standby` mode).
+This module is available during `standby`, `starting`, `operational` and
+`stopping` modes (event registration is not possible in mode is not
+`operational`).
 
 `RegisterEvent` objects obtained from client's register requests are forwarded
 to Engine which converts them to `Event` and submits to further processing.
@@ -242,7 +246,8 @@ synchronization of events originating from other Event Server instances.
 Eventer Client connets to Eventer server with client name ``event/<name>``
 where `<name>` represents configured component's name.
 
-This module is available during `standby` and `operational` modes.
+This module is available during `standby`, `starting`, `operational` and
+`stopping` modes.
 
 By continuously monitoring state reported by `Monitor Server`_, Event Server
 keeps updated list of other available Event Server instances. For each other

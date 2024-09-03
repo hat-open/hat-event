@@ -55,11 +55,19 @@ class EventerServer(aio.Resource):
         for info in self._srv.get_conn_infos():
             yield _get_source(info.id), info.client_name
 
-    async def set_engine(self, engine: common.Engine | None):
-        """Set engine"""
-        self._engine = engine
+    async def set_status(self,
+                         status: common.Status,
+                         engine: common.Engine | None):
+        """Set status"""
+        if status == common.Status.OPERATIONAL:
+            if not engine:
+                raise ValueError('invalid status/engine')
 
-        status = common.Status.OPERATIONAL if engine else common.Status.STANDBY
+        else:
+            if engine:
+                raise ValueError('invalid status/engine')
+
+        self._engine = engine
         await self._srv.set_status(status)
 
     async def notify_events(self,

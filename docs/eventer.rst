@@ -95,10 +95,10 @@ Initiation token recommendations for Event Server implementation:
 Server status
 -------------
 
-Event Server execution status can be classified as ``standby`` and
-``operational``. Difference between these two statuses doesn't impact
-Eventer communication. Only difference that client can expect is that
-event registration during ``standby`` status will usually fail.
+Event Server execution status can be classified as ``standby``, ``starting``,
+``operational`` and ``stopping``. Difference between these statuses doesn't
+impact Eventer communication. Only difference that client can expect is that
+event registration while status is not ``operational`` will usually fail.
 
 As part of successful Eventer connection establishment, server notifies it's
 current status to client. During Eventer communication, server can at any time

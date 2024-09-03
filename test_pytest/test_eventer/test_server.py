@@ -116,11 +116,15 @@ async def test_status(addr):
     assert msg_type == 'HatEventer.MsgInitRes'
     assert msg_data == ('success', ('standby', None))
 
-    await srv.set_status(common.Status.OPERATIONAL)
+    for status in [common.Status.STARTING,
+                   common.Status.OPERATIONAL,
+                   common.Status.STOPPING,
+                   common.Status.STANDBY]:
+        await srv.set_status(status)
 
-    msg, msg_type, msg_data = await common.receive_msg(conn)
-    assert msg_type == 'HatEventer.MsgStatusNotify'
-    assert msg_data == ('operational', None)
+        msg, msg_type, msg_data = await common.receive_msg(conn)
+        assert msg_type == 'HatEventer.MsgStatusNotify'
+        assert msg_data == (status.value, None)
 
     await conn.async_close()
     await srv.async_close()

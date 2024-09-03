@@ -59,7 +59,9 @@ max_timestamp: Timestamp = Timestamp(s=(1 << 63) - 1, us=999_999)
 
 class Status(enum.Enum):
     STANDBY = 'standby'
+    STARTING = 'starting'
     OPERATIONAL = 'operational'
+    STOPPING = 'stopping'
 
 
 class Order(enum.Enum):

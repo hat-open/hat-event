@@ -72,7 +72,8 @@ async def test_connect(addr, client_name, client_token, subscriptions,
     await srv.async_close()
 
 
-async def test_status(addr):
+@pytest.mark.parametrize('status', common.Status)
+async def test_status(addr, status):
     status_queue = aio.Queue()
 
     def on_status(client, status):
@@ -99,10 +100,10 @@ async def test_status(addr):
     assert status_queue.empty()
 
     await common.send_msg(conn, 'HatEventer.MsgStatusNotify',
-                          ('operational', None))
+                          (status.value, None))
 
-    status = await status_queue.get()
-    assert status == common.Status.OPERATIONAL
+    result = await status_queue.get()
+    assert result == status
     assert status_queue.empty()
 
     await client.async_close()

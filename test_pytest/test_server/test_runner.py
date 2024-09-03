@@ -40,8 +40,8 @@ class Backend(common.Backend):
 
 class EventerServer(aio.Resource):
 
-    def __init__(self, engine_cb=None):
-        self._engine_cb = engine_cb
+    def __init__(self, status_cb=None):
+        self._status_cb = status_cb
         self._async_group = aio.Group()
 
     @property
@@ -51,11 +51,11 @@ class EventerServer(aio.Resource):
     def get_client_names(self):
         return []
 
-    async def set_engine(self, engine):
-        if not self._engine_cb:
+    async def set_status(self, status, engine):
+        if not self._status_cb:
             return
 
-        await aio.call(self._engine_cb, engine)
+        await aio.call(self._status_cb, status, engine)
 
     async def notify_events(self, events, persisted, with_ack):
         pass
@@ -67,12 +67,15 @@ def addr():
 
 
 async def test_engine_runner_create():
+    status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
 
-    engine_queue = aio.Queue()
+    def on_status(status, engine):
+        status_engine_queue.put_nowait((status, engine))
+
     backend = Backend()
-    eventer_server = EventerServer(engine_cb=engine_queue.put_nowait)
+    eventer_server = EventerServer(status_cb=on_status)
 
     runner = hat.event.server.runner.EngineRunner(
         conf=conf,
@@ -80,8 +83,12 @@ async def test_engine_runner_create():
         eventer_server=eventer_server,
         reset_monitor_ready_cb=lambda: None)
 
-    engine = await engine_queue.get()
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.STARTING
+    assert engine is None
 
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.OPERATIONAL
     assert engine.is_open
     assert runner.is_open
 
@@ -94,12 +101,15 @@ async def test_engine_runner_create():
 
 
 async def test_engine_runner_close_engine():
+    status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
 
-    engine_queue = aio.Queue()
+    def on_status(status, engine):
+        status_engine_queue.put_nowait((status, engine))
+
     backend = Backend()
-    eventer_server = EventerServer(engine_cb=engine_queue.put_nowait)
+    eventer_server = EventerServer(status_cb=on_status)
 
     runner = hat.event.server.runner.EngineRunner(
         conf=conf,
@@ -107,8 +117,12 @@ async def test_engine_runner_close_engine():
         eventer_server=eventer_server,
         reset_monitor_ready_cb=lambda: None)
 
-    engine = await engine_queue.get()
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.STARTING
+    assert engine is None
 
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.OPERATIONAL
     assert engine.is_open
     assert runner.is_open
 
@@ -125,13 +139,16 @@ async def test_engine_runner_close_engine():
 @pytest.mark.parametrize('state', hat.event.server.eventer_client.SyncedState)
 @pytest.mark.parametrize('count', [None, 0, 1])
 async def test_engine_runner_set_synced(state, count):
+    status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
 
+    def on_status(status, engine):
+        status_engine_queue.put_nowait((status, engine))
+
     events_queue = aio.Queue()
-    engine_queue = aio.Queue()
     backend = Backend(register_cb=events_queue.put_nowait)
-    eventer_server = EventerServer(engine_cb=engine_queue.put_nowait)
+    eventer_server = EventerServer(status_cb=on_status)
 
     runner = hat.event.server.runner.EngineRunner(
         conf=conf,
@@ -139,7 +156,12 @@ async def test_engine_runner_set_synced(state, count):
         eventer_server=eventer_server,
         reset_monitor_ready_cb=lambda: None)
 
-    engine = await engine_queue.get()
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.STARTING
+
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.OPERATIONAL
+
     assert engine.is_open
 
     events = await events_queue.get()
@@ -167,13 +189,17 @@ async def test_engine_runner_set_synced(state, count):
 
 
 async def test_engine_runner_reset():
+    status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
+
+    def on_status(status, engine):
+        status_engine_queue.put_nowait((status, engine))
 
     events_queue = aio.Queue()
     engine_queue = aio.Queue()
     backend = Backend(register_cb=events_queue.put_nowait)
-    eventer_server = EventerServer(engine_cb=engine_queue.put_nowait)
+    eventer_server = EventerServer(status_cb=on_status)
 
     runner = hat.event.server.runner.EngineRunner(
         conf=conf,
@@ -181,18 +207,33 @@ async def test_engine_runner_reset():
         eventer_server=eventer_server,
         reset_monitor_ready_cb=lambda: None)
 
-    engine = await engine_queue.get()
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.STARTING
+    assert engine is None
+
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.OPERATIONAL
     assert engine.is_open
 
-    assert engine_queue.empty()
+    assert status_engine_queue.empty()
 
     engine.restart()
     await engine.wait_closed()
 
-    engine = await engine_queue.get()
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.STOPPING
     assert engine is None
 
-    engine = await engine_queue.get()
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.STANDBY
+    assert engine is None
+
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.STARTING
+    assert engine is None
+
+    status, engine = await status_engine_queue.get()
+    assert status == common.Status.OPERATIONAL
     assert engine.is_open
 
     assert engine_queue.empty()
@@ -262,7 +303,7 @@ async def test_eventer_client_runner_set_monitor_state(addr):
                                             blessing_res=blessing_res)
     state = hat.monitor.component.State(info=None,
                                         components=[info])
-    await runner.set_monitor_state(state)
+    runner.set_monitor_state(state)
 
     server_id, state, count = await synced_queue.get()
     assert server_id == 42
@@ -276,7 +317,7 @@ async def test_eventer_client_runner_set_monitor_state(addr):
 
     state = hat.monitor.component.State(info=None,
                                         components=[])
-    await runner.set_monitor_state(state)
+    runner.set_monitor_state(state)
 
     assert runner.is_open
 
