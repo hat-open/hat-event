@@ -116,7 +116,8 @@ class MainRunner(aio.Resource):
                 data={'server_id': self._conf['server_id'],
                       'eventer_server': self._conf['eventer_server'],
                       'server_token': self._conf.get('server_token')},
-                state_cb=lambda _, state: self._monitor_state_cbs.notify(state))  # NOQA
+                state_cb=self._on_monitor_state,
+                close_req_cb=self._on_monitor_close_req)
             _bind_resource(self.async_group, self._monitor_component)
 
             self._eventer_client_runner.set_monitor_state(
@@ -160,6 +161,15 @@ class MainRunner(aio.Resource):
             eventer_client_runner=self._eventer_client_runner,
             reset_monitor_ready_cb=self._reset_monitor_ready.set)
         return self._engine_runner
+
+    def _on_monitor_state(self, monitor_component, state):
+        self._monitor_state_cbs.notify(state)
+
+    async def _on_monitor_close_req(self, monitor_component):
+        if not self._engine_runner:
+            return
+
+        await self._engine_runner.async_close()
 
     async def _on_backend_events(self, persisted, events):
         if not self._eventer_server:
