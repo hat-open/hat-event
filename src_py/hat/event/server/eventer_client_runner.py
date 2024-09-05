@@ -42,24 +42,24 @@ class EventerClientRunner(aio.Resource):
         self._synced_cb = synced_cb
         self._reconnect_delay = reconnect_delay
         self._async_group = aio.Group()
-        self._operational = False
-        self._operational_cbs = util.CallbackRegistry()
+        self._remote_active = False
+        self._remote_active_cbs = util.CallbackRegistry()
         self._valid_server_data = set()
-        self._active_server_data = set()
-        self._operational_server_data = set()
+        self._connecting_server_data = set()
+        self._remote_active_server_data = set()
 
     @property
     def async_group(self) -> aio.Group:
         return self._async_group
 
     @property
-    def operational(self) -> bool:
-        return self._operational
+    def remote_active(self) -> bool:
+        return self._remote_active
 
-    def register_operational_cb(self,
-                                cb: Callable[[bool], None]
-                                ) -> util.RegisterCallbackHandle:
-        return self._operational_cbs.register(cb)
+    def register_remote_active_cb(self,
+                                  cb: Callable[[bool], None]
+                                  ) -> util.RegisterCallbackHandle:
+        return self._remote_active_cbs.register(cb)
 
     def set_monitor_state(self, state: hat.monitor.component.State):
         self._valid_server_data = set(_get_eventer_server_data(
@@ -68,11 +68,11 @@ class EventerClientRunner(aio.Resource):
             state=state))
 
         for server_data in self._valid_server_data:
-            if server_data in self._active_server_data:
+            if server_data in self._connecting_server_data:
                 continue
 
             self.async_group.spawn(self._client_loop, server_data)
-            self._active_server_data.add(server_data)
+            self._connecting_server_data.add(server_data)
 
     async def _client_loop(self, server_data):
         try:
@@ -112,22 +112,22 @@ class EventerClientRunner(aio.Resource):
 
         finally:
             mlog.debug("closing eventer client runner loop")
-            self._active_server_data.remove(server_data)
+            self._connecting_server_data.remove(server_data)
             self._set_client_status(server_data, None)
 
     def _set_client_status(self, server_data, status):
-        if status == common.Status.OPERATIONAL:
-            self._operational_server_data.add(server_data)
+        if status is None or status == common.Status.STANDBY:
+            self._remote_active_server_data.discard(server_data)
 
         else:
-            self._operational_server_data.discard(server_data)
+            self._remote_active_server_data.add(server_data)
 
-        operational = bool(self._operational_server_data)
-        if operational == self._operational:
+        remote_active = bool(self._remote_active_server_data)
+        if remote_active == self._remote_active:
             return
 
-        self._operational = operational
-        self._operational_cbs.notify(operational)
+        self._remote_active = remote_active
+        self._remote_active_cbs.notify(remote_active)
 
 
 def _get_eventer_server_data(group, server_token, state):

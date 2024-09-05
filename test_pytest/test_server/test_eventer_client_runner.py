@@ -126,11 +126,11 @@ async def test_set_monitor_state(addr):
     await backend.async_close()
 
 
-async def test_operational(addr):
+async def test_remote_active(addr):
     conf = {'server_id': 1,
             'name': 'name1',
             'monitor_component': {'group': 'group1'}}
-    operational_queue = aio.Queue()
+    remote_active_queue = aio.Queue()
     synced_queue = aio.Queue()
 
     async def on_synced(server_id, state, count):
@@ -152,10 +152,10 @@ async def test_operational(addr):
         conf=conf,
         backend=backend,
         synced_cb=on_synced)
-    runner.register_operational_cb(operational_queue.put_nowait)
+    runner.register_remote_active_cb(remote_active_queue.put_nowait)
 
-    assert runner.operational is False
-    assert operational_queue.empty()
+    assert runner.remote_active is False
+    assert remote_active_queue.empty()
 
     blessing_req = hat.monitor.common.BlessingReq(token=123,
                                                   timestamp=None)
@@ -183,22 +183,30 @@ async def test_operational(addr):
     server_id, state, count = await synced_queue.get()
     assert state == hat.event.server.eventer_client.SyncedState.SYNCED
 
-    assert runner.operational is False
-    assert operational_queue.empty()
+    assert runner.remote_active is False
+    assert remote_active_queue.empty()
+
+    await eventer_server.set_status(common.Status.STARTING, None)
+
+    remote_active = await remote_active_queue.get()
+    assert remote_active is True
+    assert runner.remote_active is True
+    assert remote_active_queue.empty()
 
     await eventer_server.set_status(common.Status.OPERATIONAL, engine)
+    assert runner.remote_active is True
+    assert remote_active_queue.empty()
 
-    operational = await operational_queue.get()
-    assert operational is True
-    assert runner.operational is True
-    assert operational_queue.empty()
+    await eventer_server.set_status(common.Status.STOPPING, None)
+    assert runner.remote_active is True
+    assert remote_active_queue.empty()
 
     await eventer_server.set_status(common.Status.STANDBY, None)
 
-    operational = await operational_queue.get()
-    assert operational is False
-    assert runner.operational is False
-    assert operational_queue.empty()
+    remote_active = await remote_active_queue.get()
+    assert remote_active is False
+    assert runner.remote_active is False
+    assert remote_active_queue.empty()
 
     await runner.async_close()
     await engine.async_close()

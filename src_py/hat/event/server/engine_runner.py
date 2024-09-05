@@ -63,7 +63,7 @@ class EngineRunner(aio.Resource):
         try:
             mlog.debug("staring engine runner loop")
             while True:
-                await self._wait_while_eventer_client_runner_operational()
+                await self._wait_while_remote_active()
 
                 self._restart.clear()
 
@@ -111,17 +111,17 @@ class EngineRunner(aio.Resource):
 
         await self._backend.flush()
 
-        # TODO not needed with wait wile operational
-        await self._eventer_server.notify_events([], True, True)
+        # TODO not needed with _wait_while_remote_active
+        # await self._eventer_server.notify_events([], True, True)
 
         await self._eventer_server.set_status(common.Status.STANDBY, None)
 
-    async def _wait_while_eventer_client_runner_operational(self):
+    async def _wait_while_remote_active(self):
         if not self._eventer_client_runner:
             return
 
-        while self._eventer_client_runner.operational:
+        while self._eventer_client_runner.remote_active:
             event = asyncio.Event()
-            with self._eventer_client_runner.register_operational_cb(
+            with self._eventer_client_runner.register_remote_active_cb(
                     lambda _: event.set()):
                 await event.wait()

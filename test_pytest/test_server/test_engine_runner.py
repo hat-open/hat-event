@@ -67,26 +67,26 @@ class EventerClientRunner(aio.Resource):
 
     def __init__(self):
         self._async_group = aio.Group()
-        self._operational = False
-        self._operational_cbs = util.CallbackRegistry()
+        self._remote_active = False
+        self._remote_active_cbs = util.CallbackRegistry()
 
     @property
     def async_group(self) -> aio.Group:
         return self._async_group
 
     @property
-    def operational(self) -> bool:
-        return self._operational
+    def remote_active(self) -> bool:
+        return self._remote_active
 
-    def register_operational_cb(self, cb):
-        return self._operational_cbs.register(cb)
+    def register_remote_active_cb(self, cb):
+        return self._remote_active_cbs.register(cb)
 
     def set_monitor_state(self, state):
         pass
 
-    def set_operational(self, operational):
-        self._operational = operational
-        self._operational_cbs.notify(operational)
+    def set_remote_active(self, remote_active):
+        self._remote_active = remote_active
+        self._remote_active_cbs.notify(remote_active)
 
 
 @pytest.fixture
@@ -273,7 +273,7 @@ async def test_reset():
     await eventer_server.async_close()
 
 
-async def test_wait_while_operational():
+async def test_wait_while_remote_active():
     status_engine_queue = aio.Queue()
     conf = {'server_id': 123,
             'modules': []}
@@ -298,7 +298,7 @@ async def test_wait_while_operational():
     status, engine = await status_engine_queue.get()
     assert status == common.Status.OPERATIONAL
 
-    eventer_client_runner.set_operational(True)
+    eventer_client_runner.set_remote_active(True)
 
     engine.restart()
 
@@ -311,7 +311,7 @@ async def test_wait_while_operational():
     with pytest.raises(asyncio.TimeoutError):
         await aio.wait_for(status_engine_queue.get(), 0.01)
 
-    eventer_client_runner.set_operational(False)
+    eventer_client_runner.set_remote_active(False)
 
     status, engine = await status_engine_queue.get()
     assert status == common.Status.STARTING
