@@ -90,7 +90,7 @@ class EventerClientRunner(aio.Resource):
                         backend=self._backend,
                         client_token=self._conf.get('server_token'),
                         status_cb=functools.partial(self._set_client_status,
-                                                    server_data.server_id),
+                                                    server_data),
                         synced_cb=functools.partial(self._synced_cb,
                                                     server_data.server_id))
 
