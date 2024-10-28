@@ -4,8 +4,8 @@ import pytest
 
 from hat import aio
 from hat import util
-from hat.drivers import tcp
 from hat.drivers import chatter
+from hat.drivers import tcp
 
 from hat.event.eventer import common
 import hat.event.eventer

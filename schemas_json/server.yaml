@@ -47,6 +47,18 @@ properties:
             port:
                 type: integer
                 default: 23012
+    adminer_server:
+        type: object
+        required:
+            - host
+            - port
+        properties:
+            host:
+                type: string
+                default: "127.0.0.1"
+            port:
+                type: integer
+                default: 23015
     monitor_component:
         type: object
         required:

@@ -10,6 +10,7 @@ from hat.drivers import tcp
 import hat.monitor.component
 
 from hat.event import common
+from hat.event.server.adminer_server import create_adminer_server
 from hat.event.server.engine_runner import EngineRunner
 from hat.event.server.eventer_client_runner import EventerClientRunner
 from hat.event.server.eventer_server import create_eventer_server
@@ -30,6 +31,7 @@ class MainRunner(aio.Resource):
         self._async_group = aio.Group()
         self._backend = None
         self._eventer_server = None
+        self._adminer_server = None
         self._monitor_component = None
         self._eventer_client_runner = None
         self._engine_runner = None
@@ -93,6 +95,14 @@ class MainRunner(aio.Resource):
             server_token=self._conf.get('server_token'))
         _bind_resource(self.async_group, self._eventer_server)
 
+        if 'adminer_server' in self._conf:
+            mlog.debug("creating adminer server")
+            self._adminer_server = await create_adminer_server(
+                addr=tcp.Address(self._conf['adminer_server']['host'],
+                                 self._conf['adminer_server']['port']),
+                log_conf=self._conf.get('log'))
+            _bind_resource(self.async_group, self._adminer_server)
+
         if 'monitor_component' in self._conf:
             mlog.debug("creating eventer client runner")
             self._eventer_client_runner = EventerClientRunner(
@@ -142,6 +152,9 @@ class MainRunner(aio.Resource):
 
         if self._monitor_component:
             await self._monitor_component.async_close()
+
+        if self._adminer_server:
+            await self._adminer_server.async_close()
 
         if self._eventer_server:
             with contextlib.suppress(Exception):
