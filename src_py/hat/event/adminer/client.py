@@ -13,7 +13,7 @@ mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
-class EventAdminerError(Exception):
+class AdminerError(Exception):
     """Errors reported by Event Adminer Server"""
 
 
@@ -105,7 +105,7 @@ class Client(aio.Resource):
                     raise Exception('invalid response message type')
 
                 if msg_data[0] == 'error':
-                    future.set_exception(EventAdminerError(msg_data[1]))
+                    future.set_exception(AdminerError(msg_data[1]))
 
                 future.set_result(msg_data[1])
 

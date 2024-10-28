@@ -68,7 +68,7 @@ async def test_get_log_conf(addr):
                           ('error', 'abc'),
                           conv=msg.conv)
 
-    with pytest.raises(hat.event.adminer.EventAdminerError, match='abc'):
+    with pytest.raises(hat.event.adminer.AdminerError, match='abc'):
         await task
 
     await client.async_close()
@@ -107,7 +107,7 @@ async def test_set_log_conf(addr):
                           ('error', 'abc'),
                           conv=msg.conv)
 
-    with pytest.raises(hat.event.adminer.EventAdminerError, match='abc'):
+    with pytest.raises(hat.event.adminer.AdminerError, match='abc'):
         await task
 
     await client.async_close()
