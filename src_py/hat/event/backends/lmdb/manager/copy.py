@@ -14,7 +14,7 @@ def create_argument_parser(subparsers) -> argparse.ArgumentParser:
 
 
 def copy(args):
-    if args.dst_path.exist():
+    if args.dst_path.exists():
         raise Exception('destination db already exists')
 
     with common.ext_create_env(args.src_path, readonly=True) as src_env:
