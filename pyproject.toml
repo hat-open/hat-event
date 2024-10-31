@@ -1,6 +1,6 @@
 [project]
 name = "hat-event"
-version = "0.9.22"
+version = "0.9.23"
 description = "Hat event"
 readme = "README.rst"
 requires-python = ">=3.10"
@@ -13,7 +13,7 @@ dependencies = [
     "hat-monitor ~=0.8.13",
     "hat-sbs ~=0.7.2",
     "hat-util ~=0.6.16",
-    "lmdb ~=1.4.1",
+    "lmdb >=1.4.1, <1.6",
 ]
 
 [project.scripts]
