@@ -24,7 +24,7 @@ def _convert_system_db(src_txn, src_dbs, dst_env, dst_dbs):
     v09.write(dst_env, dst_dbs, v09.DbType.SYSTEM_SETTINGS,
               v09.SettingsId.VERSION, v09.version)
 
-    with src_txn.cursor(db=src_dbs[v07.SYSTEM]) as src_cursor:
+    with src_txn.cursor(db=src_dbs[v07.DbType.SYSTEM]) as src_cursor:
         for src_key, src_value in src_cursor:
             server_id = v07.decode_system_db_key(src_key)
             src_event_id, src_timestamp = v07.decode_system_db_value(src_value)
@@ -40,7 +40,7 @@ def _convert_system_db(src_txn, src_dbs, dst_env, dst_dbs):
 
 
 def _convert_ref_db(src_txn, src_dbs, dst_env, dst_dbs):
-    with src_txn.cursor(db=src_dbs[v07.REF]) as src_cursor:
+    with src_txn.cursor(db=src_dbs[v07.DbType.REF]) as src_cursor:
         for src_key, src_value in src_cursor:
             src_event_id = v07.decode_ref_db_key(src_key)
             src_event_refs = v07.decode_ref_db_value(src_value)
@@ -54,7 +54,7 @@ def _convert_ref_db(src_txn, src_dbs, dst_env, dst_dbs):
 
 
 def _convert_latest_db(src_txn, src_dbs, dst_env, dst_dbs):
-    with src_txn.cursor(db=src_dbs[v07.LATEST_DATA]) as src_cursor:
+    with src_txn.cursor(db=src_dbs[v07.DbType.LATEST_DATA]) as src_cursor:
         for src_key, src_value in src_cursor:
             event_type_ref = v07.decode_latest_data_db_key(src_key)
             src_event = v07.decode_latest_data_db_value(src_value)
@@ -64,7 +64,7 @@ def _convert_latest_db(src_txn, src_dbs, dst_env, dst_dbs):
             v09.write(dst_env, dst_dbs, v09.DbType.LATEST_DATA,
                       event_type_ref, dst_event)
 
-    with src_txn.cursor(db=src_dbs[v07.LATEST_TYPE]) as src_cursor:
+    with src_txn.cursor(db=src_dbs[v07.DbType.LATEST_TYPE]) as src_cursor:
         for src_key, src_value in src_cursor:
             event_type_ref = v07.decode_latest_type_db_key(src_key)
             event_type = v07.decode_latest_type_db_value(src_value)
@@ -74,7 +74,7 @@ def _convert_latest_db(src_txn, src_dbs, dst_env, dst_dbs):
 
 
 def _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs):
-    with src_txn.cursor(db=src_dbs[v07.ORDERED_DATA]) as src_cursor:
+    with src_txn.cursor(db=src_dbs[v07.DbType.ORDERED_DATA]) as src_cursor:
         for src_key, src_value in src_cursor:
             partition_id, src_timestamp, src_event_id = \
                 v07.decode_ordered_data_db_key(src_key)
@@ -87,7 +87,7 @@ def _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs):
             v09.write(dst_env, dst_dbs, v09.DbType.TIMESERIES_DATA,
                       (partition_id, dst_timestamp, dst_event_id), dst_event)
 
-    with src_txn.cursor(db=src_dbs[v07.ORDERED_PARTITION]) as src_cursor:
+    with src_txn.cursor(db=src_dbs[v07.DbType.ORDERED_PARTITION]) as src_cursor:  # NOQA
         for src_key, src_value in src_cursor:
             partition_id = v07.decode_ordered_partition_db_key(src_key)
             src_partition_data = v07.decode_ordered_partition_db_value(
@@ -98,7 +98,7 @@ def _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs):
             v09.write(dst_env, dst_dbs, v09.DbType.TIMESERIES_PARTITION,
                       partition_id, dst_partition_data)
 
-    with src_txn.cursor(db=src_dbs[v07.ORDERED_COUNT]) as src_cursor:
+    with src_txn.cursor(db=src_dbs[v07.DbType.ORDERED_COUNT]) as src_cursor:
         for src_key, src_value in src_cursor:
             partition_id = v07.decode_ordered_count_db_key(src_key)
             count = v07.decode_ordered_count_db_value(src_value)
@@ -126,7 +126,7 @@ def _convert_event_ref(src_event_ref):
         dst_event_id = _convert_event_id(src_event_id)
 
         dst_key = partition_id, dst_timestamp, dst_event_id
-        return v09.LatestEventRef(dst_key)
+        return v09.TimeseriesEventRef(dst_key)
 
     raise ValueError('unsupported event reference')
 
@@ -150,7 +150,7 @@ def _convert_payload(src_payload):
                                       data=src_payload.data)
 
     if src_payload.type == v07.EventPayloadType.JSON:
-        pass
+        return v09.EventPayloadJson(data=src_payload.data)
 
     if src_payload.type == v07.EventPayloadType.SBS:
         binary_type = (f'{src_payload.data.module}.{src_payload.data.type}'
