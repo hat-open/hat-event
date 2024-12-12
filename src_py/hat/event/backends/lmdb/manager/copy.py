@@ -25,69 +25,68 @@ def copy(args):
                        for db_type in common.DbType}
 
             with src_env.begin(buffers=True) as src_txn:
-                _copy_system(src_dbs, src_txn, dst_env, dst_dbs)
-                _copy_ref(src_dbs, src_txn, dst_env, dst_dbs,
-                          args.skip_latest, args.skip_timeseries)
+                with dst_env.begin(write=True) as dst_txn:
+                    _copy_system(src_dbs, src_txn, dst_dbs, dst_txn)
+                    _copy_ref(src_dbs, src_txn, dst_dbs, dst_txn,
+                              args.skip_latest, args.skip_timeseries)
 
-                if not args.skip_latest:
-                    _copy_latest(src_dbs, src_txn, dst_env, dst_dbs)
+                    if not args.skip_latest:
+                        _copy_latest(src_dbs, src_txn, dst_dbs, dst_txn)
 
-                if not args.skip_timeseries:
-                    _copy_timeseries(src_dbs, src_txn, dst_env, dst_dbs)
+                    if not args.skip_timeseries:
+                        _copy_timeseries(src_dbs, src_txn, dst_dbs, dst_txn)
 
 
-def _copy_system(src_dbs, src_txn, dst_env, dst_dbs):
+def _copy_system(src_dbs, src_txn, dst_dbs, dst_txn):
     for db_type in [common.DbType.SYSTEM_SETTINGS,
                     common.DbType.SYSTEM_LAST_EVENT_ID,
                     common.DbType.SYSTEM_LAST_TIMESTAMP]:
-        _copy_db(src_dbs[db_type], src_txn, dst_env, dst_dbs[db_type])
+        _copy_db(src_dbs[db_type], src_txn, dst_dbs[db_type], dst_txn)
 
 
-def _copy_ref(src_dbs, src_txn, dst_env, dst_dbs, skip_latest,
+def _copy_ref(src_dbs, src_txn, dst_dbs, dst_txn, skip_latest,
               skip_timeseries):
     db_type = common.DbType.REF
     db_def = common.db_defs[db_type]
 
     for key, value in src_txn.cursor(db=src_dbs[db_type]):
-        with dst_env.begin(db=dst_dbs[db_type], write=True) as dst_txn:
-            if not skip_latest and not skip_timeseries:
-                dst_txn.put(key, value)
-                continue
+        if not skip_latest and not skip_timeseries:
+            dst_txn.put(key, value, db=dst_dbs[db_type])
+            continue
 
-            event_refs = db_def.decode_value(value)
+        event_refs = db_def.decode_value(value)
 
-            if skip_latest:
-                event_refs = (
-                    event_ref for event_ref in event_refs
-                    if not isinstance(event_ref, common.LatestEventRef))
+        if skip_latest:
+            event_refs = (
+                event_ref for event_ref in event_refs
+                if not isinstance(event_ref, common.LatestEventRef))
 
-            if skip_timeseries:
-                event_refs = (
-                    event_ref for event_ref in event_refs
-                    if not isinstance(event_ref, common.TimeseriesEventRef))
+        if skip_timeseries:
+            event_refs = (
+                event_ref for event_ref in event_refs
+                if not isinstance(event_ref, common.TimeseriesEventRef))
 
-            event_refs = set(event_refs)
-            if not event_refs:
-                continue
+        event_refs = set(event_refs)
+        if not event_refs:
+            continue
 
-            value = db_def.encode_value(event_refs)
-            dst_txn.put(key, value)
+        value = db_def.encode_value(event_refs)
+        dst_txn.put(key, value, db=dst_dbs[db_type])
 
 
-def _copy_latest(src_dbs, src_txn, dst_env, dst_dbs):
+def _copy_latest(src_dbs, src_txn, dst_dbs, dst_txn):
     for db_type in [common.DbType.LATEST_DATA,
                     common.DbType.LATEST_TYPE]:
-        _copy_db(src_dbs[db_type], src_txn, dst_env, dst_dbs[db_type])
+        _copy_db(src_dbs[db_type], src_txn, dst_dbs[db_type], dst_txn)
 
 
-def _copy_timeseries(src_dbs, src_txn, dst_env, dst_dbs):
+def _copy_timeseries(src_dbs, src_txn, dst_dbs, dst_txn):
     for db_type in [common.DbType.TIMESERIES_DATA,
                     common.DbType.TIMESERIES_PARTITION,
                     common.DbType.TIMESERIES_COUNT]:
-        _copy_db(src_dbs[db_type], src_txn, dst_env, dst_dbs[db_type])
+        _copy_db(src_dbs[db_type], src_txn, dst_dbs[db_type], dst_txn)
 
 
-def _copy_db(src_db, src_txn, dst_env, dst_db):
+def _copy_db(src_db, src_txn, dst_db, dst_txn):
     for key, value in src_txn.cursor(db=src_db):
-        with dst_env.begin(db=dst_db, write=True) as dst_txn:
-            dst_txn.put(key, value)
+        dst_txn.put(key, value, db=dst_db)
