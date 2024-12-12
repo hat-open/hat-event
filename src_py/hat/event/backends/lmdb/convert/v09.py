@@ -38,8 +38,8 @@ def read(dbs: dict[DbType, lmdb._Database],
             yield key, value
 
 
-def write(env: lmdb.Environment,
-          dbs: dict[DbType, lmdb._Database],
+def write(dbs: dict[DbType, lmdb._Database],
+          txn: lmdb.Transaction,
           db_type: DbType,
           key: DbKey,
           value: DbValue):
@@ -47,5 +47,4 @@ def write(env: lmdb.Environment,
     encoded_key = db_def.encode_key(key)
     encoded_value = db_def.encode_value(value)
 
-    with env.begin(write=True) as txn:
-        txn.put(encoded_key, encoded_value, db=dbs[db_type])
+    txn.put(encoded_key, encoded_value, db=dbs[db_type])

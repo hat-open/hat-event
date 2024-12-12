@@ -14,14 +14,15 @@ def convert(src_path: Path,
                        for db_type in v09.DbType}
 
             with src_env.begin(buffers=True) as src_txn:
-                _convert_system_db(src_txn, src_dbs, dst_env, dst_dbs)
-                _convert_ref_db(src_txn, src_dbs, dst_env, dst_dbs)
-                _convert_latest_db(src_txn, src_dbs, dst_env, dst_dbs)
-                _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs)
+                with dst_env.begin(write=True) as dst_txn:
+                    _convert_system_db(src_txn, src_dbs, dst_txn, dst_dbs)
+                    _convert_ref_db(src_txn, src_dbs, dst_txn, dst_dbs)
+                    _convert_latest_db(src_txn, src_dbs, dst_txn, dst_dbs)
+                    _convert_timeseries_db(src_txn, src_dbs, dst_txn, dst_dbs)
 
 
-def _convert_system_db(src_txn, src_dbs, dst_env, dst_dbs):
-    v09.write(dst_env, dst_dbs, v09.DbType.SYSTEM_SETTINGS,
+def _convert_system_db(src_txn, src_dbs, dst_txn, dst_dbs):
+    v09.write(dst_dbs, dst_txn, v09.DbType.SYSTEM_SETTINGS,
               v09.SettingsId.VERSION, v09.version)
 
     with src_txn.cursor(db=src_dbs[v07.DbType.SYSTEM]) as src_cursor:
@@ -32,14 +33,14 @@ def _convert_system_db(src_txn, src_dbs, dst_env, dst_dbs):
             dst_event_id = _convert_event_id(src_event_id)
             dst_timestamp = _convert_timestamp(src_timestamp)
 
-            v09.write(dst_env, dst_dbs, v09.DbType.SYSTEM_LAST_EVENT_ID,
+            v09.write(dst_dbs, dst_txn, v09.DbType.SYSTEM_LAST_EVENT_ID,
                       server_id, dst_event_id)
 
-            v09.write(dst_env, dst_dbs, v09.DbType.SYSTEM_LAST_TIMESTAMP,
+            v09.write(dst_dbs, dst_txn, v09.DbType.SYSTEM_LAST_TIMESTAMP,
                       server_id, dst_timestamp)
 
 
-def _convert_ref_db(src_txn, src_dbs, dst_env, dst_dbs):
+def _convert_ref_db(src_txn, src_dbs, dst_txn, dst_dbs):
     with src_txn.cursor(db=src_dbs[v07.DbType.REF]) as src_cursor:
         for src_key, src_value in src_cursor:
             src_event_id = v07.decode_ref_db_key(src_key)
@@ -49,11 +50,11 @@ def _convert_ref_db(src_txn, src_dbs, dst_env, dst_dbs):
             dst_event_refs = {_convert_event_ref(src_event_ref)
                               for src_event_ref in src_event_refs}
 
-            v09.write(dst_env, dst_dbs, v09.DbType.REF,
+            v09.write(dst_dbs, dst_txn, v09.DbType.REF,
                       dst_event_id, dst_event_refs)
 
 
-def _convert_latest_db(src_txn, src_dbs, dst_env, dst_dbs):
+def _convert_latest_db(src_txn, src_dbs, dst_txn, dst_dbs):
     with src_txn.cursor(db=src_dbs[v07.DbType.LATEST_DATA]) as src_cursor:
         for src_key, src_value in src_cursor:
             event_type_ref = v07.decode_latest_data_db_key(src_key)
@@ -61,7 +62,7 @@ def _convert_latest_db(src_txn, src_dbs, dst_env, dst_dbs):
 
             dst_event = _convert_event(src_event)
 
-            v09.write(dst_env, dst_dbs, v09.DbType.LATEST_DATA,
+            v09.write(dst_dbs, dst_txn, v09.DbType.LATEST_DATA,
                       event_type_ref, dst_event)
 
     with src_txn.cursor(db=src_dbs[v07.DbType.LATEST_TYPE]) as src_cursor:
@@ -69,11 +70,11 @@ def _convert_latest_db(src_txn, src_dbs, dst_env, dst_dbs):
             event_type_ref = v07.decode_latest_type_db_key(src_key)
             event_type = v07.decode_latest_type_db_value(src_value)
 
-            v09.write(dst_env, dst_dbs, v09.DbType.LATEST_TYPE,
+            v09.write(dst_dbs, dst_txn, v09.DbType.LATEST_TYPE,
                       event_type_ref, event_type)
 
 
-def _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs):
+def _convert_timeseries_db(src_txn, src_dbs, dst_txn, dst_dbs):
     with src_txn.cursor(db=src_dbs[v07.DbType.ORDERED_DATA]) as src_cursor:
         for src_key, src_value in src_cursor:
             partition_id, src_timestamp, src_event_id = \
@@ -84,7 +85,7 @@ def _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs):
             dst_event_id = _convert_event_id(src_event_id)
             dst_event = _convert_event(src_event)
 
-            v09.write(dst_env, dst_dbs, v09.DbType.TIMESERIES_DATA,
+            v09.write(dst_dbs, dst_txn, v09.DbType.TIMESERIES_DATA,
                       (partition_id, dst_timestamp, dst_event_id), dst_event)
 
     with src_txn.cursor(db=src_dbs[v07.DbType.ORDERED_PARTITION]) as src_cursor:  # NOQA
@@ -95,7 +96,7 @@ def _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs):
 
             dst_partition_data = _convert_partition_data(src_partition_data)
 
-            v09.write(dst_env, dst_dbs, v09.DbType.TIMESERIES_PARTITION,
+            v09.write(dst_dbs, dst_txn, v09.DbType.TIMESERIES_PARTITION,
                       partition_id, dst_partition_data)
 
     with src_txn.cursor(db=src_dbs[v07.DbType.ORDERED_COUNT]) as src_cursor:
@@ -103,7 +104,7 @@ def _convert_timeseries_db(src_txn, src_dbs, dst_env, dst_dbs):
             partition_id = v07.decode_ordered_count_db_key(src_key)
             count = v07.decode_ordered_count_db_value(src_value)
 
-            v09.write(dst_env, dst_dbs, v09.DbType.TIMESERIES_COUNT,
+            v09.write(dst_dbs, dst_txn, v09.DbType.TIMESERIES_COUNT,
                       partition_id, count)
 
 
