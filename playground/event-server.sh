@@ -36,6 +36,7 @@ log:
             - console_handler
             - syslog_handler
     disable_existing_loggers: false
+name: event1
 server_id: 1
 backend:
     module: hat.event.backends.dummy
@@ -45,6 +46,6 @@ eventer_server:
     port: 23012
 EOF
 
-exec $PYTHON -m hat.event.server \
+exec $PYTHON -m cProfile -o $DATA_PATH/profile -m hat.event.server \
     --conf $CONF_PATH \
     "$@"
