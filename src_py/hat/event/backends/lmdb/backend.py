@@ -171,7 +171,7 @@ class LmdbBackend(common.Backend):
         self._registered_count += len(events)
 
         if self._registered_count > max_registered_count:
-            await self._flush_queue.put(self._loop.create_future())
+            await self._flush_queue.put(None)
 
         if self._registered_events_cb:
             await aio.call(self._registered_events_cb, events)
@@ -236,7 +236,7 @@ class LmdbBackend(common.Backend):
 
                 while futures:
                     future = futures.popleft()
-                    if not future.done():
+                    if future and not future.done():
                         future.set_result(None)
 
         except Exception as e:
@@ -250,7 +250,7 @@ class LmdbBackend(common.Backend):
                 futures.append(self._flush_queue.get_nowait())
 
             for future in futures:
-                if not future.done():
+                if future and not future.done():
                     future.set_exception(common.BackendClosedError())
 
             await aio.uncancellable(cleanup())
