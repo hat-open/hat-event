@@ -32,7 +32,7 @@ def ext_create(env: environment.Environment,
                txn: lmdb.Transaction,
                conditions: Conditions,
                partitions: Iterable[Partition],
-               max_results: int = 4096
+               max_results: int
                ) -> 'TimeseriesDb':
     db = TimeseriesDb()
     db._env = env
