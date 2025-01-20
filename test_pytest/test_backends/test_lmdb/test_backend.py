@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from hat import aio
+from hat import json
 
 from hat.event.backends.lmdb import common
 from hat.event.backends.lmdb import info
@@ -38,7 +39,8 @@ def create_conf(db_path):
 
 def test_validate_conf(create_conf):
     conf = create_conf()
-    info.json_schema_repo.validate(info.json_schema_id, conf)
+    validator = json.DefaultSchemaValidator(info.json_schema_repo)
+    validator.validate(info.json_schema_id, conf)
 
 
 async def test_create(create_conf):
