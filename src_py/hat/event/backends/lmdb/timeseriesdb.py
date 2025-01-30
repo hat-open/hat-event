@@ -39,6 +39,7 @@ def ext_create(env: environment.Environment,
     db._conditions = conditions
     db._max_results = max_results
     db._changes = collections.defaultdict(collections.deque)
+    db._event_type_partitions = {}  # type: dict[common.EventType, Collection[tuple[common.PartitionId, Partition]]]  # NOQA
 
     # depending on dict order
     db._partitions = dict(_ext_init_partitions(env, txn, partitions))
@@ -51,10 +52,16 @@ class TimeseriesDb:
     def add(self,
             event: common.Event
             ) -> Iterable[common.EventRef]:
-        for partition_id, partition in self._partitions.items():
-            if not partition.subscription.matches(event.type):
-                continue
+        partitions = self._event_type_partitions.get(event.type)
+        if partitions is None:
+            partitions = [
+                (partition_id, partition)
+                for partition_id, partition in self._partitions.items()
+                if partition.subscription.matches(event.type)]
 
+            self._event_type_partitions[event.type] = partitions
+
+        for partition_id, partition in partitions:
             if partition.order_by == common.OrderBy.TIMESTAMP:
                 timestamp = event.timestamp
 

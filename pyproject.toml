@@ -1,6 +1,6 @@
 [project]
 name = "hat-event"
-version = "0.9.29"
+version = "0.9.30"
 description = "Hat event"
 readme = "README.rst"
 requires-python = ">=3.10"
@@ -43,6 +43,7 @@ build-backend = "hat.doit.pep517"
 [tool.pytest.ini_options]
 testpaths = ["test_pytest"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 timeout = 300
 
 [tool.coverage.report]
