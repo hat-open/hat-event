@@ -21,7 +21,8 @@ default_partitions = [
 async def create_timeseries_db(env,
                                conditions=Conditions([]),
                                partitions=default_partitions,
-                               max_results=4096):
+                               max_results=4096,
+                               event_type_cache_size=256 * 1024):
 
     def ext_create():
         with env.ext_begin(write=True) as txn:
@@ -30,7 +31,8 @@ async def create_timeseries_db(env,
                 txn=txn,
                 conditions=conditions,
                 partitions=partitions,
-                max_results=max_results)
+                max_results=max_results,
+                event_type_cache_size=event_type_cache_size)
 
     return await env.execute(ext_create)
 

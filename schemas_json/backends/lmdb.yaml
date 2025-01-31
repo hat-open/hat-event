@@ -59,6 +59,9 @@ properties:
     timeseries_max_results:
         type: integer
         default: 4096
+    timeseries_event_type_cache_size:
+        type: integer
+        default: 262144
 $defs:
     event_types:
         type: array

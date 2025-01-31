@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 import collections
+import functools
 import itertools
 import typing
 
@@ -32,7 +33,8 @@ def ext_create(env: environment.Environment,
                txn: lmdb.Transaction,
                conditions: Conditions,
                partitions: Iterable[Partition],
-               max_results: int
+               max_results: int,
+               event_type_cache_size: int
                ) -> 'TimeseriesDb':
     db = TimeseriesDb()
     db._env = env
@@ -44,6 +46,13 @@ def ext_create(env: environment.Environment,
     # depending on dict order
     db._partitions = dict(_ext_init_partitions(env, txn, partitions))
 
+    db._get_event_type_partitions = functools.lru_cache(
+        maxsize=event_type_cache_size)(
+        lambda event_type: [
+            (partition_id, partition)
+            for partition_id, partition in db._partitions.items()
+            if partition.subscription.matches(event_type)])
+
     return db
 
 
@@ -52,14 +61,7 @@ class TimeseriesDb:
     def add(self,
             event: common.Event
             ) -> Iterable[common.EventRef]:
-        partitions = self._event_type_partitions.get(event.type)
-        if partitions is None:
-            partitions = [
-                (partition_id, partition)
-                for partition_id, partition in self._partitions.items()
-                if partition.subscription.matches(event.type)]
-
-            self._event_type_partitions[event.type] = partitions
+        partitions = self._get_event_type_partitions(event.type)
 
         for partition_id, partition in partitions:
             if partition.order_by == common.OrderBy.TIMESTAMP:
