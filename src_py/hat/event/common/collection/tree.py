@@ -45,18 +45,17 @@ def _create_node():
     return _Node(set(), collections.defaultdict(_create_node))
 
 
-def _get(node, event_type):
+def _get(node, event_type, event_type_index=0):
     if '*' in node.children:
         yield from node.children['*'].values
 
-    if not event_type:
+    if event_type_index >= len(event_type):
         yield from node.values
         return
 
-    head, rest = event_type[0], event_type[1:]
-
+    head = event_type[event_type_index]
     if head in node.children:
-        yield from _get(node.children[head], rest)
+        yield from _get(node.children[head], event_type, event_type_index + 1)
 
     if '?' in node.children:
-        yield from _get(node.children['?'], rest)
+        yield from _get(node.children['?'], event_type, event_type_index + 1)
