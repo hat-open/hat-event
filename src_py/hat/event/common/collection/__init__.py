@@ -2,14 +2,17 @@ from collections.abc import Hashable, Iterable
 import typing
 
 from hat.event.common.collection.common import EventTypeCollection
-from hat.event.common.collection.list import ListEventTypeCollection
-from hat.event.common.collection.tree import TreeEventTypeCollection
+from hat.event.common.collection.pytree import PyTreeEventTypeCollection
 from hat.event.common.subscription import Subscription
+
+try:
+    from hat.event.common.collection.ctree import CTreeEventTypeCollection
+
+except ImportError:
+    CTreeEventTypeCollection = None
 
 
 __all__ = ['EventTypeCollection',
-           'ListEventTypeCollection',
-           'TreeEventTypeCollection',
            'create_event_type_collection']
 
 
@@ -18,9 +21,7 @@ T = typing.TypeVar('T', bound=Hashable)
 
 def create_event_type_collection(items: Iterable[Subscription, T] = []
                                  ) -> EventTypeCollection[T]:
-    collection = TreeEventTypeCollection()
+    if CTreeEventTypeCollection is not None:
+        return CTreeEventTypeCollection(items)
 
-    for subscription, value in items:
-        collection.add(subscription, value)
-
-    return collection
+    return PyTreeEventTypeCollection(items)

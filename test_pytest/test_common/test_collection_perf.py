@@ -3,17 +3,19 @@ import functools
 import pytest
 
 from hat.event import common
+from hat.event.common.collection.pylist import PyListEventTypeCollection
+from hat.event.common.collection.pytree import PyTreeEventTypeCollection
 
 
 pytestmark = pytest.mark.perf
 
 
-collection_classes = [common.ListEventTypeCollection,
-                      common.TreeEventTypeCollection]
+collection_classes = [PyListEventTypeCollection,
+                      PyTreeEventTypeCollection]
 
 
 @pytest.mark.parametrize("cls", collection_classes)
-@pytest.mark.parametrize("timeseries_count", [1, 10, 100, 10_000])
+@pytest.mark.parametrize("timeseries_count", [1, 10, 100, 14_000])
 @pytest.mark.parametrize("with_cache", [False, True])
 def test_get_timeseries(duration, cls, timeseries_count, with_cache):
 
@@ -24,11 +26,8 @@ def test_get_timeseries(duration, cls, timeseries_count, with_cache):
     event_types = [('a', 'b', 'c', str(i))
                    for i in range(timeseries_count)]
 
-    collection = cls()
-
-    for event_type in event_types:
-        subscription = common.create_subscription([event_type])
-        collection.add(subscription, object())
+    collection = cls((common.create_subscription([event_type]), object())
+                     for event_type in event_types)
 
     if with_cache:
         get_element = functools.lru_cache(maxsize=timeseries_count)(

@@ -4,11 +4,14 @@ import typing
 from hat.event.common.collection import common
 
 
-class TreeEventTypeCollection(common.EventTypeCollection):
+class PyTreeEventTypeCollection(common.EventTypeCollection):
 
-    def __init__(self):
+    def __init__(self, items=[]):
         self._root = _create_node()
         self._value_nodes = collections.defaultdict(collections.deque)
+
+        for subscription, value in items:
+            self.add(subscription, value)
 
     def add(self, subscription, value):
         for query_type in subscription.get_query_types():

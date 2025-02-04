@@ -1,10 +1,12 @@
 import pytest
 
 from hat.event import common
+from hat.event.common.collection.pylist import PyListEventTypeCollection
+from hat.event.common.collection.pytree import PyTreeEventTypeCollection
 
 
-collection_classes = [common.ListEventTypeCollection,
-                      common.TreeEventTypeCollection]
+collection_classes = [PyListEventTypeCollection,
+                      PyTreeEventTypeCollection]
 
 
 @pytest.mark.parametrize("cls", collection_classes)

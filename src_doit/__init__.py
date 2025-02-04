@@ -53,7 +53,9 @@ def task_clean_all():
         json_schema_repo_path,
         sbs_repo_path,
         *(src_py_dir /
-          'hat/event/common/subscription').glob('_csubscription.*')
+          'hat/event/common/subscription').glob('_csubscription.*'),
+        *(src_py_dir /
+          'hat/event/common/collection').glob('_ctree.*')
         ])]}
 
 

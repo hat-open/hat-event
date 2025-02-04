@@ -12,7 +12,7 @@ T = typing.TypeVar('T', bound=Hashable)
 class EventTypeCollection(abc.ABC, typing.Generic[T]):
 
     @abc.abstractmethod
-    def __init__(self):
+    def __init__(self, items: Iterable[Subscription, T] = []):
         pass
 
     @abc.abstractmethod
