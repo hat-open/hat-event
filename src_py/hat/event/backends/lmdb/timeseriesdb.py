@@ -46,12 +46,13 @@ def ext_create(env: environment.Environment,
     # depending on dict order
     db._partitions = dict(_ext_init_partitions(env, txn, partitions))
 
+    partitions_collection = common.create_event_type_collection(
+        (partition.subscription, (partition_id, partition))
+        for partition_id, partition in db._partitions.items())
+
     db._get_event_type_partitions = functools.lru_cache(
         maxsize=event_type_cache_size)(
-        lambda event_type: [
-            (partition_id, partition)
-            for partition_id, partition in db._partitions.items()
-            if partition.subscription.matches(event_type)])
+        lambda event_type: list(partitions_collection.get(event_type)))
 
     return db
 
