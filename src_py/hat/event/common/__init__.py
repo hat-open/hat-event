@@ -12,7 +12,8 @@ from hat.event.common.backend import (BackendClosedError,
                                       import_backend_info)
 from hat.event.common.collection import (EventTypeCollection,
                                          ListEventTypeCollection,
-                                         TreeEventTypeCollection)
+                                         TreeEventTypeCollection,
+                                         create_event_type_collection)
 from hat.event.common.common import (json_schema_repo,
                                      sbs_repo,
                                      ServerId,
@@ -81,6 +82,7 @@ __all__ = ['BackendClosedError',
            'EventTypeCollection',
            'ListEventTypeCollection',
            'TreeEventTypeCollection',
+           'create_event_type_collection',
            'json_schema_repo',
            'sbs_repo',
            'ServerId',
