@@ -3,6 +3,7 @@ import functools
 import pytest
 
 from hat.event import common
+from hat.event.common.collection.ctree import CTreeEventTypeCollection
 from hat.event.common.collection.pylist import PyListEventTypeCollection
 from hat.event.common.collection.pytree import PyTreeEventTypeCollection
 
@@ -11,7 +12,8 @@ pytestmark = pytest.mark.perf
 
 
 collection_classes = [PyListEventTypeCollection,
-                      PyTreeEventTypeCollection]
+                      PyTreeEventTypeCollection,
+                      CTreeEventTypeCollection]
 
 
 @pytest.mark.parametrize("cls", collection_classes)

@@ -15,10 +15,9 @@ static void free_children(node_t *node) {
     if (!node->children)
         return;
 
-    node_t *child;
     hat_ht_iter_t iter = NULL;
     while ((iter = hat_ht_iter_next(node->children, iter))) {
-        hat_ht_iter_value(iter, (void **)&child);
+        node_t *child = hat_ht_iter_value(iter);
         free_children(child);
         PyMem_Free(child);
     }
@@ -86,7 +85,7 @@ static int add_query_type(node_t *node, PyObject *query_type_iter) {
         }
     }
 
-    node_t *child = hat_ht_get(node->children, (uint8_t *)key, key_size);
+    node_t *child = hat_ht_get(node->children, (void *)key, key_size);
     if (!child) {
         child = PyMem_Malloc(sizeof(node_t));
         if (!child) {
@@ -97,7 +96,7 @@ static int add_query_type(node_t *node, PyObject *query_type_iter) {
 
         *child =
             (node_t){.is_leaf = false, .has_star = false, .children = NULL};
-        if (hat_ht_set(node->children, (uint8_t *)key, key_size, child)) {
+        if (hat_ht_set(node->children, (void *)key, key_size, child)) {
             PyMem_Free(child);
             Py_DECREF(subtype);
             PyErr_SetString(PyExc_RuntimeError, "internal error");
@@ -114,10 +113,9 @@ static int resize_children(node_t *node) {
     if (!node->children)
         return 0;
 
-    node_t *child;
     hat_ht_iter_t iter = NULL;
     while ((iter = hat_ht_iter_next(node->children, iter))) {
-        hat_ht_iter_value(iter, (void **)&child);
+        node_t *child = hat_ht_iter_value(iter);
         if (resize_children(child))
             return 1;
     }
@@ -166,12 +164,9 @@ static int get_query_types(node_t *node, PyObject *prefix, PyObject *deque) {
 
     hat_ht_iter_t iter = NULL;
     while ((iter = hat_ht_iter_next(node->children, iter))) {
-        size_t key_size;
-        uint8_t *key;
-        hat_ht_iter_key(iter, &key, &key_size);
-
-        node_t *child;
-        hat_ht_iter_value(iter, (void **)&child);
+        char *key = hat_ht_iter_key(iter);
+        size_t key_size = hat_ht_iter_key_size(iter);
+        node_t *child = hat_ht_iter_value(iter);
 
         Py_ssize_t child_prefix_len = PyTuple_Size(prefix) + 1;
         PyObject *child_prefix = PyTuple_New(child_prefix_len);
@@ -219,12 +214,12 @@ static bool matches(node_t *node, PyObject *event_type,
     const char *key = PyUnicode_AsUTF8AndSize(subtype, &key_size);
     if (!key)
         return false;
-    child = hat_ht_get(node->children, (uint8_t *)key, key_size);
+    child = hat_ht_get(node->children, (void *)key, key_size);
     if (child &&
         matches(child, event_type, event_type_size, event_type_index + 1))
         return true;
 
-    child = hat_ht_get(node->children, (uint8_t *)"?", 1);
+    child = hat_ht_get(node->children, "?", 1);
     if (child &&
         matches(child, event_type, event_type_size, event_type_index + 1))
         return true;
@@ -253,31 +248,29 @@ static bool isdisjoint(node_t *first, node_t *second) {
     node_t *second_child;
     hat_ht_iter_t iter = NULL;
 
-    first_child = hat_ht_get(first->children, (uint8_t *)"?", 1);
+    first_child = hat_ht_get(first->children, "?", 1);
     if (first_child) {
         while ((iter = hat_ht_iter_next(second->children, iter))) {
-            hat_ht_iter_value(iter, (void **)&second_child);
+            second_child = hat_ht_iter_value(iter);
 
             if (!isdisjoint(first_child, second_child))
                 return false;
         }
     }
 
-    second_child = hat_ht_get(second->children, (uint8_t *)"?", 1);
+    second_child = hat_ht_get(second->children, "?", 1);
     if (second_child) {
         while ((iter = hat_ht_iter_next(first->children, iter))) {
-            hat_ht_iter_value(iter, (void **)&first_child);
+            first_child = hat_ht_iter_value(iter);
 
             if (!isdisjoint(first_child, second_child))
                 return false;
         }
     }
 
-    size_t key_size;
-    uint8_t *key;
-
     while ((iter = hat_ht_iter_next(first->children, iter))) {
-        hat_ht_iter_key(iter, &key, &key_size);
+        char *key = hat_ht_iter_key(iter);
+        size_t key_size = hat_ht_iter_key_size(iter);
         if (key_size == 1 && *key == '?')
             continue;
 
@@ -285,13 +278,14 @@ static bool isdisjoint(node_t *first, node_t *second) {
         if (!second_child)
             continue;
 
-        hat_ht_iter_value(iter, (void **)&first_child);
+        first_child = hat_ht_iter_value(iter);
         if (!isdisjoint(first_child, second_child))
             return false;
     }
 
     while ((iter = hat_ht_iter_next(second->children, iter))) {
-        hat_ht_iter_key(iter, &key, &key_size);
+        char *key = hat_ht_iter_key(iter);
+        size_t key_size = hat_ht_iter_key_size(iter);
         if (key_size == 1 && *key == '?')
             continue;
 
@@ -299,7 +293,7 @@ static bool isdisjoint(node_t *first, node_t *second) {
         if (!first_child)
             continue;
 
-        hat_ht_iter_value(iter, (void **)&second_child);
+        second_child = hat_ht_iter_value(iter);
         if (!isdisjoint(first_child, second_child))
             return false;
     }
