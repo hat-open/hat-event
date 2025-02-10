@@ -190,21 +190,36 @@ class TimeseriesDb:
 
 
 def _ext_init_partitions(env, txn, partitions):
-    db_data = dict(env.ext_read(txn, common.DbType.TIMESERIES_PARTITION))
-    next_partition_ids = itertools.count(max(db_data.keys(), default=0) + 1)
+
+    def data_to_cache_key(data):
+        return (data['order'],
+                tuple(tuple(event_type)
+                      for event_type in data['subscriptions']))
+
+    max_partition_id = 0
+    cache = {}
+
+    for partition_id, partition_data in env.ext_read(
+            txn, common.DbType.TIMESERIES_PARTITION):
+        if partition_id > max_partition_id:
+            max_partition_id = partition_id
+
+        cache_key = data_to_cache_key(partition_data)
+        cache[cache_key] = partition_id
+
+    next_partition_ids = itertools.count(max_partition_id + 1)
 
     for partition in partitions:
         event_types = sorted(partition.subscription.get_query_types())
         partition_data = {'order': partition.order_by.value,
                           'subscriptions': [list(i) for i in event_types]}
 
-        for partition_id, i in db_data.items():
-            if i == partition_data:
-                break
+        cache_key = data_to_cache_key(partition_data)
+        partition_id = cache.get(cache_key)
 
-        else:
+        if partition_id is None:
             partition_id = next(next_partition_ids)
-            db_data[partition_id] = partition_data
+            cache[cache_key] = partition_id
             env.ext_write(txn, common.DbType.TIMESERIES_PARTITION,
                           [(partition_id, partition_data)])
 
