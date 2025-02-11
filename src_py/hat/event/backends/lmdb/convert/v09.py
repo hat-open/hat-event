@@ -21,6 +21,7 @@ DbType = common.DbType
 SettingsId = common.SettingsId
 LatestEventRef = common.LatestEventRef
 TimeseriesEventRef = common.TimeseriesEventRef
+EventRef = common.EventRef
 db_defs = common.db_defs
 create_env = common.ext_create_env
 open_db = common.ext_open_db
