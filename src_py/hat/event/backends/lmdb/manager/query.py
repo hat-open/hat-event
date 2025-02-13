@@ -200,7 +200,7 @@ def _query_timeseries(dbs, txn, partition_id, server_id, event_types):
                                               else event_types)
 
     for key, value in txn.cursor(db=db):
-        decoded_partition_id, _, event_id = db_def.decode(key)
+        decoded_partition_id, _, event_id = db_def.decode_key(key)
 
         if partition_id is not None and partition_id != decoded_partition_id:
             continue
@@ -212,4 +212,4 @@ def _query_timeseries(dbs, txn, partition_id, server_id, event_types):
         if not subscription.matches(event.type):
             continue
 
-        yield common.event_to_json(value)
+        yield common.event_to_json(event)
