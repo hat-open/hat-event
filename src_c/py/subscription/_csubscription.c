@@ -68,17 +68,8 @@ static int add_query_type(node_t *node, PyObject *query_type_iter) {
     }
 
     if (!node->children) {
-        node->children = hat_ht_create(&hat_py_allocator, 8);
+        node->children = hat_ht_create(&hat_py_allocator);
         if (!node->children) {
-            Py_DECREF(subtype);
-            PyErr_SetString(PyExc_RuntimeError, "internal error");
-            return 1;
-        }
-    }
-
-    size_t node_children_count = hat_ht_count(node->children);
-    if (node_children_count >= hat_ht_avg_count(node->children)) {
-        if (hat_ht_resize(node->children, node_children_count * 2)) {
             Py_DECREF(subtype);
             PyErr_SetString(PyExc_RuntimeError, "internal error");
             return 1;
@@ -106,21 +97,6 @@ static int add_query_type(node_t *node, PyObject *query_type_iter) {
     Py_DECREF(subtype);
 
     return add_query_type(child, query_type_iter);
-}
-
-
-static int resize_children(node_t *node) {
-    if (!node->children)
-        return 0;
-
-    hat_ht_iter_t iter = NULL;
-    while ((iter = hat_ht_iter_next(node->children, iter))) {
-        node_t *child = hat_ht_iter_value(iter);
-        if (resize_children(child))
-            return 1;
-    }
-
-    return hat_ht_resize(node->children, hat_ht_count(node->children));
 }
 
 
@@ -350,11 +326,6 @@ static PyObject *Subscription_new(PyTypeObject *type, PyObject *args,
         }
     }
     Py_DECREF(query_types_iter);
-
-    if (resize_children(&(self->root))) {
-        Py_DECREF(self);
-        return NULL;
-    }
 
     return (PyObject *)self;
 }

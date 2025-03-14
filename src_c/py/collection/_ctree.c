@@ -78,20 +78,6 @@ static tree_node_t *create_tree_node() {
 }
 
 
-static int resize_ht(hat_ht_t *ht) {
-    size_t avg_count = hat_ht_avg_count(ht);
-    size_t count = hat_ht_count(ht);
-
-    if (count < avg_count && count > avg_count / 4)
-        return 0;
-
-    if (count * 2 < 8)
-        return 0;
-
-    return hat_ht_resize(ht, count * 2);
-}
-
-
 static void ref_obj_destructor(PyObject *obj) {
     ref_t *ref = PyCapsule_GetPointer(obj, NULL);
     PyMem_Free(ref);
@@ -164,7 +150,7 @@ static PyObject *add_value_to_tree(tree_node_t *node, PyObject *query_type,
     }
 
     if (!node->children) {
-        node->children = hat_ht_create(&hat_py_allocator, 8);
+        node->children = hat_ht_create(&hat_py_allocator);
         if (!node->children)
             return NULL;
     }
@@ -181,9 +167,6 @@ static PyObject *add_value_to_tree(tree_node_t *node, PyObject *query_type,
             free_tree_node(child);
             return NULL;
         }
-
-        if (resize_ht(node->children))
-            return NULL;
     }
 
     return add_value_to_tree(child, query_type, value, query_type_index + 1);
