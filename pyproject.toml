@@ -1,18 +1,18 @@
 [project]
 name = "hat-event"
-version = "0.9.35"
+version = "0.9.36"
 description = "Hat event"
 readme = "README.rst"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 dependencies = [
     "appdirs ~=1.4.4",
-    "hat-aio ~=0.7.11",
-    "hat-drivers ~=0.8.14",
-    "hat-json ~=0.6.0",
-    "hat-monitor ~=0.8.17",
+    "hat-aio ~=0.7.12",
+    "hat-drivers ~=0.9.1",
+    "hat-json ~=0.6.2",
+    "hat-monitor ~=0.8.19",
     "hat-sbs ~=0.7.5",
-    "hat-util ~=0.6.17",
+    "hat-util ~=0.6.19",
     "lmdb >=1.4.1, <1.7",
 ]
 
@@ -29,7 +29,7 @@ Documentation = "http://hat-event.hat-open.com"
 
 [project.optional-dependencies]
 dev = [
-    "hat-doit ~=0.16.0",
+    "hat-doit ~=0.16.2",
     "peru >=1.3.1",
     "psutil >=5.9.5",
     "sphinxcontrib-plantuml >=0.23",
@@ -37,7 +37,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["hat-doit ~=0.16.0"]
+requires = ["hat-doit ~=0.16.2"]
 build-backend = "hat.doit.pep517"
 
 [tool.pytest.ini_options]
