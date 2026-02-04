@@ -6,17 +6,14 @@ from hat.event.backends.lmdb import common
 class Conditions:
 
     def __init__(self, conf: json.Data):
-        self._conditions = [
+        self._conditions = common.create_event_type_collection(
             (common.create_subscription(tuple(event_type)
                                         for event_type in i['subscriptions']),
              _create_condition(i['condition']))
-            for i in conf]
+            for i in conf)
 
     def matches(self, event: common.Event) -> bool:
-        for subscription, condition in self._conditions:
-            if not subscription.matches(event.type):
-                continue
-
+        for condition in self._conditions.get(event.type):
             if not condition.matches(event):
                 return False
 
