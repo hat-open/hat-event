@@ -158,7 +158,9 @@ class LmdbBackend(common.Backend):
                 continue
 
             if not self._conditions.matches(event):
-                mlog.warning("event registration skipped: invalid conditions")
+                mlog.warning(
+                    "event %s registration skipped: invalid conditions",
+                    event.type)
                 continue
 
             refs = collections.deque()
