@@ -120,16 +120,16 @@ If client receives `MsgEventsNotify` with `last` set to ``False``, it should
 respond with ``MsgEventsAck`` message.
 
 
-Event registration
+Event type registration
 ------------------
 
 After Eventer connection is established, client can at any time send
-`MsgRegisterReq` message, requesting event registration. When server
-receives registration request, it should create new events. If
+`MsgRegisterReq` message, requesting event type registration. When server
+receives registration request, it should create new event types. If
 `MsgRegisterReq` is not marked as last message in chatter conversation,
 server should send `MsgRegisterRes` message reporting registration status.
-If event registration is successful, `MsgRegisterRes` will contain
-newly created events associated with ones from register request
+If event type registration is successful, `MsgRegisterRes` will contain
+newly created event types associated with ones from register request
 (association is based on event's index in event list).
 
 
