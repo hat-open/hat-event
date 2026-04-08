@@ -50,7 +50,7 @@ information:
 * `syncer_token` (optional property)
 
   This token string is used as a key for synchronization between Eventer
-  Server and Eventer Client. Event Server will request synchronization
+  Server and Eventer Client. Event Client will request synchronization
   with a remote Event Server only if their `server_token` are identical.
   If this token is not defined, synchronization is performed
   irrespective.
