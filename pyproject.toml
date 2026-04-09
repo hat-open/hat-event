@@ -1,6 +1,6 @@
 [project]
 name = "hat-event"
-version = "0.9.39"
+version = "0.9.40"
 description = "Hat event"
 readme = "README.rst"
 requires-python = ">=3.10"
@@ -8,9 +8,9 @@ license = {text = "Apache-2.0"}
 dependencies = [
     "appdirs ~=1.4.4",
     "hat-aio ~=0.7.12",
-    "hat-drivers ~=0.9.1",
+    "hat-drivers ~=0.10.0",
     "hat-json ~=0.6.2",
-    "hat-monitor ~=0.8.19",
+    "hat-monitor ~=0.8.20",
     "hat-sbs ~=0.7.5",
     "hat-util ~=0.6.19",
     "lmdb >=1.4.1, <1.7",
