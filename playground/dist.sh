@@ -43,9 +43,8 @@ for IMAGE in $IMAGES; do
 set -e
 python3 -m venv venv
 . venv/bin/activate
-pip install --upgrade pip hat-json
-./playground/requirements.sh > requirements.pip.txt
-pip install --upgrade -r requirements.pip.txt
+pip install --upgrade pip
+pip install --upgrade --group dev
 doit clean_all
 doit
 cp build/py/*.whl dist
