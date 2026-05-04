@@ -154,6 +154,9 @@ class Server(aio.Resource):
                 self._conn_infos[conn] = info
 
             except Exception as e:
+                mlog.warning("connection initialization error: %s", e,
+                             exc_info=e)
+
                 info = None
                 res_data = 'error', str(e)
 

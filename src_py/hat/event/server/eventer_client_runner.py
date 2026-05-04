@@ -94,7 +94,10 @@ class EventerClientRunner(aio.Resource):
                         synced_cb=functools.partial(self._synced_cb,
                                                     server_data.server_id))
 
-                except Exception:
+                except Exception as e:
+                    mlog.warning("create eventer client error: %s", e,
+                                 exc_info=e)
+
                     await asyncio.sleep(self._reconnect_delay)
                     continue
 
