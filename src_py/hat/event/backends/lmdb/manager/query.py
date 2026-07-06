@@ -63,7 +63,7 @@ def query(args):
             elif args.subaction == 'latest':
                 event_types = ([tuple(i.split('/')) for i in args.event_types]
                                if args.event_types is not None else None)
-                for result in _query_ref(dbs, txn, event_types):
+                for result in _query_latest(dbs, txn, event_types):
                     _print_result(result)
 
             elif args.subaction == 'partition':
@@ -144,7 +144,7 @@ def _query_ref(dbs, txn, server_id):
 
         for event_ref in event_refs:
             if isinstance(event_ref, common.LatestEventRef):
-                latest_type_key = latest_type_db_def.encoded_key(event_ref.key)
+                latest_type_key = latest_type_db_def.encode_key(event_ref.key)
                 latest_type_value = txn.get(latest_type_key, db=latest_type_db)
 
                 event_type = latest_type_db_def.decode_value(latest_type_value)
@@ -173,7 +173,8 @@ def _query_latest(dbs, txn, event_types):
         if not subscription.matches(event.type):
             continue
 
-        yield common.event_to_json(value)
+        event = db_def.decode_value(value)
+        yield common.event_to_json(event)
 
 
 def _query_partition(dbs, txn, partition_id):
