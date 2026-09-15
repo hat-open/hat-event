@@ -92,7 +92,8 @@ async def create(conf: json.Data,
         backend._dbs = await backend._env.execute(
             _ext_create_dbs, backend._env, conf['identifier'],
             backend._conditions, latest_subscription, timeseries_partitions,
-            timeseries_max_results, timeseries_event_type_cache_size)
+            timeseries_max_results, timeseries_event_type_cache_size,
+            backend.flush)
 
         backend.async_group.spawn(backend._flush_loop, conf['flush_period'])
         backend.async_group.spawn(backend._cleanup_loop,
@@ -107,14 +108,15 @@ async def create(conf: json.Data,
 
 def _ext_create_dbs(env, identifier, conditions, latest_subscription,
                     timeseries_partitions, timeseries_max_results,
-                    timeseries_event_type_cache_size):
+                    timeseries_event_type_cache_size, flush_cb):
     with env.ext_begin(write=True) as txn:
         system_db = systemdb.ext_create(env, txn, version, identifier)
         latest_db = latestdb.ext_create(env, txn, conditions,
                                         latest_subscription)
         timeseries_db = timeseriesdb.ext_create(
             env, txn, conditions, timeseries_partitions,
-            timeseries_max_results, timeseries_event_type_cache_size)
+            timeseries_max_results, timeseries_event_type_cache_size,
+            flush_cb)
         ref_db = refdb.RefDb(env)
 
     return Databases(system=system_db,

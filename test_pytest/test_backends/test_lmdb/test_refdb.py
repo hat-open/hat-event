@@ -41,6 +41,9 @@ async def create_timeseries_db(env,
                                max_results=4096,
                                event_type_cache_size=256 * 1024):
 
+    async def flush():
+        pass
+
     def ext_create():
         with env.ext_begin(write=True) as txn:
             return hat.event.backends.lmdb.timeseriesdb.ext_create(
@@ -49,7 +52,8 @@ async def create_timeseries_db(env,
                 conditions=conditions,
                 partitions=partitions,
                 max_results=max_results,
-                event_type_cache_size=event_type_cache_size)
+                event_type_cache_size=event_type_cache_size,
+                flush_cb=flush)
 
     return await env.execute(ext_create)
 

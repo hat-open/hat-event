@@ -19,6 +19,7 @@ default_partitions = [
 
 
 async def create_timeseries_db(env,
+                               flush_cb,
                                conditions=Conditions([]),
                                partitions=default_partitions,
                                max_results=4096,
@@ -32,7 +33,8 @@ async def create_timeseries_db(env,
                 conditions=conditions,
                 partitions=partitions,
                 max_results=max_results,
-                event_type_cache_size=event_type_cache_size)
+                event_type_cache_size=event_type_cache_size,
+                flush_cb=flush_cb)
 
     return await env.execute(ext_create)
 
@@ -59,15 +61,26 @@ async def cleanup_timeseries_db(env, db, now=None, max_results=None):
     return await env.execute(ext_cleanup, now or common.now())
 
 
+async def flush(env, db):
+    changes = db.create_changes()
+
+    with env.ext_begin(write=True) as txn:
+        db.ext_write(txn, changes)
+
+
 @pytest.fixture
 def db_path(tmp_path):
     return tmp_path / 'db'
 
 
 async def test_create(db_path):
+
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
 
-    db = await create_timeseries_db(env)
+    db = await create_timeseries_db(env, _flush)
     assert db
 
     await env.async_close()
@@ -82,8 +95,11 @@ async def test_add(events_count, db_path):
                            payload=None)
               for i in range(events_count)]
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
-    db = await create_timeseries_db(env, max_results=events_count)
+    db = await create_timeseries_db(env, _flush, max_results=events_count)
 
     result = await db.query(common.QueryTimeseriesParams())
     assert list(result.events) == []
@@ -106,7 +122,7 @@ async def test_add(events_count, db_path):
     await env.async_close()
 
     env = await environment.create(db_path)
-    db = await create_timeseries_db(env, max_results=events_count)
+    db = await create_timeseries_db(env, _flush, max_results=events_count)
 
     result = await db.query(
         common.QueryTimeseriesParams(order=common.Order.ASCENDING))
@@ -131,8 +147,11 @@ async def test_query_max_results(order, order_by, db_path):
                            payload=None)
               for i in range(4)]
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
-    db = await create_timeseries_db(env, max_results=len(events) - 1)
+    db = await create_timeseries_db(env, _flush, max_results=len(events) - 1)
 
     query_params = common.QueryTimeseriesParams(order=order,
                                                 order_by=order_by)
@@ -219,8 +238,11 @@ async def test_query_timestamps(order, db_path):
                                    source_timestamp=common.now(),
                                    payload=None))
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
-    db = await create_timeseries_db(env, max_results=len(events))
+    db = await create_timeseries_db(env, _flush, max_results=len(events))
 
     for event in events:
         add_timeseries_db(db, event)
@@ -295,8 +317,11 @@ async def test_query_event_types(db_path):
                            payload=None)
               for i in range(4)]
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
-    db = await create_timeseries_db(env, max_results=len(events))
+    db = await create_timeseries_db(env, _flush, max_results=len(events))
 
     for event in events:
         add_timeseries_db(db, event)
@@ -320,8 +345,11 @@ async def test_query_last_event_id(db_path):
                            payload=None)
               for i in range(4)]
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
-    db = await create_timeseries_db(env, max_results=len(events))
+    db = await create_timeseries_db(env, _flush, max_results=len(events))
 
     for event in events:
         add_timeseries_db(db, event)
@@ -356,8 +384,12 @@ async def test_limit_max_entries(db_path):
                            payload=None)
               for i in range(4)]
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
     db = await create_timeseries_db(env,
+                                    _flush,
                                     partitions=[partition],
                                     max_results=len(events))
 
@@ -396,8 +428,12 @@ async def test_limit_duration(db_path):
                            payload=None)
               for i in range(4)]
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
     db = await create_timeseries_db(env,
+                                    _flush,
                                     partitions=[partition],
                                     max_results=len(events))
 
@@ -438,8 +474,12 @@ async def test_limit_size(db_path):
                            payload=None)
               for i in range(4)]
 
+    async def _flush():
+        await flush(env, db)
+
     env = await environment.create(db_path)
     db = await create_timeseries_db(env,
+                                    _flush,
                                     partitions=[partition],
                                     max_results=len(events))
 

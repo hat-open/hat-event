@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 import collections
 import functools
 import itertools
@@ -34,12 +34,14 @@ def ext_create(env: environment.Environment,
                conditions: Conditions,
                partitions: Iterable[Partition],
                max_results: int,
-               event_type_cache_size: int
+               event_type_cache_size: int,
+               flush_cb: Callable[[], Awaitable[None]]
                ) -> 'TimeseriesDb':
     db = TimeseriesDb()
     db._env = env
     db._conditions = conditions
     db._max_results = max_results
+    db._flush_cb = flush_cb
     db._changes = collections.defaultdict(collections.deque)
     db._event_type_partitions = {}  # type: dict[common.EventType, Collection[tuple[common.PartitionId, Partition]]]  # NOQA
 
@@ -160,26 +162,37 @@ class TimeseriesDb:
                          max_results=max_results + 1,
                          last_event_id=params.last_event_id)
 
-        if params.order == common.Order.DESCENDING:
-            events.extend(_query_partition_changes(
-                changes[partition_id], params, filter))
+        if params.order_by == common.OrderBy.TIMESTAMP:
+            if params.order == common.Order.DESCENDING:
+                events.extend(_query_partition_changes(
+                    changes[partition_id], params, filter))
 
-            if not filter.done:
+                if not filter.done:
+                    events.extend(await self._env.execute(
+                        _ext_query_partition_events, self._env,
+                        self._conditions, partition_id, params, filter))
+
+            elif params.order == common.Order.ASCENDING:
                 events.extend(await self._env.execute(
                     _ext_query_partition_events, self._env, self._conditions,
                     partition_id, params, filter))
 
-        elif params.order == common.Order.ASCENDING:
+                if not filter.done:
+                    events.extend(_query_partition_changes(
+                        changes[partition_id], params, filter))
+
+            else:
+                raise ValueError('unsupported order')
+
+        elif params.order_by == common.OrderBy.SOURCE_TIMESTAMP:
+            await self._flush_cb()
+
             events.extend(await self._env.execute(
                 _ext_query_partition_events, self._env, self._conditions,
                 partition_id, params, filter))
 
-            if not filter.done:
-                events.extend(_query_partition_changes(
-                    changes[partition_id], params, filter))
-
         else:
-            raise ValueError('unsupported order')
+            raise ValueError('unsupported order by')
 
         more_follows = len(events) > max_results
         while len(events) > max_results:
@@ -394,58 +407,32 @@ def _ext_cleanup_partition(env, txn, now, partition_id, limit, max_results):
 
 
 def _query_partition_changes(changes, params, filter):
+    assert params.order_by == common.OrderBy.TIMESTAMP
+
     if params.order == common.Order.DESCENDING:
         events = (event for _, event in reversed(changes))
 
-        if (params.order_by == common.OrderBy.TIMESTAMP and
-                params.t_to is not None):
+        if params.t_to is not None:
             events = itertools.dropwhile(
                 lambda i: params.t_to < i.timestamp,
                 events)
 
-        elif (params.order_by == common.OrderBy.SOURCE_TIMESTAMP and
-                params.source_t_to is not None):
-            events = itertools.dropwhile(
-                lambda i: params.source_t_to < i.source_timestamp,
-                events)
-
-        if (params.order_by == common.OrderBy.TIMESTAMP and
-                params.t_from is not None):
+        if params.t_from is not None:
             events = itertools.takewhile(
                 lambda i: params.t_from <= i.timestamp,
-                events)
-
-        elif (params.order_by == common.OrderBy.SOURCE_TIMESTAMP and
-                params.source_t_from is not None):
-            events = itertools.takewhile(
-                lambda i: params.source_t_from <= i.source_timestamp,
                 events)
 
     elif params.order == common.Order.ASCENDING:
         events = (event for _, event in changes)
 
-        if (params.order_by == common.OrderBy.TIMESTAMP and
-                params.t_from is not None):
+        if params.t_from is not None:
             events = itertools.dropwhile(
                 lambda i: i.timestamp < params.t_from,
                 events)
 
-        elif (params.order_by == common.OrderBy.SOURCE_TIMESTAMP and
-                params.source_t_from is not None):
-            events = itertools.dropwhile(
-                lambda i: i.source_timestamp < params.source_t_from,
-                events)
-
-        if (params.order_by == common.OrderBy.TIMESTAMP and
-                params.t_to is not None):
+        if params.t_to is not None:
             events = itertools.takewhile(
                 lambda i: i.timestamp <= params.t_to,
-                events)
-
-        elif (params.order_by == common.OrderBy.SOURCE_TIMESTAMP and
-                params.source_t_to is not None):
-            events = itertools.takewhile(
-                lambda i: i.source_timestamp <= params.source_t_to,
                 events)
 
     else:
