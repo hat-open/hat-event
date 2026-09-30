@@ -4,7 +4,7 @@ import pytest
 
 from hat import aio
 from hat import util
-from hat.drivers import tcp
+from hat.drivers import net
 
 from hat.event import common
 import hat.event.server.eventer_client
@@ -39,7 +39,7 @@ class Backend(common.Backend):
 
 @pytest.fixture
 def addr():
-    return tcp.Address('127.0.0.1', util.get_unused_tcp_port())
+    return net.TcpAddress('127.0.0.1', util.get_unused_tcp_port())
 
 
 async def test_create(addr):

@@ -4,7 +4,7 @@ from collections.abc import Collection, Iterable
 import logging
 
 from hat import aio
-from hat.drivers import tcp
+from hat.drivers import net
 
 from hat.event import common
 from hat.event import eventer
@@ -14,7 +14,7 @@ mlog: logging.Logger = logging.getLogger(__name__)
 """Module logger"""
 
 
-async def create_eventer_server(addr: tcp.Address,
+async def create_eventer_server(addr: net.StreamAddress,
                                 backend: common.Backend,
                                 server_id: int,
                                 *,

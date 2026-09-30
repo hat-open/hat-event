@@ -6,7 +6,7 @@ import logging
 from hat import aio
 from hat import json
 from hat import util
-from hat.drivers import tcp
+from hat.drivers import net
 import hat.monitor.component
 
 from hat.event import common
@@ -88,8 +88,8 @@ class MainRunner(aio.Resource):
 
         mlog.debug("creating eventer server")
         self._eventer_server = await create_eventer_server(
-            addr=tcp.Address(self._conf['eventer_server']['host'],
-                             self._conf['eventer_server']['port']),
+            addr=net.TcpAddress(self._conf['eventer_server']['host'],
+                                self._conf['eventer_server']['port']),
             backend=self._backend,
             server_id=self._conf['server_id'],
             server_token=self._conf.get('server_token'))
@@ -98,8 +98,8 @@ class MainRunner(aio.Resource):
         if 'adminer_server' in self._conf:
             mlog.debug("creating adminer server")
             self._adminer_server = await create_adminer_server(
-                addr=tcp.Address(self._conf['adminer_server']['host'],
-                                 self._conf['adminer_server']['port']),
+                addr=net.TcpAddress(self._conf['adminer_server']['host'],
+                                    self._conf['adminer_server']['port']),
                 log_conf=self._conf.get('log'))
             _bind_resource(self.async_group, self._adminer_server)
 
@@ -118,8 +118,8 @@ class MainRunner(aio.Resource):
 
             mlog.debug("creating monitor component")
             self._monitor_component = await hat.monitor.component.connect(
-                addr=tcp.Address(self._conf['monitor_component']['host'],
-                                 self._conf['monitor_component']['port']),
+                addr=net.TcpAddress(self._conf['monitor_component']['host'],
+                                    self._conf['monitor_component']['port']),
                 name=self._conf['name'],
                 group=self._conf['monitor_component']['group'],
                 runner_cb=self._create_monitor_runner,

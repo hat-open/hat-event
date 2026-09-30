@@ -10,7 +10,7 @@ import typing
 from hat import aio
 from hat import json
 from hat import util
-from hat.drivers import tcp
+from hat.drivers import net
 import hat.monitor.component
 
 from hat.event import common
@@ -51,11 +51,11 @@ EventsCb: typing.TypeAlias = aio.AsyncCallable[
 class ServerData(typing.NamedTuple):
     """Server data"""
     server_id: common.ServerId
-    addr: tcp.Address
+    addr: net.TcpAddress
     server_token: str | None
 
 
-async def connect(addr: tcp.Address,
+async def connect(addr: net.StreamAddress,
                   name: str,
                   group: str,
                   server_group: str,
@@ -196,7 +196,7 @@ class Component(aio.Resource):
             return
 
         return ServerData(server_id=server_id,
-                          addr=tcp.Address(host, port),
+                          addr=net.TcpAddress(host, port),
                           server_token=server_token)
 
     def _active_server_filter(self, info):

@@ -7,7 +7,7 @@ import sys
 
 from hat import aio
 from hat import json
-from hat.drivers import tcp
+from hat.drivers import net
 
 from hat.event import eventer
 from hat.event.manager import common
@@ -147,7 +147,7 @@ def main():
     parser = create_argument_parser()
     args = parser.parse_args()
 
-    addr = tcp.Address(args.host, args.port)
+    addr = net.TcpAddress(args.host, args.port)
 
     if args.action == 'register':
         register_event = common.RegisterEvent(
@@ -222,7 +222,7 @@ def main():
         return aio.run_asyncio(co)
 
 
-async def register(addr: tcp.Address,
+async def register(addr: net.StreamAddress,
                    client_name: str,
                    client_token: str | None,
                    register_event: common.RegisterEvent):
@@ -240,7 +240,7 @@ async def register(addr: tcp.Address,
         await aio.uncancellable(client.async_close())
 
 
-async def query(addr: tcp.Address,
+async def query(addr: net.StreamAddress,
                 client_name: str,
                 client_token: str | None,
                 params: common.QueryParams):
@@ -258,7 +258,7 @@ async def query(addr: tcp.Address,
         await aio.uncancellable(client.async_close())
 
 
-async def subscribe(addr: tcp.Address,
+async def subscribe(addr: net.StreamAddress,
                     client_name: str,
                     client_token: str | None,
                     subscriptions: Collection[common.EventType],
@@ -284,7 +284,7 @@ async def subscribe(addr: tcp.Address,
         await aio.uncancellable(client.async_close())
 
 
-async def server(addr: tcp.Address,
+async def server(addr: net.StreamAddress,
                  client_name: str,
                  client_token: str | None,
                  subscriptions: Collection[common.EventType],

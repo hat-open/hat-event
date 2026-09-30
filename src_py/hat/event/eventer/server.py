@@ -8,7 +8,7 @@ import typing
 
 from hat import aio
 from hat.drivers import chatter
-from hat.drivers import tcp
+from hat.drivers import net
 
 from hat.event.eventer import common
 
@@ -43,7 +43,7 @@ QueryCb: typing.TypeAlias = aio.AsyncCallable[
 """Query callback"""
 
 
-async def listen(addr: tcp.Address,
+async def listen(addr: net.StreamAddress,
                  *,
                  status: common.Status = common.Status.STANDBY,
                  connected_cb: ConnectionCb | None = None,

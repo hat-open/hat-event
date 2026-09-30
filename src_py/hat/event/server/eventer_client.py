@@ -5,7 +5,7 @@ import logging
 import typing
 
 from hat import aio
-from hat.drivers import tcp
+from hat.drivers import net
 
 from hat.event import common
 from hat.event import eventer
@@ -29,7 +29,7 @@ SyncedCb: typing.TypeAlias = aio.AsyncCallable[[SyncedState, int | None], None]
 """Synced callback"""
 
 
-async def create_eventer_client(addr: tcp.Address,
+async def create_eventer_client(addr: net.StreamAddress,
                                 client_name: str,
                                 local_server_id: common.ServerId,
                                 remote_server_id: common.ServerId,

@@ -8,7 +8,7 @@ import typing
 from hat import aio
 from hat import json
 from hat import util
-from hat.drivers import tcp
+from hat.drivers import net
 import hat.monitor.component
 
 from hat.event import common
@@ -27,7 +27,7 @@ SyncedCb: typing.TypeAlias = aio.AsyncCallable[
 
 class EventerServerData(typing.NamedTuple):
     server_id: common.ServerId
-    addr: tcp.Address
+    addr: net.TcpAddress
 
 
 class EventerClientRunner(aio.Resource):
@@ -152,4 +152,4 @@ def _get_eventer_server_data(group, server_token, state):
             continue
 
         yield EventerServerData(server_id=server_id,
-                                addr=tcp.Address(host, port))
+                                addr=net.TcpAddress(host, port))

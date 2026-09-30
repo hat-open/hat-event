@@ -7,7 +7,7 @@ import typing
 
 from hat import aio
 from hat.drivers import chatter
-from hat.drivers import tcp
+from hat.drivers import net
 
 from hat.event.eventer import common
 
@@ -29,7 +29,7 @@ class EventerInitError(Exception):
     """Eventer initialization error"""
 
 
-async def connect(addr: tcp.Address,
+async def connect(addr: net.StreamAddress,
                   client_name: str,
                   *,
                   client_token: str | None = None,

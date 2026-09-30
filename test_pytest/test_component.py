@@ -2,7 +2,7 @@ import pytest
 
 from hat import aio
 from hat import util
-from hat.drivers import tcp
+from hat.drivers import net
 import hat.monitor.common
 import hat.monitor.observer.server
 
@@ -12,12 +12,12 @@ import hat.event.eventer
 
 @pytest.fixture
 def observer_addr():
-    return tcp.Address('127.0.0.1', util.get_unused_tcp_port())
+    return net.TcpAddress('127.0.0.1', util.get_unused_tcp_port())
 
 
 @pytest.fixture
 def eventer_addr():
-    return tcp.Address('127.0.0.1', util.get_unused_tcp_port())
+    return net.TcpAddress('127.0.0.1', util.get_unused_tcp_port())
 
 
 async def test_connect(observer_addr):
