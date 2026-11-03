@@ -1,7 +1,7 @@
 #include <Python.h>
-#include <stdbool.h>
 #include <hat/ht.h>
 #include <hat/py_allocator.h>
+#include <stdbool.h>
 
 
 typedef struct {
