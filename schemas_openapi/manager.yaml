@@ -1,0 +1,179 @@
+openapi: 3.2.1
+info:
+    title: hat-event-manager
+    version: 0.0.1
+paths:
+    '/query/latest':
+        get:
+            requestBody:
+                $ref: '#/components/requestBodies/query_latest'
+            responses:
+                '200':
+                    $ref: '#/components/responses/query_result'
+    '/query/timeseries':
+        get:
+            requestBody:
+                $ref: '#/components/requestBodies/query_timeseries'
+            responses:
+                '200':
+                    $ref: '#/components/responses/query_result'
+    '/query/server':
+        get:
+            requestBody:
+                $ref: '#/components/requestBodies/query_server'
+            responses:
+                '200':
+                    $ref: '#/components/responses/query_result'
+components:
+    schemas:
+        query_event_type:
+            type: array
+            items:
+                type: string
+        event_type:
+            type: array
+            items:
+                type: string
+        timestamp:
+            type: object
+            required:
+                - s
+                - us
+            properties:
+                s:
+                    type: integer
+                us:
+                    type: integer
+        event_id:
+            type: object
+            required:
+                - server
+                - session
+                - instance
+            properties:
+                server:
+                    type: integer
+                session:
+                    type: integer
+                instance:
+                    type: integer
+        payload:
+            oneOf:
+              - type: object
+                required:
+                    - data_type
+                    - binary_type
+                    - data
+                properties:
+                    data_type:
+                        const: binary
+                    binary_type:
+                        type: string
+                    data:
+                        type: string
+              - type: object
+                required:
+                    - data_type
+                    - data
+                properties:
+                    data_type:
+                        const: json
+        event:
+            type: object
+            required:
+                - id
+                - type
+                - timestamp
+                - source_timestamp
+                - payload
+            properties:
+                id:
+                    $ref: '#/components/schemas/event_id'
+                type:
+                    $ref: '#/components/schemas/event_type'
+                timestamp:
+                    $ref: '#/components/schemas/timestamp'
+                source_timestamp:
+                    oneOf:
+                      - type: 'null'
+                      - $ref: '#/components/schemas/timestamp'
+                payload:
+                    oneOf:
+                      - type: 'null'
+                      - $ref: '#/components/schemas/payload'
+    requestBodies:
+        query_latest:
+            content:
+                application/json:
+                    schema:
+                        type: object
+                        properties:
+                            event_types:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/query_event_type'
+        query_timeseries:
+            content:
+                application/json:
+                    schema:
+                        type: object
+                        properties:
+                            event_types:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/query_event_type'
+                            t_from:
+                                $ref: '#/components/schemas/timestamp'
+                            t_to:
+                                $ref: '#/components/schemas/timestamp'
+                            source_t_from:
+                                $ref: '#/components/schemas/timestamp'
+                            source_t_to:
+                                $ref: '#/components/schemas/timestamp'
+                            order:
+                                enum:
+                                    - descending
+                                    - ascending
+                                default: descending
+                            order_by:
+                                enum:
+                                    - timestamp
+                                    - sourceTimestamp
+                                default: timestamp
+                            max_results:
+                                type: integer
+                            last_event_id:
+                                $ref: '#/components/schemas/event_id'
+        query_server:
+            content:
+                application/json:
+                    schema:
+                        type: object
+                        required:
+                            - server_id
+                        properties:
+                            server_id:
+                                type: integer
+                            persisted:
+                                type: boolean
+                                default: false
+                            max_results:
+                                type: integer
+                            last_event_id:
+                                $ref: '#/components/schemas/event_id'
+    responses:
+        query_result:
+            content:
+                application/json:
+                    schema:
+                        type: object
+                        required:
+                            - events
+                            - more_follows
+                        properties:
+                            events:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/event'
+                            more_follows:
+                                type: boolean

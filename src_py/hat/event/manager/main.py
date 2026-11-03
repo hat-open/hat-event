@@ -11,6 +11,8 @@ from hat.drivers import net
 
 from hat.event import eventer
 from hat.event.manager import common
+from hat.event.manager import rest
+from hat.event.manager import server
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -139,6 +141,21 @@ def create_argument_parser() -> argparse.ArgumentParser:
     server_parser.add_argument(
         'event_types', metavar='EVENT_TYPE', type=_parse_event_type, nargs='*',
         help='query event type')
+    server_parser.add_argument(
+        '--http-host', type=str, default='127.0.0.1',
+        help="listening host name (default '127.0.0.1')")
+    server_parser.add_argument(
+        '--http-port', type=int, default=23025,
+        help="listening TCP port (default 23025)")
+
+    rest_parser = subparsers.add_parser(
+        'rest', description="run manager rest api server")
+    rest_parser.add_argument(
+        '--http-host', type=str, default='127.0.0.1',
+        help="listening host name (default '127.0.0.1')")
+    rest_parser.add_argument(
+        '--http-port', type=int, default=23017,
+        help="listening TCP port (default 23017)")
 
     return parser
 
@@ -206,13 +223,23 @@ def main():
 
     elif args.action == 'server':
         subscriptions = args.event_types or [('*', )]
+        http_addr = net.TcpAddress(args.http_host, args.http_port)
 
-        co = server(addr=addr,
-                    client_name=args.client_name,
-                    client_token=args.client_token,
-                    subscriptions=subscriptions,
-                    server_id=args.server_id,
-                    persisted=args.persisted)
+        co = server.run(addr=addr,
+                        client_name=args.client_name,
+                        client_token=args.client_token,
+                        subscriptions=subscriptions,
+                        server_id=args.server_id,
+                        persisted=args.persisted,
+                        http_addr=http_addr)
+
+    elif args.action == 'rest':
+        http_addr = net.TcpAddress(args.http_host, args.http_port)
+
+        co = rest.run(addr=addr,
+                      client_name=args.client_name,
+                      client_token=args.client_token,
+                      http_addr=http_addr)
 
     else:
         raise ValueError('unsupported action')
@@ -282,15 +309,6 @@ async def subscribe(addr: net.StreamAddress,
 
     finally:
         await aio.uncancellable(client.async_close())
-
-
-async def server(addr: net.StreamAddress,
-                 client_name: str,
-                 client_token: str | None,
-                 subscriptions: Collection[common.EventType],
-                 server_id: int | None,
-                 persisted: bool):
-    raise NotImplementedError()
 
 
 def _parse_timestamp(t):

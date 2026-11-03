@@ -8,7 +8,7 @@ PLAYGROUND_PATH=$(dirname "$(realpath "$0")")
 LOG_LEVEL=DEBUG
 CONF_PATH=$DATA_PATH/monitor.yaml
 
-cat > $CONF_PATH << EOF
+cat >$CONF_PATH <<EOF
 type: monitor
 log:
     version: 1
@@ -56,6 +56,4 @@ ui:
     port: 23022
 EOF
 
-exec $PYTHON -m hat.monitor.server \
-    --conf $CONF_PATH \
-    "$@"
+exec $PYTHON -m hat.monitor.server --conf $CONF_PATH "$@"

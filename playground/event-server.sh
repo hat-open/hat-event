@@ -7,8 +7,9 @@ PLAYGROUND_PATH=$(dirname "$(realpath "$0")")
 
 LOG_LEVEL=DEBUG
 CONF_PATH=$DATA_PATH/event.yaml
+PROFILE_PATH=$DATA_PATH/profile
 
-cat > $CONF_PATH << EOF
+cat >$CONF_PATH <<EOF
 log:
     version: 1
     formatters:
@@ -46,6 +47,8 @@ eventer_server:
     port: 23012
 EOF
 
-exec $PYTHON -m cProfile -o $DATA_PATH/profile -m hat.event.server \
-    --conf $CONF_PATH \
-    "$@"
+if [ "${PROFILE:-0}" != "0" ]; then
+    PYTHON="$PYTHON -m cProfile -o $PROFILE_PATH"
+fi
+
+exec $PYTHON -m hat.event.server --conf $CONF_PATH "$@"

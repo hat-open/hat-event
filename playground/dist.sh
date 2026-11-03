@@ -32,7 +32,7 @@ for IMAGE in $IMAGES; do
                  -f $DOCKERFILE \
                  -t $IMAGE \
                  .
-    if [ -n "$IMAGE_ID" -a "$IMAGE_ID" != "$(podman images -q $IMAGE)" ]; then
+    if [ -n "$IMAGE_ID" ] && [ "$IMAGE_ID" != "$(podman images -q $IMAGE)" ]; then
         podman rmi $IMAGE_ID
     fi
     podman run --rm \
