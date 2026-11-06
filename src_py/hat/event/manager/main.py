@@ -22,7 +22,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         '--host', type=str, default='127.0.0.1',
         help="server host name (default '127.0.0.1')")
     parser.add_argument(
-        '--port', type=int, default='23012',
+        '--port', type=int, default=23012,
         help="server TCP port (default 23012)")
     parser.add_argument(
         '--client-name', metavar='NAME', type=str, default='manager',
