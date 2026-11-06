@@ -1,9 +1,8 @@
 import functools
 
-import aiohttp.web
-
 from hat import aio
 from hat import juggler
+from hat.drivers import mcp
 from hat.drivers import net
 
 from hat.event import eventer
@@ -33,174 +32,44 @@ async def run(addr: net.StreamAddress,
         await aio.uncancellable(async_group.async_close())
 
 
-class _McpError(Exception):
-
-    def __init__(self,
-                 http_code: int,
-                 jsonrpc_code: int,
-                 message: str):
-        super().__init__(message)
-
-        self._http_code = http_code
-        self._jsonrpc_code = jsonrpc_code
-        self._message = message
-
-    @property
-    def http_code(self) -> int:
-        return self._http_code
-
-    @property
-    def jsonrpc_code(self) -> int:
-        return self._jsonrpc_code
-
-    @property
-    def message(self) -> int:
-        return self._message
-
-
 async def _create_web_server(http_addr, client):
-    return await juggler.listen(
-        host=http_addr.host,
-        port=http_addr.port,
-        ws_path=None,
-        index_path=None,
-        additional_routes=[
-            aiohttp.web.post('/', functools.partial(_process, client))])
+    mcp_server = mcp.Server(name="hat-event")
+
+    mcp_server.add_tool(
+        mcp.Tool(name='query_latest',
+                 title=None,
+                 description=None,
+                 input_schema=_query_latest_params_schema,
+                 output_schema=_query_result_schema,
+                 call_cb=functools.partial(_process_query, client,
+                                           rest.parse_latest_params)))
+
+    mcp_server.add_tool(
+        mcp.Tool(name='query_timeseries',
+                 title=None,
+                 description=None,
+                 input_schema=_query_timeseries_params_schema,
+                 output_schema=_query_result_schema,
+                 call_cb=functools.partial(_process_query, client,
+                                           rest.parse_timeseries_params)))
+
+    mcp_server.add_tool(
+        mcp.Tool(name='query_server',
+                 title=None,
+                 description=None,
+                 input_schema=_query_server_params_schema,
+                 output_schema=_query_result_schema,
+                 call_cb=functools.partial(_process_query, client,
+                                           rest.parse_server_params)))
+
+    return await juggler.listen(host=http_addr.host,
+                                port=http_addr.port,
+                                ws_path=None,
+                                index_path=None,
+                                additional_routes=[mcp_server.route])
 
 
-async def _process(client, req):
-    jsonrpc_id = None
-
-    try:
-        try:
-            body = await req.json()
-
-        except Exception:
-            raise _McpError(http_code=400,
-                            jsonrpc_code=-32700,
-                            message='Parse error')
-
-        if (not isinstance(body, dict) or
-                body.get('jsonrpc') != '2.0' or
-                not isinstance(body.get('id'), (str, int)) or
-                not isinstance(body.get('method'), str)):
-            raise _McpError(http_code=400,
-                            jsonrpc_code=-32600,
-                            message='Invalid request')
-
-        jsonrpc_id = body['id']
-        params = body.get('params')
-
-        try:
-            if body['method'] == 'server/discover':
-                result = _process_server_discover()
-
-            elif body['method'] == 'tools/list':
-                result = _process_tools_list()
-
-            elif body['method'] == 'tools/call':
-                result = await _process_tools_call(client, params)
-
-            else:
-                raise _McpError(http_code=404,
-                                jsonrpc_code=-32601,
-                                message='Method not found')
-
-        except _McpError:
-            raise
-
-        except Exception as e:
-            raise _McpError(http_code=500,
-                            jsonrpc_code=-32603,
-                            message=f"Internal error: {e}")
-
-        data = {'jsonrpc': '2.0',
-                'id': jsonrpc_id,
-                'result': {
-                    'resultType': 'complete',
-                    **result}}
-
-        return aiohttp.web.json_response(data)
-
-    except _McpError as e:
-        data = {'jsonrpc': '2.0',
-                'error': {'code': e.jsonrpc_code,
-                          'message': e.message}}
-
-        if jsonrpc_id is not None:
-            data['id'] = jsonrpc_id
-
-        return aiohttp.web.json_response(data, status=e.http_code)
-
-    except Exception:
-        raise aiohttp.web.HTTPInternalServerError()
-
-
-def _process_server_discover():
-    return {'supportedVersions': ['2026-07-28'],
-            'capabilities': {'tools': {'listChanged': False}},
-            'ttlMs': _cache_ttl_ms,
-            'cacheScope': 'public'}
-
-
-def _process_tools_list():
-    return {'tools': [{'name': 'query_latest',
-                       'inputSchema': _query_latest_params_schema,
-                       'outputSchema': _query_result_schema},
-                      {'name': 'query_timeseries',
-                       'inputSchema': _query_timeseries_params_schema,
-                       'outputSchema': _query_result_schema},
-                      {'name': 'query_server',
-                       'inputSchema': _query_server_params_schema,
-                       'outputSchema': _query_result_schema},],
-            'ttlMs': _cache_ttl_ms,
-            'cacheScope': 'public'}
-
-
-async def _process_tools_call(client, params):
-    try:
-        name = params['name']
-        assert isinstance(name, str)
-
-        args = params['arguments']
-        assert isinstance(args, dict)
-
-    except Exception:
-        raise _McpError(http_code=400,
-                        jsonrpc_code=-32602,
-                        message='Invalid params')
-
-    try:
-        if name == 'query_latest':
-            result = await _process_tools_call_query(
-                client, rest.parse_latest_params, args)
-
-        elif name == 'query_timeseries':
-            result = await _process_tools_call_query(
-                client, rest.parse_timeseries_params, args)
-
-        elif name == 'query_server':
-            result = await _process_tools_call_query(
-                client, rest.parse_server_params, args)
-
-        else:
-            raise _McpError(http_code=400,
-                            jsonrpc_code=-32602,
-                            message='Invalid params')
-
-        return {'content': [],
-                'structuredContent': result}
-
-    except _McpError:
-        raise
-
-    except Exception as e:
-        return {'content': [{'type': 'text',
-                             'text': str(e)}],
-                'isError': True}
-
-
-async def _process_tools_call_query(client, parse_params, args):
+async def _process_query(client, parse_params, args):
     try:
         params = parse_params(args)
 
@@ -222,8 +91,6 @@ async def _bind_resource(async_group, resource):
         await aio.uncancellable(resource.async_close())
         raise
 
-
-_cache_ttl_ms = 24 * 60 * 60 * 1000
 
 _query_event_type_schema = {
     'type': 'array',
