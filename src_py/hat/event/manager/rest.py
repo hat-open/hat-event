@@ -39,9 +39,9 @@ async def _create_web_server(http_addr, client):
         aiohttp.web.get(
             f'/query/{path}',
             functools.partial(_process_get_query, parse_params, client))
-        for path, parse_params in [('latest', _parse_latest_params),
-                                   ('timeseries', _parse_timeseries_params),
-                                   ('server', _parse_server_params)]]
+        for path, parse_params in [('latest', parse_latest_params),
+                                   ('timeseries', parse_timeseries_params),
+                                   ('server', parse_server_params)]]
 
     return await juggler.listen(
         host=http_addr.host,
@@ -70,14 +70,14 @@ async def _process_get_query(parse_params, client, req):
         raise aiohttp.web.HTTPInternalServerError(text=f"query error: {e}")
 
 
-def _parse_latest_params(params):
+def parse_latest_params(params: json.Data) -> common.QueryLatestParams:
     event_types = (_parse_event_types(params['event_types'])
                    if 'event_types' in params else None)
 
     return common.QueryLatestParams(event_types=event_types)
 
 
-def _parse_timeseries_params(params):
+def parse_timeseries_params(params: json.Data) -> common.QueryTimeseriesParams:
     event_types = (_parse_event_types(params['event_types'])
                    if 'event_types' in params else None)
     t_from = _parse_timestamp(params['t_from']) if 't_from' in params else None
@@ -104,7 +104,7 @@ def _parse_timeseries_params(params):
                                         last_event_id=last_event_id)
 
 
-def _parse_server_params(params):
+def parse_server_params(params: json.Data) -> common.QueryServerParams:
     server_id = _parse_server_id(params['server_id'])
     persisted = (_parse_persisted(params['persisted'])
                  if 'persisted' in params else False)

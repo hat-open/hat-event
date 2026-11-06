@@ -11,6 +11,7 @@ from hat.drivers import net
 
 from hat.event import eventer
 from hat.event.manager import common
+from hat.event.manager import mcp
 from hat.event.manager import rest
 from hat.event.manager import server
 
@@ -157,6 +158,15 @@ def create_argument_parser() -> argparse.ArgumentParser:
         '--http-port', type=int, default=23017,
         help="listening TCP port (default 23017)")
 
+    mcp_parser = subparsers.add_parser(
+        'mcp', description="run model context protocol server")
+    mcp_parser.add_argument(
+        '--http-host', type=str, default='127.0.0.1',
+        help="listening host name (default '127.0.0.1')")
+    mcp_parser.add_argument(
+        '--http-port', type=int, default=23018,
+        help="listening TCP port (default 23018)")
+
     return parser
 
 
@@ -240,6 +250,14 @@ def main():
                       client_name=args.client_name,
                       client_token=args.client_token,
                       http_addr=http_addr)
+
+    elif args.action == 'mcp':
+        http_addr = net.TcpAddress(args.http_host, args.http_port)
+
+        co = mcp.run(addr=addr,
+                     client_name=args.client_name,
+                     client_token=args.client_token,
+                     http_addr=http_addr)
 
     else:
         raise ValueError('unsupported action')
