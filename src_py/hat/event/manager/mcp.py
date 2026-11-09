@@ -33,34 +33,60 @@ async def run(addr: net.StreamAddress,
 
 
 async def _create_web_server(http_addr, client):
-    mcp_server = mcp.Server(name="hat-event")
+    mcp_server = mcp.Server(
+        name='hat-event',
+        instructions="Hat Open Event Server interface for querying events. "
+                     "Event is a generic data structure used for "
+                     "communication and storage of relevant changes happening "
+                     "through time in a Hat system. Each event is immutable "
+                     "and uniquely identified by its event id. Event "
+                     "contains: id (unique event identifier), type (list of "
+                     "strings used as main identifier of event's type), "
+                     "timestamp (moment when event was registered), source "
+                     "timestamp (optional time provided by event's source), "
+                     "payload (optional data with structure defined by "
+                     "event's type).")
 
     mcp_server.add_tool(
-        mcp.Tool(name='query_latest',
-                 title=None,
-                 description=None,
-                 input_schema=_query_latest_params_schema,
-                 output_schema=_query_result_schema,
-                 call_cb=functools.partial(_process_query, client,
-                                           rest.parse_latest_params)))
+        mcp.Tool(
+            name='query_latest',
+            title='Query latest events',
+            description="Return the most recent event for each event type "
+                        "matching the filters. Events are returned from "
+                        "latest storage. Use this to read the current "
+                        "state of something. Results are not paginated. "
+                        "Omitting event_types returns the latest event of "
+                        "every type",
+            input_schema=_query_latest_params_schema,
+            output_schema=_query_result_schema,
+            call_cb=functools.partial(_process_query, client,
+                                      rest.parse_latest_params)))
 
     mcp_server.add_tool(
-        mcp.Tool(name='query_timeseries',
-                 title=None,
-                 description=None,
-                 input_schema=_query_timeseries_params_schema,
-                 output_schema=_query_result_schema,
-                 call_cb=functools.partial(_process_query, client,
-                                           rest.parse_timeseries_params)))
+        mcp.Tool(
+            name='query_timeseries',
+            title='Query event history',
+            description="Return historical events from timeseries storage. "
+                        "Events are filtered by event type and time range, "
+                        "sorted by registration timestamp or source "
+                        "timestamp. Paginate with last_event_id while "
+                        "more_follows is true.",
+            input_schema=_query_timeseries_params_schema,
+            output_schema=_query_result_schema,
+            call_cb=functools.partial(_process_query, client,
+                                      rest.parse_timeseries_params)))
 
     mcp_server.add_tool(
-        mcp.Tool(name='query_server',
-                 title=None,
-                 description=None,
-                 input_schema=_query_server_params_schema,
-                 output_schema=_query_result_schema,
-                 call_cb=functools.partial(_process_query, client,
-                                           rest.parse_server_params)))
+        mcp.Tool(
+            name='query_server',
+            title='Query events by originating server',
+            description="Return all events registered by a specific server in "
+                        "registration order. Paginate with last_event_id "
+                        "while more_follows is true",
+            input_schema=_query_server_params_schema,
+            output_schema=_query_result_schema,
+            call_cb=functools.partial(_process_query, client,
+                                      rest.parse_server_params)))
 
     return await juggler.listen(host=http_addr.host,
                                 port=http_addr.port,
@@ -93,53 +119,90 @@ async def _bind_resource(async_group, resource):
 
 
 _query_event_type_schema = {
+    'title': 'Query event type',
+    'description': "Event type used for event querying. Can contain segments "
+                   "'?' (as any segment) and '*' (only as last segment).",
     'type': 'array',
     'items': {
+        'title': 'Query event type segment',
+        'description': "Single query event type segment. '?' matches any "
+                       "single event type segment. '*' matches zero or "
+                       "more arbitrary event type segments.",
         'type': 'string'}}
 
 _event_type_schema = {
+    'title': 'Event type',
     'type': 'array',
     'items': {
+        'title': 'Event type segment',
+        'description': "Single event type segment. Values '*' and '?' are not "
+                       "valid. Character '/' should not be used as part of "
+                       "segment value.",
         'type': 'string'}}
 
 _timestamp_schema = {
+    'title': 'Timestamp',
+    'description': 'Time elapsed from epoch (1970-01-01T00:00:00Z)',
     'type': 'object',
     'required': ['s', 'us'],
     'properties': {
         's': {
+            'title': 'Seconds',
+            'description': "Number of seconds from epoch. Can be negative "
+                           "(represent time before epoch).",
             'type': 'integer'},
         'us': {
-            'type': 'integer'}}}
+            'title': 'Microseconds',
+            'description': "Microseconds within the second.",
+            'type': 'integer',
+            'minimum': 0,
+            'maximum': 999999}}}
 
 _event_id_schema = {
+    'title': 'Event identifier',
     'type': 'object',
     'required': ['server', 'session', 'instance'],
     'properties': {
         'server': {
+            'title': 'Server identifier',
+            'description': 'Identifier of server that created the event.',
             'type': 'integer'},
         'session': {
+            'title': 'Session identifier',
+            'description': 'Identifier of session that created the event.',
             'type': 'integer'},
         'instance': {
+            'title': 'Instance identifier',
+            'description': 'Identifier of event as part of session.',
             'type': 'integer'}}}
 
 _payload_schema = {
+    'title': 'Payload',
     'oneOf': [
-        {'type': 'object',
+        {'title': 'Binary serialized payload',
+         'type': 'object',
          'required': ['data_type', 'binary_type', 'data'],
          'properties': {
             'data_type': {
                 'const': 'binary'},
             'binary_type': {
+                'title': 'Binary type identifier',
                 'type': 'string'},
             'data': {
+                'title': 'Binary data',
+                'description': "Hex encoded bytes.",
                 'type': 'string'}}},
-        {'type': 'object',
+        {'title': 'JSON serialized payload',
+         'type': 'object',
          'required': ['data_type', 'data'],
          'properties': {
             'data_type': {
-                'const': 'json'}}}]}
+                'const': 'json'},
+            'data': {
+                'title': 'JSON data'}}}]}
 
 _event_schema = {
+    'title': 'Event',
     'type': 'object',
     'required': ['id', 'type', 'timestamp', 'source_timestamp', 'payload'],
     'properties': {
@@ -156,6 +219,7 @@ _event_schema = {
                 _payload_schema]}}}
 
 _query_latest_params_schema = {
+    'title': 'Query latest parameters',
     'type': 'object',
     'properties': {
         'event_types': {
@@ -163,6 +227,7 @@ _query_latest_params_schema = {
             'items': _query_event_type_schema}}}
 
 _query_timeseries_params_schema = {
+    'title': 'Query timeseries parameters',
     'type': 'object',
     'properties': {
         'event_types': {
@@ -183,6 +248,7 @@ _query_timeseries_params_schema = {
         'last_event_id': _event_id_schema}}
 
 _query_server_params_schema = {
+    'title': 'Query server parameters',
     'type': 'object',
     'required': ['server_id'],
     'properties': {
@@ -196,6 +262,7 @@ _query_server_params_schema = {
         'last_event_id': _event_id_schema}}
 
 _query_result_schema = {
+    'title': 'Query result',
     'type': 'object',
     'required': ['events', 'more_follows'],
     'properties': {

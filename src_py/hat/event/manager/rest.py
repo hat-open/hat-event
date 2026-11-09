@@ -168,8 +168,11 @@ def _parse_timestamp(t):
 
 def _parse_event_id(event_id):
     if (not isinstance(event_id['server'], int) or
+            isinstance(event_id['server'], bool) or
             not isinstance(event_id['session'], int) or
-            not isinstance(event_id['instance'], int)):
+            isinstance(event_id['session'], bool) or
+            not isinstance(event_id['instance'], int) or
+            isinstance(event_id['instance'], bool)):
         raise Exception('invalid event id')
 
     return common.EventId(server=int(event_id['server']),
